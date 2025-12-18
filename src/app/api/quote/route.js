@@ -22,7 +22,10 @@ export async function GET(request) {
             symbol: q.symbol,
             price: q.regularMarketPrice,
             changePercent: q.regularMarketChangePercent,
-            name: q.shortName || q.symbol
+            name: q.shortName || q.symbol,
+            currency: q.currency,
+            quoteType: q.quoteType,
+            typeDisp: q.typeDisp
         }));
 
         return NextResponse.json({ data });

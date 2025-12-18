@@ -5,11 +5,12 @@ import { AreaChart, Area, XAxis, Tooltip, ResponsiveContainer, YAxis } from 'rec
 
 const RANGES = ['1D', '1W', '1M', '3M', '1Y', 'ALL'];
 
-export default function AssetChart({ symbol }) {
+export default function AssetChart({ symbol, baseCurrency = 'USD', fxRate = 1, parentLoading = false }) {
     const [rawData, setRawData] = useState([]);
     const [loading, setLoading] = useState(true);
     const [range, setRange] = useState('1Y');
 
+    // Fetch raw prices (in asset's native currency) - only when symbol/range changes
     useEffect(() => {
         async function load() {
             setLoading(true);
@@ -17,9 +18,10 @@ export default function AssetChart({ symbol }) {
                 const res = await fetch(`/api/history?symbol=${symbol}&range=${range}`);
                 const json = await res.json();
                 if (json.history && json.history.length > 0) {
+                    // Store raw prices without FX conversion
                     setRawData(json.history.map(p => ({
                         date: p.date.split('T')[0],
-                        value: p.price
+                        rawPrice: p.price // Store raw price, convert later
                     })));
                 } else {
                     setRawData([]);
@@ -31,9 +33,9 @@ export default function AssetChart({ symbol }) {
             }
         }
         if (symbol) load();
-    }, [symbol, range]);
+    }, [symbol, range]); // Removed fxRate - don't re-fetch when rate changes
 
-    // Optimize data & Calculate Gradient Offset
+    // Optimize data & Calculate Gradient Offset - apply FX conversion here
     const { chartData, offset, startPrice } = useMemo(() => {
         if (!rawData || rawData.length === 0) return { chartData: [], offset: 0, startPrice: 0 };
 
@@ -44,8 +46,14 @@ export default function AssetChart({ symbol }) {
             processedData = rawData.filter((_, i) => i % step === 0);
         }
 
-        const start = rawData[0].value;
-        const prices = processedData.map(d => d.value);
+        // Apply FX conversion here (not during fetch)
+        const convertedData = processedData.map(d => ({
+            date: d.date,
+            value: d.rawPrice * fxRate
+        }));
+
+        const start = rawData[0].rawPrice * fxRate;
+        const prices = convertedData.map(d => d.value);
         const max = Math.max(...prices);
         const min = Math.min(...prices);
 
@@ -56,24 +64,23 @@ export default function AssetChart({ symbol }) {
         } else {
             off = (max - start) / (max - min);
             if (isNaN(off) || !isFinite(off)) off = 0;
-            // Clamp offset (though start should theoretically be within min/max, floating point issues or downsampling quirks might exist)
             off = Math.max(0, Math.min(1, off));
         }
 
-        return { chartData: processedData, offset: off, startPrice: start };
-    }, [rawData]);
+        return { chartData: convertedData, offset: off, startPrice: start };
+    }, [rawData, fxRate]);
 
-    if (loading) return <div className="h-40 flex items-center justify-center text-muted">Loading chart...</div>;
+    if (loading || parentLoading) return <LoadingChart />;
     if (rawData.length === 0) return <div className="h-40 flex items-center justify-center text-muted">No chart data</div>;
 
     const green = "#22c55e";
     const red = "#ef4444";
 
     return (
-        <div className="flex flex-col gap-4">
+        <div className="flex flex-col gap-4 no-select" style={{ cursor: 'default' }}>
             <div style={{ height: '240px', width: '100%' }}>
-                <ResponsiveContainer width="100%" height="100%">
-                    <AreaChart data={chartData}>
+                <ResponsiveContainer width="100%" height="100%" debounce={50}>
+                    <AreaChart data={chartData} margin={{ top: 0, right: 0, left: 0, bottom: 0 }}>
                         <defs>
                             <linearGradient id="splitColor" x1="0" y1="0" x2="0" y2="1">
                                 <stop offset={offset} stopColor={green} stopOpacity={1} />
@@ -90,13 +97,13 @@ export default function AssetChart({ symbol }) {
                             contentStyle={{ backgroundColor: '#171717', border: '1px solid #262626', borderRadius: '12px' }}
                             formatter={(val) => [
                                 <span style={{ color: val >= startPrice ? green : red }}>
-                                    {val.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                    {val.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} {baseCurrency === 'USD' ? '$' : baseCurrency}
                                 </span>,
                                 'Price'
                             ]}
                             labelStyle={{ display: 'none' }}
                             cursor={{ stroke: '#525252', strokeWidth: 1 }}
-                            isAnimationActive={false} // Improves hover performance
+                            isAnimationActive={false}
                         />
                         <Area
                             type="monotone"
@@ -120,7 +127,7 @@ export default function AssetChart({ symbol }) {
                         style={{
                             background: range === r ? 'var(--foreground)' : 'transparent',
                             color: range === r ? 'var(--background)' : 'var(--muted)',
-                            fontSize: '0.75rem', /* text-xs equivalent */
+                            fontSize: '0.75rem',
                             padding: '4px 12px'
                         }}
                     >
@@ -128,6 +135,25 @@ export default function AssetChart({ symbol }) {
                     </button>
                 ))}
             </div>
+        </div>
+    );
+}
+
+function LoadingChart() {
+    const skeletonData = [{ v: 40 }, { v: 45 }, { v: 42 }, { v: 50 }, { v: 48 }, { v: 55 }, { v: 52 }, { v: 60 }];
+    return (
+        <div style={{ height: '240px', width: '100%', opacity: 0.3, filter: 'grayscale(1)', cursor: 'default' }} className="animate-pulse no-select">
+            <ResponsiveContainer width="100%" height="100%" debounce={50}>
+                <AreaChart data={skeletonData} margin={{ top: 0, right: 0, left: 0, bottom: 0 }}>
+                    <defs>
+                        <linearGradient id="skeletonGradientAsset" x1="0" y1="0" x2="0" y2="1">
+                            <stop offset="0%" stopColor="#525252" stopOpacity={0.4} />
+                            <stop offset="100%" stopColor="#525252" stopOpacity={0} />
+                        </linearGradient>
+                    </defs>
+                    <Area type="monotone" dataKey="v" stroke="#525252" fill="url(#skeletonGradientAsset)" strokeWidth={2} isAnimationActive={false} />
+                </AreaChart>
+            </ResponsiveContainer>
         </div>
     );
 }

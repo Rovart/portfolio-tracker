@@ -30,47 +30,57 @@ export default function AssetSearch({ onSelect, onCancel }) {
     }, [query]);
 
     return (
-        <div className="flex flex-col h-full">
-            <div className="mb-6 relative">
-                <div className="flex items-center gap-3 bg-[#171717] rounded-xl px-4 py-3 border border-white/5 focus-within:border-white/20 transition-all">
-                    <Search className="text-muted" size={20} />
-                    <input
-                        type="text"
-                        placeholder="Search assets..."
-                        className="flex-1 bg-transparent text-lg text-white placeholder-neutral-500 outline-none font-medium"
-                        value={query}
-                        onChange={(e) => setQuery(e.target.value)}
-                        autoFocus
-                    />
+        <div className="flex flex-col h-full animate-enter">
+            <div className="mb-12 pt-6">
+                <div className="flex flex-col gap-3">
+                    <div className="flex items-center gap-6 bg-white/[0.03] rounded-[40px] px-10 py-8 focus-within:bg-white/[0.07] focus-within:ring-1 focus-within:ring-white/10 transition-all shadow-[0_32px_64px_-16px_rgba(0,0,0,0.5)] overflow-hidden border border-white/5">
+                        <input
+                            type="text"
+                            placeholder="Search markets..."
+                            className="input-reset"
+                            value={query}
+                            onChange={(e) => setQuery(e.target.value)}
+                            autoFocus
+                        />
+                    </div>
                 </div>
             </div>
 
             <div className="flex-1 overflow-y-auto">
-                {searching && <div className="text-muted text-center py-8">Searching...</div>}
+                <h3 className="text-xs font-bold text-muted uppercase tracking-widest mb-4 px-1">Results</h3>
 
-                {!searching && results.length === 0 && query.length >= 2 && (
-                    <div className="text-muted text-center py-8">No results found.</div>
+                {searching && (
+                    <div className="flex flex-col items-center justify-center py-20 gap-4">
+                        <div className="w-8 h-8 border-2 border-white/20 border-t-white rounded-full animate-spin" />
+                        <span className="text-muted font-medium">Searching markets...</span>
+                    </div>
                 )}
 
-                <div className="flex flex-col gap-2">
+                {!searching && results.length === 0 && query.length >= 2 && (
+                    <div className="text-muted text-center py-20 bg-[#171717]/50 rounded-3xl border border-dashed border-white/5">
+                        <p className="text-lg font-medium opacity-50">No matches found for "{query}"</p>
+                    </div>
+                )}
+
+                <div className="flex flex-col gap-3 pb-20">
                     {results.map((item) => (
                         <div
                             key={item.symbol}
-                            className="flex items-center justify-between p-4 rounded-2xl hover:bg-white/5 cursor-pointer transition-colors group"
+                            className="bg-[#171717] border border-white/5 flex items-center justify-between p-5 rounded-3xl hover:bg-white/5 active:scale-[0.98] cursor-pointer transition-all group overflow-hidden relative"
                             onClick={() => onSelect(item)}
                         >
-                            <div className="flex flex-col">
-                                <span className="font-bold text-lg group-hover:text-white transition-colors">{item.symbol}</span>
-                                <span className="text-sm text-muted">{item.shortname}</span>
+                            <div className="flex flex-col min-w-0">
+                                <span className="font-bold text-xl group-hover:text-white transition-colors tracking-tight">{item.symbol}</span>
+                                <span className="text-sm text-muted line-clamp-1">{item.shortname || item.longname}</span>
                             </div>
-                            <div className="flex flex-col items-end">
-                                <span className="text-xs font-bold px-2 py-1 bg-white/5 rounded-lg text-muted">{item.type}</span>
-                                <span className="text-xs text-muted mt-1">{item.exchange}</span>
+                            <div className="flex flex-col items-end gap-2 flex-shrink-0">
+                                <span className="text-[10px] font-bold px-2.5 py-1 bg-white/10 rounded-full text-white uppercase tracking-wider">{item.type || 'ASSET'}</span>
+                                <span className="text-xs text-muted font-medium opacity-60 uppercase">{item.exchange}</span>
                             </div>
                         </div>
                     ))}
                 </div>
             </div>
-        </div>
+        </div >
     );
 }

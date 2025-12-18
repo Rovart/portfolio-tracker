@@ -21,7 +21,8 @@ export async function GET(request) {
             symbol: item.symbol,
             shortname: item.shortname || item.longname || item.symbol,
             type: item.quoteType,
-            exchange: item.exchange
+            exchange: item.exchange,
+            currency: item.currency
         }));
 
         return NextResponse.json({ results: filtered });

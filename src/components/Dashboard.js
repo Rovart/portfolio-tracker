@@ -1,7 +1,9 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
+import { Eye, EyeOff } from 'lucide-react';
 import ProfitChart from './ProfitChart';
+import CompositionChart from './CompositionChart';
 import HoldingsList from './HoldingsList';
 import TransactionModal from './TransactionModal';
 import { calculateHoldings } from '@/utils/portfolio-logic';
@@ -19,6 +21,14 @@ export default function Dashboard({ initialTransactions }) {
     const [isModalOpen, setIsModalOpen] = useState(false); // General modal state
     const [modalMode, setModalMode] = useState('MANAGE'); // MANAGE (existing) or ADD (new)
     const [loading, setLoading] = useState(true);
+    const [pricesLoading, setPricesLoading] = useState(true);
+    const [historyLoading, setHistoryLoading] = useState(false);
+    const [hideBalances, setHideBalances] = useState(false);
+    const [baseCurrency, setBaseCurrency] = useState('USD');
+    const prevTimeframeRef = useRef(timeframe);
+    const prevBaseCurrencyRef = useRef(baseCurrency);
+
+    const CURRENCIES = ['USD', 'EUR', 'GBP', 'JPY', 'CAD', 'AUD', 'CHF', 'CNY', 'HKD', 'SGD'];
 
     // Load from LocalStorage
     useEffect(() => {
@@ -28,74 +38,216 @@ export default function Dashboard({ initialTransactions }) {
         } else {
             setTransactions(initialTransactions);
         }
+
+        const savedPrivacy = localStorage.getItem('hide_balances');
+        if (savedPrivacy === 'true') setHideBalances(true);
+
+        const savedCurrency = localStorage.getItem('base_currency');
+        if (savedCurrency) setBaseCurrency(savedCurrency);
+
         setLoading(false);
     }, [initialTransactions]);
+
+    const togglePrivacy = () => {
+        const newState = !hideBalances;
+        setHideBalances(newState);
+        localStorage.setItem('hide_balances', newState.toString());
+    };
+
+    const handleCurrencyChange = (curr) => {
+        setBaseCurrency(curr);
+        localStorage.setItem('base_currency', curr);
+    };
 
     // Fetch Prices when transactions change (implies holdings might change)
     useEffect(() => {
         if (loading) return;
 
-        // 1. Identification of unique assets
-        const uniqueAssets = [...new Set(transactions.map(t => t.baseCurrency))];
+        // Identification of unique assets
+        const baseAssets = [...new Set(transactions.map(t => t.baseCurrency))];
+        const initialQuoteAssets = [...new Set(transactions.map(t => t.quoteCurrency))].filter(c => c && c !== baseCurrency);
+
+        if (baseAssets.length === 0) {
+            setPricesLoading(false);
+            return;
+        }
 
         // 2. Fetch prices
         async function fetchQuotes() {
-            if (uniqueAssets.length === 0) return;
+            // Only show skeletons on the first load or if we have no prices yet
+            if (Object.keys(prices).length === 0) {
+                setPricesLoading(true);
+            }
+
             try {
-                const res = await fetch(`/api/quote?symbols=${uniqueAssets.join(',')}`);
+                // Pass 1: Fetch asset prices and discover currencies
+                const res = await fetch(`/api/quote?symbols=${baseAssets.join(',')}`);
                 const result = await res.json();
-                if (result.data) {
-                    const pxMap = {};
-                    result.data.forEach(q => pxMap[q.symbol] = { price: q.price, changePercent: q.changePercent });
-                    setPrices(pxMap);
+
+                if (!result.data) return;
+
+                const pxMap = {};
+                const discoveredCurrencies = new Set(initialQuoteAssets);
+
+                result.data.forEach(q => {
+                    pxMap[q.symbol] = {
+                        price: q.price,
+                        changePercent: q.changePercent,
+                        currency: q.currency,
+                        name: q.name,
+                        quoteType: q.quoteType
+                    };
+                    if (q.currency && q.currency.toUpperCase() !== baseCurrency) {
+                        discoveredCurrencies.add(q.currency.toUpperCase());
+                    }
+                });
+
+                // Pass 2: Fetch any missing exchange rates
+                const fxToFetch = [...discoveredCurrencies].filter(c => c !== baseCurrency);
+                if (fxToFetch.length > 0) {
+                    const fxSymbols = fxToFetch.map(c => `${c}${baseCurrency}=X`);
+                    const fxRes = await fetch(`/api/quote?symbols=${fxSymbols.join(',')}`);
+                    const fxResult = await fxRes.json();
+
+                    if (fxResult.data) {
+                        fxResult.data.forEach(q => {
+                            const regex = new RegExp(`^([A-Z]{3})${baseCurrency}(=X)$`, 'i');
+                            const fxMatch = q.symbol.match(regex);
+                            if (fxMatch) {
+                                const currencyCode = fxMatch[1].toUpperCase();
+                                pxMap[currencyCode] = { price: q.price, changePercent: q.changePercent };
+                                pxMap[q.symbol] = { price: q.price, changePercent: q.changePercent };
+                            }
+                        });
+                    }
                 }
+
+                // If base is not USD, we should also try to ensure we have USD converter if needed
+                if (baseCurrency !== 'USD' && !pxMap['USD']) {
+                    const usdRes = await fetch(`/api/quote?symbols=USD${baseCurrency}=X`);
+                    const usdResult = await usdRes.json();
+                    if (usdResult.data && usdResult.data[0]) {
+                        const q = usdResult.data[0];
+                        pxMap['USD'] = { price: q.price, changePercent: q.changePercent };
+                        pxMap[`USD${baseCurrency}=X`] = { price: q.price, changePercent: q.changePercent };
+                    }
+                }
+
+                setPrices(pxMap);
+                setPricesLoading(false);
             } catch (e) {
                 console.error('Failed to fetch quotes', e);
+                setPricesLoading(false);
             }
         }
 
         fetchQuotes();
-        // Refresh prices every 60s
-        const interval = setInterval(fetchQuotes, 60000);
+        // Refresh prices every 30s in the background
+        const interval = setInterval(fetchQuotes, 30000);
         return () => clearInterval(interval);
 
-    }, [transactions, loading]);
+    }, [transactions, loading, baseCurrency]);
 
     // Recalculate Holdings when transactions or prices change
     useEffect(() => {
-        const h = calculateHoldings(transactions, prices);
+        const h = calculateHoldings(transactions, prices, baseCurrency);
         setHoldings(h);
-    }, [transactions, prices]);
+    }, [transactions, prices, baseCurrency]);
+
+    // UI Scroll reset: Only on timeframe change
+    useEffect(() => {
+        window.scrollTo({ top: 0, behavior: 'instant' });
+    }, [timeframe]);
 
     // TRUE PORTFOLIO HISTORY
     useEffect(() => {
         if (!transactions || transactions.length === 0) return;
 
         async function loadTrueHistory() {
-            // 1. Identify all assets ever touched (Base OR Quote if needed, usually just Base for price lookup)
-            const uniqueAssets = [...new Set(transactions.map(t => t.baseCurrency))];
-            const range = '1Y'; // Default to 1Y logic for now or mapped timeframe
+            // Only show skeleton on timeframe/currency change or initial load
+            const hasChangedRange = prevTimeframeRef.current !== timeframe || prevBaseCurrencyRef.current !== baseCurrency;
+            if (hasChangedRange || history.length === 0) {
+                setHistoryLoading(true);
+            }
+            prevTimeframeRef.current = timeframe;
+            prevBaseCurrencyRef.current = baseCurrency;
+            // 1. Identify all assets and explicit quote currencies
+            const baseAssets = [...new Set(transactions.map(t => t.baseCurrency))];
+            const explicitQuoteAssets = [...new Set(transactions.map(t => t.quoteCurrency))].filter(c => c && c !== baseCurrency);
 
             const historyMap = {};
+            const discoveredCurrencies = new Set(explicitQuoteAssets);
 
-            await Promise.all(uniqueAssets.map(async (sym) => {
-                if (sym === 'USD' || !sym) return;
+            try {
+                // Pass 1: Get current quotes to discover currencies for baseAssets
+                const res = await fetch(`/api/quote?symbols=${baseAssets.join(',')}`);
+                const result = await res.json();
+                if (result.data) {
+                    result.data.forEach(q => {
+                        if (q.currency && q.currency.toUpperCase() !== baseCurrency) {
+                            discoveredCurrencies.add(q.currency.toUpperCase());
+                        }
+                    });
+                }
+            } catch (e) {
+                console.error("Discovery error", e);
+            }
+
+            // Pass 2: Fetch history for all base assets and discovered quote currencies
+            const allSymbolsToFetch = [...new Set([...baseAssets, ...[...discoveredCurrencies].map(c => `${c}${baseCurrency}=X`)])];
+
+            await Promise.all(allSymbolsToFetch.map(async (fetchSym) => {
+                if (fetchSym === 'USD' || !fetchSym) return;
                 try {
-                    // We fetch 1Y (or ALL) to build the timeline
-                    // Simplification: We only care about the visual part, but accurate calc needs history before that? 
-                    // calculatePortfolioHistory iterates from First Tx. So we need history from First Tx.
-                    const res = await fetch(`/api/history?symbol=${sym}&range=ALL`);
+                    const res = await fetch(`/api/history?symbol=${fetchSym}&range=ALL`);
                     const data = await res.json();
                     if (data.history) {
-                        historyMap[sym] = data.history.map(d => ({
+                        const historyData = data.history.map(d => ({
                             date: d.date.split('T')[0],
                             price: d.price
                         }));
+                        historyMap[fetchSym] = historyData;
+                        // Map back from 'EURUSD=X' to 'EUR' for the logic
+                        const regex = new RegExp(`^([A-Z]{3})${baseCurrency}(=X)$`, 'i');
+                        const fxMatch = fetchSym.match(regex);
+                        if (fxMatch) {
+                            historyMap[fxMatch[1].toUpperCase()] = historyData;
+                        }
                     }
                 } catch (e) { console.error(e); }
             }));
 
-            const chartData = calculatePortfolioHistory(transactions, historyMap);
+            // Create a quote mapping for the history calculation
+            const quoteMap = {};
+            transactions.forEach(t => {
+                if (t.baseCurrency && t.quoteCurrency) {
+                    quoteMap[t.baseCurrency] = t.quoteCurrency;
+                }
+            });
+
+            // Fallback: use live prices to fill in missing currencies in quoteMap
+            Object.keys(prices).forEach(sym => {
+                if (!quoteMap[sym] && prices[sym].currency) {
+                    quoteMap[sym] = prices[sym].currency;
+                }
+            });
+
+            const chartData = calculatePortfolioHistory(transactions, historyMap, baseCurrency, quoteMap);
+
+            // Ensure the chart matches the current real-time total
+            const realTimeHoldings = calculateHoldings(transactions, prices, baseCurrency);
+            const currentTotal = realTimeHoldings.reduce((acc, h) => acc + h.value, 0);
+
+            // ONLY push the real-time point if we actually have prices, 
+            // otherwise it might drop to 0 erroneously on initial load
+            const hasPrices = Object.keys(prices).length > 0;
+
+            if (chartData.length > 0 && hasPrices) {
+                chartData.push({
+                    date: new Date().toISOString(),
+                    value: currentTotal
+                });
+            }
 
             // Filter for view
             const now = new Date();
@@ -109,12 +261,13 @@ export default function Dashboard({ initialTransactions }) {
 
             const cutoffStr = cutoff.toISOString().split('T')[0];
             setHistory(chartData.filter(d => d.date >= cutoffStr));
+            setHistoryLoading(false);
         }
 
         const tId = setTimeout(loadTrueHistory, 500);
         return () => clearTimeout(tId);
 
-    }, [transactions, timeframe]);
+    }, [transactions, timeframe, prices, baseCurrency]);
 
 
     const syncTransactionsToFile = async (updatedTx) => {
@@ -156,86 +309,232 @@ export default function Dashboard({ initialTransactions }) {
     };
 
     const openManageModal = (holding) => {
-        setSelectedHolding(holding);
+        setSelectedHolding({
+            asset: holding.asset,
+            price: holding.localPrice, // Use local price for the modal context
+            amount: holding.amount, // Pass current amount for MAX button
+            originalType: holding.originalType // Ensure type is passed for normalization
+        });
         setModalMode('MANAGE');
         setIsModalOpen(true);
     };
 
     // Dashboard calculations
     const totalValue = holdings.reduce((acc, h) => acc + (h.value || 0), 0);
-    // Calculate 24h change amount based on holdings
-    const prevValue = holdings.reduce((acc, h) => {
+
+    // Dynamic Timeframe Performance Calculation
+    let displayDiff = 0;
+    let displayPercent = 0;
+
+    // Daily change for comparison
+    const prevValueDay = holdings.reduce((acc, h) => {
         const changeFactor = 1 + ((h.change24h || 0) / 100);
-        // Avoid divide by zero
         if (Math.abs(changeFactor) < 0.0001) return acc + h.value;
         return acc + (h.value / changeFactor);
     }, 0);
+    const displayDiffDay = totalValue - prevValueDay;
+    const displayPercentDay = prevValueDay !== 0 ? (displayDiffDay / prevValueDay) * 100 : 0;
 
-    const diff = totalValue - prevValue;
-    let percent = 0;
-    if (prevValue !== 0 && !isNaN(prevValue) && isFinite(prevValue)) {
-        percent = (diff / prevValue) * 100;
+    if (timeframe === '1D') {
+        displayDiff = displayDiffDay;
+        displayPercent = displayPercentDay;
+    } else if (history.length > 1) {
+        // Calculate performance from the start of the current historical view
+        const startPoint = history[0].value;
+        const currentPoint = history[history.length - 1].value;
+        displayDiff = currentPoint - startPoint;
+        if (startPoint !== 0) displayPercent = (displayDiff / startPoint) * 100;
     }
 
-    // Final safety check
-    const safeDiff = isNaN(diff) ? 0 : diff;
-    const safePercent = isNaN(percent) ? 0 : percent;
+    const safeDiff = displayDiff || 0;
+    const safePercent = displayPercent || 0;
 
     return (
-        <div className="container animate-enter">
-            <header className="flex flex-col items-center py-8 gap-2 relative">
-                <h1 className="text-muted text-sm uppercase tracking-wider">Total Balance</h1>
-                <div className="text-4xl font-bold">
-                    ${totalValue.toLocaleString(undefined, { maximumFractionDigits: 2 })}
+        <>
+            <div className="container animate-enter">
+                <div className="grid-desktop">
+                    {/* Main Content: Charts & Performance */}
+                    <div className="main-content">
+                        <header className="flex flex-col items-start pb-8 gap-4 w-full overflow-hidden">
+                            <div className="flex items-center justify-between w-full gap-2">
+                                <div className="flex items-center gap-2">
+                                    <span className="text-muted text-sm uppercase tracking-wider font-bold">Portfolio Performance</span>
+                                    <button
+                                        onClick={togglePrivacy}
+                                        className="p-1 text-muted hover:text-white transition-colors"
+                                        style={{ background: 'transparent', border: 'none', cursor: 'pointer' }}
+                                        title={hideBalances ? "Show Balances" : "Hide Balances"}
+                                    >
+                                        {hideBalances ? <EyeOff size={16} /> : <Eye size={16} />}
+                                    </button>
+                                </div>
+                                <div className="relative">
+                                    <select
+                                        value={baseCurrency}
+                                        onChange={(e) => handleCurrencyChange(e.target.value)}
+                                        className="bg-white-5 hover:bg-white-10 border border-white-10 text-white text-xs font-bold rounded-full cursor-pointer transition-all focus:outline-none"
+                                        style={{
+                                            appearance: 'none',
+                                            WebkitAppearance: 'none',
+                                            MozAppearance: 'none',
+                                            padding: '6px 32px 6px 16px',
+                                            width: 'auto',
+                                            minWidth: '80px',
+                                            backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='white' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E")`,
+                                            backgroundRepeat: 'no-repeat',
+                                            backgroundPosition: 'right 12px center'
+                                        }}
+                                    >
+                                        {CURRENCIES.map(c => (
+                                            <option key={c} value={c} style={{ backgroundColor: '#171717', color: 'white' }}>
+                                                {c}
+                                            </option>
+                                        ))}
+                                    </select>
+                                </div>
+                            </div>
+                            {pricesLoading || (historyLoading && timeframe !== '1D') ? (
+                                <div className="flex flex-col gap-2">
+                                    {/* Consolidated loading state: only show skeletons for what's missing */}
+                                    {pricesLoading ? (
+                                        <>
+                                            <div className="h-10 w-48 bg-white-10 rounded animate-pulse" />
+                                            <div className="flex gap-4">
+                                                <div className="h-6 w-32 bg-white-10 rounded animate-pulse" />
+                                                <div className="h-6 w-40 bg-white-10 rounded animate-pulse" />
+                                            </div>
+                                        </>
+                                    ) : (
+                                        <>
+                                            <div className="flex flex-wrap items-center gap-3">
+                                                <div className="text-xl font-bold tracking-tight">
+                                                    {hideBalances ? '••••••' : `${totalValue.toLocaleString(undefined, { maximumFractionDigits: 2 })} ${baseCurrency === 'USD' ? '$' : baseCurrency}`}
+                                                </div>
+                                            </div>
+                                            <div className="flex gap-4">
+                                                <div className="h-6 w-32 bg-white-10 rounded animate-pulse" />
+                                                <div className="h-6 w-40 bg-white-10 rounded animate-pulse" />
+                                            </div>
+                                        </>
+                                    )}
+                                </div>
+                            ) : (
+                                <div className="flex flex-col gap-1">
+                                    <div className="flex flex-wrap items-center gap-3">
+                                        <div className="text-xl font-bold tracking-tight">
+                                            {hideBalances ? '••••••' : `${totalValue.toLocaleString(undefined, { maximumFractionDigits: 2 })} ${baseCurrency === 'USD' ? '$' : baseCurrency}`}
+                                        </div>
+                                        {timeframe !== '1D' && (
+                                            <div style={{ marginLeft: '5px' }} className={`text-xs px-2 py-0.5 rounded-md font-medium ${displayDiffDay >= 0 ? 'bg-success/10 text-success' : 'bg-danger/10 text-danger'}`}>
+                                                {hideBalances ? (
+                                                    `(${displayPercentDay >= 0 ? '+' : ''}${displayPercentDay.toFixed(2)}%)`
+                                                ) : (
+                                                    `${displayDiffDay >= 0 ? '+' : '-'}${Math.abs(displayDiffDay).toLocaleString(undefined, { maximumFractionDigits: 0 })} ${baseCurrency === 'USD' ? '$' : baseCurrency} (${displayPercentDay >= 0 ? '+' : ''}${displayPercentDay.toFixed(2)}%)`
+                                                )}
+                                            </div>
+                                        )}
+                                    </div>
+                                    <div className={`text font-medium flex flex-wrap items-center gap-x-3`}>
+                                        <div className={safeDiff >= 0 ? 'text-success' : 'text-danger'}>
+                                            {hideBalances ? (
+                                                <span className="flex items-center gap-1">
+                                                    {safePercent >= 0 ? '+' : ''}{safePercent.toFixed(2)}%
+                                                </span>
+                                            ) : (
+                                                <span>{safeDiff >= 0 ? '+' : '-'}{Math.abs(safeDiff).toLocaleString(undefined, { maximumFractionDigits: 2 })} {baseCurrency === 'USD' ? '$' : baseCurrency} ({safePercent >= 0 ? '+' : ''}{safePercent.toFixed(2)}%)</span>
+                                            )}
+                                        </div>
+                                    </div>
+                                </div>
+                            )}
+                        </header>
+
+                        <div className="no-select">
+                            <ProfitChart
+                                data={history}
+                                baseCurrency={baseCurrency}
+                                hideBalances={hideBalances}
+                                loading={historyLoading}
+                            />
+                        </div>
+
+
+                        <div className="flex justify-between mb-8 overflow-x-auto gap-1 sm:gap-2 no-scrollbar">
+                            {TIMEFRAMES.map((tf) => (
+                                <button
+                                    key={tf}
+                                    onClick={() => setTimeframe(tf)}
+                                    className={`btn ${timeframe === tf ? 'bg-white text-black shadow-lg' : 'btn-ghost opacity-60 hover:opacity-100'}`}
+                                    style={{
+                                        background: timeframe === tf ? 'var(--foreground)' : 'transparent',
+                                        color: timeframe === tf ? 'var(--background)' : 'var(--muted)',
+                                        flex: 1,
+                                        minWidth: '45px',
+                                        padding: '8px 4px',
+                                        fontSize: '0.75rem'
+                                    }}
+                                >
+                                    {tf}
+                                </button>
+                            ))}
+                        </div>
+
+                        <div className="mb-6 desktop-only no-select">
+                            <CompositionChart holdings={holdings} baseCurrency={baseCurrency} hideBalances={hideBalances} loading={pricesLoading} />
+                        </div>
+                    </div>
+
+                    {/* Sidebar: Balance & Holdings */}
+                    <div className="sidebar">
+
+                        <HoldingsList
+                            holdings={holdings}
+                            loading={pricesLoading}
+                            onSelect={openManageModal}
+                            hideBalances={hideBalances}
+                            baseCurrency={baseCurrency}
+                        />
+                    </div>
                 </div>
-                <div className={`text-lg ${safeDiff >= 0 ? 'text-success' : 'text-danger'}`}>
-                    {safeDiff >= 0 ? '+' : ''}${Math.abs(safeDiff).toLocaleString(undefined, { maximumFractionDigits: 2 })} ({safePercent.toFixed(2)}%)
-                </div>
-
-                <button
-                    onClick={openAddModal}
-                    className="btn absolute right-0 top-8"
-                    style={{ padding: '8px 12px', fontSize: '24px', lineHeight: '1' }}
-                >
-                    +
-                </button>
-            </header>
-
-            <div className="flex justify-between mb-8 overflow-x-auto gap-2 no-scrollbar">
-                {TIMEFRAMES.map((tf) => (
-                    <button
-                        key={tf}
-                        onClick={() => setTimeframe(tf)}
-                        className={`btn ${timeframe === tf ? 'bg-white text-black' : 'btn-ghost'}`}
-                        style={{
-                            background: timeframe === tf ? 'var(--foreground)' : 'transparent',
-                            color: timeframe === tf ? 'var(--background)' : 'var(--muted)'
-                        }}
-                    >
-                        {tf}
-                    </button>
-                ))}
             </div>
-
-            <div className="mb-8">
-                <ProfitChart data={history} />
-            </div>
-
-            <HoldingsList
-                holdings={holdings}
-                onSelect={openManageModal}
-            />
 
             {isModalOpen && (
                 <TransactionModal
                     mode={modalMode} // ADD or MANAGE
                     holding={selectedHolding} // Null if ADD
                     transactions={transactions}
+                    hideBalances={hideBalances}
+                    baseCurrency={baseCurrency}
                     onClose={() => setIsModalOpen(false)}
                     onSave={handleSaveTransaction}
                     onDelete={handleDeleteTransaction}
                 />
             )}
-        </div>
+
+            {!isModalOpen && (
+                <button
+                    onClick={openAddModal}
+                    className="btn fixed hover-scale active-scale shadow-lg"
+                    style={{
+                        bottom: '32px',
+                        right: '32px',
+                        width: '64px',
+                        height: '64px',
+                        borderRadius: '50%',
+                        fontSize: '32px',
+                        lineHeight: '1',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        background: 'white',
+                        color: 'black',
+                        zIndex: 10,
+                        boxShadow: '0 12px 40px rgba(0,0,0,0.5)'
+                    }}
+                >
+                    +
+                </button>
+            )}
+        </>
     );
 }
