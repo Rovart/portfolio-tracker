@@ -37,7 +37,7 @@ A premium, dark-mode portfolio tracker built with Next.js, Recharts, and Yahoo F
 1. Clone the repository:
    ```bash
    git clone https://github.com/Rovart/portfolio-tracker.git
-   cd portfolio-tracker/web
+   cd portfolio-tracker
    ```
 
 2. Install dependencies:
