@@ -1,3 +1,5 @@
+import { normalizeAsset } from './portfolio-logic';
+
 export function calculatePortfolioHistory(transactions, historicalPrices, baseCurrency = 'USD', externalQuoteMap = {}) {
     if (!transactions || transactions.length === 0) return [];
 
