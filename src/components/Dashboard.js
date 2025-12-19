@@ -23,6 +23,7 @@ export default function Dashboard({ initialTransactions }) {
     const [loading, setLoading] = useState(true);
     const [pricesLoading, setPricesLoading] = useState(true);
     const [historyLoading, setHistoryLoading] = useState(false);
+    const [rawHistory, setRawHistory] = useState([]); // Static historical data
     const [hideBalances, setHideBalances] = useState(false);
     const [baseCurrency, setBaseCurrency] = useState('USD');
     const prevTimeframeRef = useRef(timeframe);
@@ -169,7 +170,7 @@ export default function Dashboard({ initialTransactions }) {
         async function loadTrueHistory() {
             // Only show skeleton on timeframe/currency change or initial load
             const hasChangedRange = prevTimeframeRef.current !== timeframe || prevBaseCurrencyRef.current !== baseCurrency;
-            if (hasChangedRange || history.length === 0) {
+            if (hasChangedRange || rawHistory.length === 0) {
                 setHistoryLoading(true);
             }
             prevTimeframeRef.current = timeframe;
@@ -256,41 +257,52 @@ export default function Dashboard({ initialTransactions }) {
             });
 
             const chartData = calculatePortfolioHistory(transactions, historyMap, baseCurrency, quoteMap);
-
-            // Ensure the chart matches the current real-time total
-            const realTimeHoldings = calculateHoldings(transactions, prices, baseCurrency);
-            const currentTotal = realTimeHoldings.reduce((acc, h) => acc + h.value, 0);
-
-            // ONLY push the real-time point if we actually have prices, 
-            // otherwise it might drop to 0 erroneously on initial load
-            const hasPrices = Object.keys(prices).length > 0;
-
-            if (chartData.length > 0 && hasPrices) {
-                chartData.push({
-                    date: new Date().toISOString(),
-                    value: currentTotal
-                });
-            }
-
-            // Filter for view
-            const now = new Date();
-            let cutoff = new Date();
-            if (timeframe === '1D') cutoff.setDate(now.getDate() - 1);
-            else if (timeframe === '1W') cutoff.setDate(now.getDate() - 7);
-            else if (timeframe === '1M') cutoff.setMonth(now.getMonth() - 1);
-            else if (timeframe === '1Y') cutoff.setFullYear(now.getFullYear() - 1);
-            else if (timeframe === 'YTD') cutoff = new Date(now.getFullYear(), 0, 1);
-            else if (timeframe === 'ALL') cutoff = new Date(0); // Epoch
-
-            const cutoffStr = cutoff.toISOString();
-            setHistory(chartData.filter(d => d.date >= cutoffStr));
+            setRawHistory(chartData);
             setHistoryLoading(false);
         }
 
         const tId = setTimeout(loadTrueHistory, 500);
         return () => clearTimeout(tId);
 
-    }, [transactions, timeframe, prices, baseCurrency]);
+    }, [transactions, timeframe, baseCurrency]);
+
+    // DERIVED HISTORY: Merge static history with real-time price point
+    useEffect(() => {
+        if (!rawHistory.length) return;
+
+        // 1. Calculate the real-time point
+        const realTimeHoldings = calculateHoldings(transactions, prices, baseCurrency);
+        const currentTotal = realTimeHoldings.reduce((acc, h) => acc + h.value, 0);
+        const hasPrices = Object.keys(prices).length > 0;
+
+        const finalHistory = [...rawHistory];
+        if (hasPrices) {
+            finalHistory.push({
+                date: new Date().toISOString(),
+                value: currentTotal
+            });
+        }
+
+        // 2. Apply Timeframe Cutoff
+        const now = new Date();
+        let cutoff = new Date();
+        if (timeframe === '1D') cutoff.setDate(now.getDate() - 1);
+        else if (timeframe === '1W') cutoff.setDate(now.getDate() - 7);
+        else if (timeframe === '1M') cutoff.setMonth(now.getMonth() - 1);
+        else if (timeframe === '1Y') cutoff.setFullYear(now.getFullYear() - 1);
+        else if (timeframe === 'YTD') cutoff = new Date(now.getFullYear(), 0, 1);
+        else if (timeframe === 'ALL') {
+            // Find the first transaction date
+            const firstTxDate = transactions.length > 0
+                ? new Date(Math.min(...transactions.map(t => new Date(t.date))))
+                : new Date(0);
+            cutoff = firstTxDate;
+        }
+
+        const cutoffStr = cutoff.toISOString();
+        setHistory(finalHistory.filter(d => d.date >= cutoffStr));
+
+    }, [rawHistory, prices, transactions, timeframe, baseCurrency]);
 
 
     const syncTransactionsToFile = async (updatedTx) => {
