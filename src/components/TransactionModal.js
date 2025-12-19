@@ -695,6 +695,14 @@ function TransactionForm({ holding, existingTx, transactions, onSave, onCancel, 
                             }}
                             placeholder="0.00"
                         />
+                        {amount && price && !isNaN(parseFloat(amount)) && !isNaN(parseFloat(price)) && (
+                            <div className="mt-2 ml-1 flex gap-1 items-center">
+                                <span className="text-xs text-muted font-medium uppercase tracking-wider">Total:</span>
+                                <span className="text-xs font-bold text-white">
+                                    {(parseFloat(amount) * parseFloat(price)).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} {detectedQuote}
+                                </span>
+                            </div>
+                        )}
                     </div>
 
                     <div
