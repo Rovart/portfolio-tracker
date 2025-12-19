@@ -769,7 +769,6 @@ export default function Dashboard() {
                         <Search size={32} />
                     </button>
                 )}
-            </div>
             </PullToRefresh>
         </>
     );
