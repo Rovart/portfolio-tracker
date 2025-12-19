@@ -16,7 +16,7 @@ export default function Dashboard({ initialTransactions }) {
     const [holdings, setHoldings] = useState([]);
     const [prices, setPrices] = useState({});
     const [history, setHistory] = useState([]);
-    const [timeframe, setTimeframe] = useState('1M');
+    const [timeframe, setTimeframe] = useState('1D');
     const [selectedHolding, setSelectedHolding] = useState(null); // Valid holding object
     const [isModalOpen, setIsModalOpen] = useState(false); // General modal state
     const [modalMode, setModalMode] = useState('MANAGE'); // MANAGE (existing) or ADD (new)
