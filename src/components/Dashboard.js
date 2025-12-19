@@ -29,6 +29,7 @@ export default function Dashboard() {
     const [hideBalances, setHideBalances] = useState(false);
     const [baseCurrency, setBaseCurrency] = useState('USD');
     const [showSettings, setShowSettings] = useState(false);
+    const [refreshTrigger, setRefreshTrigger] = useState(0); // Increments to force data refetch
     const prevTimeframeRef = useRef(timeframe);
     const prevBaseCurrencyRef = useRef(baseCurrency);
     const prevBaseCurrencyQuotesRef = useRef(baseCurrency);
@@ -82,9 +83,10 @@ export default function Dashboard() {
     const handleRefresh = useCallback(async () => {
         setPricesLoading(true);
         setHistoryLoading(true);
-        // Clear cached data to force fresh fetch
+        // Clear cached data and increment trigger to force useEffect to re-run
         setPrices({});
         setRawHistory([]);
+        setRefreshTrigger(prev => prev + 1);
         // Small delay to show the refresh indicator
         await new Promise(resolve => setTimeout(resolve, 300));
     }, []);
@@ -180,7 +182,7 @@ export default function Dashboard() {
         const interval = setInterval(fetchQuotes, 30000);
         return () => clearInterval(interval);
 
-    }, [transactions, loading, baseCurrency]);
+    }, [transactions, loading, baseCurrency, refreshTrigger]);
 
     // Recalculate Holdings when transactions or prices change
     useEffect(() => {
@@ -338,7 +340,7 @@ export default function Dashboard() {
         loadTrueHistory();
 
 
-    }, [transactions, timeframe, baseCurrency, pricesLoading]);
+    }, [transactions, timeframe, baseCurrency, pricesLoading, refreshTrigger]);
 
     // DERIVED HISTORY: Apply timeframe cutoff to raw history
     // NOTE: We no longer append a "real-time" point as it was causing value mismatches.
