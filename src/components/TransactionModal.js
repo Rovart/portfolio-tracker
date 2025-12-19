@@ -456,15 +456,25 @@ function TransactionForm({ holding, existingTx, transactions, onSave, onCancel, 
     // Standardize symbol access
     const sym = holding.symbol || holding.asset;
 
-    // Detect quote currency from symbol (e.g., BTC-EUR -> EUR)
+    // Detect quote currency from symbol (e.g., BTC-EUR -> EUR, SAP.DE -> EUR)
     const detectedQuote = useMemo(() => {
         if (fetchedCurrency) return fetchedCurrency.toUpperCase();
         if (holding.currency) return holding.currency.toUpperCase();
         if (!sym) return 'USD';
-        const parts = sym.split(/[-/]/);
+
+        // Try to split by common dividers
+        const parts = sym.split(/[-/.]/);
+        // Special case for Yahoo Finance symbols like SAP.DE, AAPL.MI etc.
+        if (sym.includes('.') && parts.length > 1) {
+            const suffix = parts[parts.length - 1].toUpperCase();
+            const suffixMap = { 'DE': 'EUR', 'MI': 'EUR', 'PA': 'EUR', 'AS': 'EUR', 'MC': 'EUR', 'L': 'GBP', 'HK': 'HKD', 'TO': 'CAD' };
+            if (suffixMap[suffix]) return suffixMap[suffix];
+        }
+
         if (parts.length > 1) {
             const quote = parts[parts.length - 1].toUpperCase();
-            return quote;
+            // Basic sanity check to ensure it looks like a currency code
+            if (quote.length === 3) return quote;
         }
         return 'USD';
     }, [sym, holding.currency, fetchedCurrency]);
@@ -476,9 +486,14 @@ function TransactionForm({ holding, existingTx, transactions, onSave, onCancel, 
 
     // Calculate quote balance to determine default toggle state
     const quoteBalance = useMemo(() => {
-        if (!transactions) return 0;
+        if (!transactions || !detectedQuote) return 0;
+        const q = detectedQuote.toUpperCase();
         return transactions
-            .filter(t => t.baseCurrency === detectedQuote)
+            .filter(t => {
+                const b = (t.baseCurrency || '').toUpperCase();
+                // Match "EUR", "EUR=X", "EURUSD=X" or "EUR-USD"
+                return b === q || b === `${q}=X` || b === `${q}USD=X` || b === `${q}-USD` || b === `USD-${q}`;
+            })
             .reduce((acc, t) => {
                 const bAmt = parseFloat(t.baseAmount) || 0;
                 if (['BUY', 'DEPOSIT'].includes(t.type)) return acc + bAmt;
