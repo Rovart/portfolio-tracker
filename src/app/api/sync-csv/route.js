@@ -11,7 +11,13 @@ export async function POST(request) {
             return NextResponse.json({ error: 'Invalid transactions data' }, { status: 400 });
         }
 
-        const filePath = path.join(process.cwd(), 'data', 'portfolio.csv');
+        const dataDir = path.join(process.cwd(), 'data');
+        const filePath = path.join(dataDir, 'portfolio.csv');
+
+        // Create data directory if it doesn't exist
+        if (!fs.existsSync(dataDir)) {
+            fs.mkdirSync(dataDir, { recursive: true });
+        }
 
         // Map app transactions back to the CSV headers
         // Header: Date,Way,Base amount,Base currency (name),Base type,Quote amount,Quote currency,Exchange,Sent/Received from,Sent to,Fee amount,Fee currency (name),Broker,Notes,Sync Base Holding,Leverage Metadata
