@@ -1,5 +1,7 @@
 # Portfolio Tracker
 
+![Portfolio Tracker Banner](.github/screenshot.png)
+
 A premium, dark-mode portfolio tracker built with Next.js, Recharts, and Yahoo Finance. Track your investments across stocks, cryptocurrencies, and forex with real-time data, advanced analytics, and a beautiful user interface.
 
 ## ✨ Features
