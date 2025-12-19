@@ -133,25 +133,26 @@ export function calculatePortfolioHistory(transactions, historicalPrices, baseCu
         const q3 = values[q3Index];
         const iqr = q3 - q1;
 
-        // Bounds: anything outside 2x IQR from Q1/Q3 is an outlier
-        const lowerBound = q1 - (2 * iqr);
-        const upperBound = q3 + (2 * iqr);
+        // Tighter bounds: 1.5x IQR (more aggressive outlier detection)
+        const lowerBound = q1 - (1.5 * iqr);
+        const upperBound = q3 + (1.5 * iqr);
 
         // Replace outliers with rolling median of 5 neighbors
-        const smoothed = dailyData.map((point, i, arr) => {
+        let smoothed = dailyData.map((point, i, arr) => {
             if (point.value < lowerBound || point.value > upperBound) {
-                // Get up to 5 neighbors (2 before, current, 2 after)
                 const start = Math.max(0, i - 2);
                 const end = Math.min(arr.length, i + 3);
-                const neighbors = arr.slice(start, end).map(p => p.value).sort((a, b) => a - b);
-                const median = neighbors[Math.floor(neighbors.length / 2)];
-                return { ...point, value: median };
+                const neighbors = arr.slice(start, end).map(p => p.value).filter(v => v > 0).sort((a, b) => a - b);
+                if (neighbors.length > 0) {
+                    const median = neighbors[Math.floor(neighbors.length / 2)];
+                    return { ...point, value: median };
+                }
             }
             return point;
         });
 
-        // SECOND PASS: Catch remaining V-shape spikes using neighbor comparison
-        for (let pass = 0; pass < 2; pass++) {
+        // MULTIPLE PASSES: Catch remaining V-shape spikes
+        for (let pass = 0; pass < 4; pass++) {
             for (let i = 1; i < smoothed.length - 1; i++) {
                 const prev = smoothed[i - 1].value;
                 const curr = smoothed[i].value;
@@ -162,8 +163,8 @@ export function calculatePortfolioHistory(transactions, historicalPrices, baseCu
                 const diffPrev = Math.abs(curr - prev) / prev;
                 const diffNext = Math.abs(curr - next) / next;
 
-                // Catch remaining spikes: >30% deviation from BOTH neighbors
-                if (diffPrev > 0.3 && diffNext > 0.3) {
+                // Catch spikes: >20% deviation from BOTH neighbors
+                if (diffPrev > 0.2 && diffNext > 0.2) {
                     smoothed[i] = { ...smoothed[i], value: (prev + next) / 2 };
                 }
             }

@@ -63,14 +63,18 @@ export default function ProfitChart({ data, baseCurrency, hideBalances, loading 
                         domain={['auto', 'auto']}
                     />
                     <Tooltip
-                        contentStyle={{ backgroundColor: '#171717', border: '1px solid #262626', borderRadius: '8px' }}
+                        contentStyle={{ backgroundColor: '#171717', border: '1px solid #262626', borderRadius: '8px', padding: '8px 12px' }}
                         formatter={(value) => [
                             <span style={{ color: value >= startValue ? green : red }}>
                                 {hideBalances ? '••••••' : `${value.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ${baseCurrency === 'USD' ? '$' : baseCurrency}`}
                             </span>,
                             'Value'
                         ]}
-                        labelStyle={{ display: 'none' }}
+                        labelFormatter={(label) => {
+                            const date = new Date(label);
+                            return date.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+                        }}
+                        labelStyle={{ color: '#a1a1aa', fontSize: '0.75rem', marginBottom: '4px' }}
                         cursor={{ stroke: '#525252', strokeWidth: 1 }}
                         isAnimationActive={false}
                     />

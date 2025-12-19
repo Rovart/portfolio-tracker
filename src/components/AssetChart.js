@@ -94,14 +94,18 @@ export default function AssetChart({ symbol, baseCurrency = 'USD', fxRate = 1, p
                         <XAxis dataKey="date" hide />
                         <YAxis domain={['auto', 'auto']} hide />
                         <Tooltip
-                            contentStyle={{ backgroundColor: '#171717', border: '1px solid #262626', borderRadius: '12px' }}
+                            contentStyle={{ backgroundColor: '#171717', border: '1px solid #262626', borderRadius: '12px', padding: '8px 12px' }}
                             formatter={(val) => [
                                 <span style={{ color: val >= startPrice ? green : red }}>
                                     {val.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} {baseCurrency === 'USD' ? '$' : baseCurrency}
                                 </span>,
                                 'Price'
                             ]}
-                            labelStyle={{ display: 'none' }}
+                            labelFormatter={(label) => {
+                                const date = new Date(label);
+                                return date.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+                            }}
+                            labelStyle={{ color: '#a1a1aa', fontSize: '0.75rem', marginBottom: '4px' }}
                             cursor={{ stroke: '#525252', strokeWidth: 1 }}
                             isAnimationActive={false}
                         />
