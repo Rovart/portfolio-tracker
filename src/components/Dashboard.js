@@ -75,11 +75,13 @@ export default function Dashboard({ initialTransactions }) {
         }
 
         // 2. Fetch prices
+        let isInitialFetch = Object.keys(prices).length === 0;
         async function fetchQuotes() {
-            // Only show skeletons on the first load, if we have no prices yet, or if base currency changed
+            // Only show skeletons on the VERY FIRST load or explicit currency change, never on background refresh
             const currencyChanged = prevBaseCurrencyQuotesRef.current !== baseCurrency;
-            if (Object.keys(prices).length === 0 || currencyChanged) {
+            if (isInitialFetch || currencyChanged) {
                 setPricesLoading(true);
+                isInitialFetch = false;
             }
             prevBaseCurrencyQuotesRef.current = baseCurrency;
 
@@ -169,7 +171,6 @@ export default function Dashboard({ initialTransactions }) {
         if (!transactions || transactions.length === 0 || pricesLoading) return;
 
         async function loadTrueHistory() {
-            // Only show skeleton on timeframe/currency change or initial load
             const hasChangedRange = prevTimeframeRef.current !== timeframe || prevBaseCurrencyRef.current !== baseCurrency;
             if (hasChangedRange || rawHistory.length === 0) {
                 setHistoryLoading(true);
@@ -266,8 +267,8 @@ export default function Dashboard({ initialTransactions }) {
             setHistoryLoading(false);
         }
 
-        const tId = setTimeout(loadTrueHistory, 500);
-        return () => clearTimeout(tId);
+        loadTrueHistory();
+
 
     }, [transactions, timeframe, baseCurrency, pricesLoading]);
 
@@ -312,9 +313,22 @@ export default function Dashboard({ initialTransactions }) {
             });
         }
 
+        // Append live price point if prices are stable
+        const hasPrices = Object.keys(prices).length > 0 && !pricesLoading;
+        if (hasPrices) {
+            const realTimeHoldings = calculateHoldings(transactions, prices, baseCurrency);
+            const currentTotal = realTimeHoldings.reduce((acc, h) => acc + h.value, 0);
+            if (currentTotal > 0) {
+                filtered.push({
+                    date: new Date().toISOString(),
+                    value: currentTotal
+                });
+            }
+        }
+
         setHistory(filtered);
 
-    }, [rawHistory, transactions, timeframe]);
+    }, [rawHistory, transactions, timeframe, prices, pricesLoading, baseCurrency]);
 
 
     const syncTransactionsToFile = async (updatedTx) => {
