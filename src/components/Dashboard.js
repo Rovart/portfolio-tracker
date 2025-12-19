@@ -479,12 +479,42 @@ export default function Dashboard() {
     const handleExportCsv = async () => {
         const { exportToCsv } = await import('@/utils/db');
         const csv = await exportToCsv();
+        const filename = `portfolio-${new Date().toISOString().split('T')[0]}.csv`;
 
+        // Check if we're on a native platform
+        try {
+            const { Capacitor } = await import('@capacitor/core');
+            if (Capacitor.isNativePlatform()) {
+                const { Filesystem, Directory } = await import('@capacitor/filesystem');
+                const { Share } = await import('@capacitor/share');
+
+                // Write file to cache directory
+                const result = await Filesystem.writeFile({
+                    path: filename,
+                    data: csv,
+                    directory: Directory.Cache,
+                    encoding: 'utf8'
+                });
+
+                // Share the file so user can save it
+                await Share.share({
+                    title: 'Export Portfolio',
+                    text: 'Portfolio transactions export',
+                    url: result.uri,
+                    dialogTitle: 'Save or Share CSV'
+                });
+                return;
+            }
+        } catch (e) {
+            console.log('Native export failed, falling back to web download:', e);
+        }
+
+        // Fallback: Web browser download
         const blob = new Blob([csv], { type: 'text/csv' });
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
         a.href = url;
-        a.download = `portfolio-${new Date().toISOString().split('T')[0]}.csv`;
+        a.download = filename;
         a.click();
         URL.revokeObjectURL(url);
     };
