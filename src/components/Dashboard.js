@@ -529,20 +529,20 @@ export default function Dashboard() {
                 <div className="grid-desktop">
                     {/* Main Content: Charts & Performance */}
                     <div className="main-content">
-                        <header className="flex flex-col items-start pb-8 gap-4 w-full">
+                        <header className="flex flex-col items-start px-1 pb-8 gap-4 w-full">
                             <div className="flex items-center justify-between w-full gap-2">
-                                <div className="flex items-center gap-2">
-                                    <span className="text-muted text-sm uppercase tracking-wider font-bold">Portfolio Performance</span>
+                                <div className="flex items-center gap-2 min-w-0">
+                                    <span className="text-muted text-xs sm:text-sm uppercase tracking-wider font-bold truncate">Portfolio Performance</span>
                                     <button
                                         onClick={togglePrivacy}
-                                        className="p-1 text-muted hover:text-white transition-colors"
+                                        className="p-1 text-muted hover:text-white transition-colors shrink-0"
                                         style={{ background: 'transparent', border: 'none', cursor: 'pointer' }}
                                         title={hideBalances ? "Show Balances" : "Hide Balances"}
                                     >
                                         {hideBalances ? <EyeOff size={16} /> : <Eye size={16} />}
                                     </button>
                                 </div>
-                                <div className="flex items-center gap-3">
+                                <div className="flex items-center gap-2 sm:gap-3 shrink-0">
                                     <div className="relative">
                                         <select
                                             value={baseCurrency}
@@ -552,12 +552,12 @@ export default function Dashboard() {
                                                 appearance: 'none',
                                                 WebkitAppearance: 'none',
                                                 MozAppearance: 'none',
-                                                padding: '6px 32px 6px 16px',
+                                                padding: '6px 28px 6px 12px',
                                                 width: 'auto',
-                                                minWidth: '80px',
+                                                minWidth: '70px',
                                                 backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='white' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E")`,
                                                 backgroundRepeat: 'no-repeat',
-                                                backgroundPosition: 'right 12px center'
+                                                backgroundPosition: 'right 10px center'
                                             }}
                                         >
                                             {CURRENCIES.map(c => (
@@ -580,9 +580,11 @@ export default function Dashboard() {
                                             <div
                                                 className="absolute right-0 top-full mt-2 py-2 rounded-xl shadow-2xl z-50 border border-white-10"
                                                 style={{
-                                                    minWidth: '200px',
-                                                    backgroundColor: '#121212',
-                                                    boxShadow: '0 10px 40px rgba(0,0,0,0.9)'
+                                                    minWidth: '180px',
+                                                    width: 'max-content',
+                                                    backgroundColor: '#161616',
+                                                    boxShadow: '0 10px 40px rgba(0,0,0,0.9)',
+                                                    right: '0px'
                                                 }}
                                             >
                                                 <label
