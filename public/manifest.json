@@ -1,7 +1,7 @@
 {
-    "name": "Portfolio Tracker",
-    "short_name": "Portfolio",
-    "description": "Track your investment portfolio performance",
+    "name": "Monetra - Portfolio Tracker",
+    "short_name": "Monetra",
+    "description": "Simplest way to track your investment portfolio",
     "start_url": "/",
     "display": "standalone",
     "background_color": "#000000",

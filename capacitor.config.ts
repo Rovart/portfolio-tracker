@@ -2,7 +2,7 @@ import type { CapacitorConfig } from '@capacitor/cli';
 
 const config: CapacitorConfig = {
   appId: 'com.portfolio.tracker',
-  appName: 'Portfolio Tracker',
+  appName: 'Monetra',
   webDir: 'out',
   server: {
     url: 'https://portfolio-tracker-xi-three.vercel.app/',

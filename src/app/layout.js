@@ -12,14 +12,14 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata = {
-  title: "Portfolio Tracker",
-  description: "Track your investment portfolio performance",
+  title: "Monetra - Portfolio Tracker",
+  description: "Simplest way to track your investment portfolio",
   manifest: "/manifest.json",
   themeColor: "#000000",
   appleWebApp: {
     capable: true,
     statusBarStyle: "black-translucent",
-    title: "Portfolio",
+    title: "Monetra",
   },
   icons: {
     icon: "/icon-192.png",
