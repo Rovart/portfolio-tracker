@@ -589,7 +589,7 @@ export default function Dashboard() {
                                                     className="flex items-center gap-3 px-4 py-3 text-sm cursor-pointer hover:bg-white-10 transition-colors"
                                                     style={{ color: 'white' }}
                                                 >
-                                                    <span style={{ fontSize: '1.2rem' }}>📥</span>
+                                                    <span style={{ fontSize: '1.2rem', marginRight: '5px' }}>📥</span>
                                                     <span>Import CSV</span>
                                                     <input type="file" accept=".csv" onChange={(e) => { handleImportCsv(e); setShowSettings(false); }} style={{ display: 'none' }} />
                                                 </label>
@@ -603,7 +603,7 @@ export default function Dashboard() {
                                                         cursor: 'pointer'
                                                     }}
                                                 >
-                                                    <span style={{ fontSize: '1.2rem' }}>📤</span>
+                                                    <span style={{ fontSize: '1.2rem', marginRight: '5px' }}>📤</span>
                                                     <span>Export CSV</span>
                                                 </button>
                                             </div>
@@ -625,7 +625,7 @@ export default function Dashboard() {
                                     ) : (
                                         <>
                                             <div className="flex flex-wrap items-center gap-3">
-                                                <div className="text-xl font-bold tracking-tight">
+                                                <div className="text-2xl font-bold tracking-tight">
                                                     {hideBalances ? '••••••' : `${totalValue.toLocaleString(undefined, { maximumFractionDigits: 2 })} ${baseCurrency === 'USD' ? '$' : baseCurrency}`}
                                                 </div>
                                             </div>
@@ -639,7 +639,7 @@ export default function Dashboard() {
                             ) : (
                                 <div className="flex flex-col gap-1">
                                     <div className="flex flex-wrap items-center gap-3">
-                                        <div className="text-xl font-bold tracking-tight">
+                                        <div className="text-2xl font-bold tracking-tight">
                                             {hideBalances ? '••••••' : `${totalValue.toLocaleString(undefined, { maximumFractionDigits: 2 })} ${baseCurrency === 'USD' ? '$' : baseCurrency}`}
                                         </div>
                                         {timeframe !== '1D' && (
