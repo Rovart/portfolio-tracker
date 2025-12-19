@@ -1,60 +1,42 @@
-import { normalizeAsset } from './portfolio-logic';
-
 export function calculatePortfolioHistory(transactions, historicalPrices, baseCurrency = 'USD', externalQuoteMap = {}) {
     if (!transactions || transactions.length === 0) return [];
 
-    // 1. Identify timeline and quote mappings
-    const sortedTx = [...transactions].sort((a, b) => new Date(a.date) - new Date(b.date));
-    if (sortedTx.length === 0) return [];
+    // 1. Identify all unique assets and quote mappings
+    // 2. Identify all unique timestamps across all history entries
+    const allHistoryEntries = Object.values(historicalPrices).flat();
+    const sortedTimestamps = [...new Set(allHistoryEntries.map(h => h.date))].sort();
 
     const quoteMap = {};
-    const priceSymbolMap = {}; // Map normalizedAsset -> actual symbol for price lookup
+    const priceSymbolMap = {};
 
     transactions.forEach(tx => {
         const base = normalizeAsset(tx.baseCurrency);
         const quote = normalizeAsset(tx.quoteCurrency);
-
-        // Track the quote currency for the primary asset
         if (base && !quoteMap[base]) {
-            if (tx.quoteCurrency) {
-                quoteMap[base] = tx.quoteCurrency;
-            } else {
+            if (tx.quoteCurrency) quoteMap[base] = tx.quoteCurrency;
+            else {
                 const parts = tx.baseCurrency.split(/[-/]/);
-                if (parts.length > 1) {
-                    quoteMap[base] = parts[parts.length - 1].toUpperCase();
-                }
+                if (parts.length > 1) quoteMap[base] = parts[parts.length - 1].toUpperCase();
             }
         }
-
-        // Track price symbol
-        if (base && !priceSymbolMap[base]) {
-            priceSymbolMap[base] = tx.baseCurrency;
-        }
-
-        // If an asset is used as a quote currency elsewhere, its own quote is USD
-        if (quote && !quoteMap[quote]) {
-            quoteMap[quote] = 'USD';
-        }
+        if (base && !priceSymbolMap[base]) priceSymbolMap[base] = tx.baseCurrency;
+        if (quote && !quoteMap[quote]) quoteMap[quote] = 'USD';
     });
 
-    const startDate = new Date(sortedTx[0].date);
-    const now = new Date();
-
+    const sortedTx = [...transactions].sort((a, b) => new Date(a.date) - new Date(b.date));
     const dailyData = [];
     const currentBalances = {};
-
     let txIndex = 0;
 
-    // Iterate day by day from start to now
-    for (let d = new Date(startDate); d <= now; d.setDate(d.getDate() + 1)) {
-        const dayStr = d.toISOString().split('T')[0];
+    // Use price cache for each asset for efficient forward-filling
+    const lastKnownPrices = {};
 
-        // Process transactions for this day
+    for (const timestamp of sortedTimestamps) {
+        // Process all transactions that occurred at or before this timestamp
         while (txIndex < sortedTx.length) {
             const tx = sortedTx[txIndex];
-            const txDate = new Date(tx.date).toISOString().split('T')[0];
-
-            if (txDate > dayStr) break;
+            // Compare ISO strings or Date objects
+            if (tx.date > timestamp) break;
 
             const { type, baseAmount, baseCurrency: rawBase, quoteAmount, quoteCurrency: rawQuote, fee, feeCurrency: rawFee } = tx;
             const base = normalizeAsset(rawBase);
@@ -88,56 +70,55 @@ export function calculatePortfolioHistory(transactions, historicalPrices, baseCu
             txIndex++;
         }
 
-        // Calculate Portfolio Value for this day
+        // Calculate Portfolio Value at this timestamp
         let totalValue = 0;
         for (const [asset, amount] of Object.entries(currentBalances)) {
             if (!amount || isNaN(amount) || Math.abs(amount) < 0.000001) continue;
 
             const quoteCurr = externalQuoteMap[asset] || quoteMap[asset] || 'USD';
+            const priceSym = priceSymbolMap[asset] || asset;
 
             // 1. Get local price of asset
             let localPrice = 0;
             if (asset === quoteCurr) {
                 localPrice = 1;
             } else {
-                const priceSym = priceSymbolMap[asset] || asset;
                 const history = historicalPrices[priceSym];
                 if (history && history.length > 0) {
-                    const dayPrice = history.find(p => p.date === dayStr);
-                    localPrice = dayPrice ? (parseFloat(dayPrice.price) || 0) : (history.filter(p => p.date <= dayStr).pop()?.price || 0);
+                    // Optimized lookup: since timestamps are sorted, we can be smart, 
+                    // but for simplicity, we find the entry or use last known.
+                    const exactEntry = history.find(p => p.date === timestamp);
+                    if (exactEntry) {
+                        localPrice = parseFloat(exactEntry.price) || 0;
+                        lastKnownPrices[priceSym] = localPrice;
+                    } else {
+                        localPrice = lastKnownPrices[priceSym] || 0;
+                    }
                 }
             }
 
             // 2. Get FX rate
             let fxRate = 1;
             if (quoteCurr !== baseCurrency) {
-                // Try CURUSD=X history first, then CUR=X
-                const fxHistory = historicalPrices[`${quoteCurr}${baseCurrency}=X`] || historicalPrices[quoteCurr];
-                if (fxHistory && fxHistory.length > 0) {
-                    const dayFx = fxHistory.find(p => p.date === dayStr);
-                    const rawFx = dayFx ? (parseFloat(dayFx.price) || 0) : (fxHistory.filter(p => p.date <= dayStr).sort((a, b) => b.date.localeCompare(a.date))[0]?.price || 1);
-
-                    // HEURISTIC: If the rate looks like EUR=X (0.85 instead of 1.17), invert it if necessary.
-                    // But we expect to fetch CURUSD=X which is 1.17.
-                    // If we somehow got EUR=X (which is EUR per USD), we should invert.
-                    // However, we'll try to stick to multiplication with 1.17.
-                    fxRate = parseFloat(rawFx) || 1;
-
-                    // Fallback for reversed rates like 0.85 (EUR=X style) if we expect 1.17
-                    if (quoteCurr === 'EUR' && fxRate < 1 && fxRate > 0) {
-                        // If it's very low, it might be the wrong direction. 
-                        // But let's assume our fetch logic for CURUSD=X works.
+                const fxSym = `${quoteCurr}${baseCurrency}=X`;
+                const fxHistory = historicalPrices[fxSym] || historicalPrices[quoteCurr];
+                if (fxHistory) {
+                    const exactFx = fxHistory.find(p => p.date === timestamp);
+                    if (exactFx) {
+                        fxRate = parseFloat(exactFx.price) || 1;
+                        lastKnownPrices[fxSym] = fxRate;
+                    } else {
+                        fxRate = lastKnownPrices[fxSym] || lastKnownPrices[quoteCurr] || 1;
                     }
                 }
             }
 
-            const contribution = amount * localPrice * fxRate;
-            if (!isNaN(contribution)) {
-                totalValue += contribution;
-            }
+            totalValue += (amount * localPrice * fxRate);
         }
 
-        dailyData.push({ date: dayStr, value: totalValue });
+        if (!isNaN(totalValue)) {
+            dailyData.push({ date: timestamp, value: totalValue });
+        }
     }
 
     return dailyData;

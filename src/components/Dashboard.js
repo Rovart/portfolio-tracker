@@ -202,20 +202,40 @@ export default function Dashboard({ initialTransactions }) {
             await Promise.all(allSymbolsToFetch.map(async (fetchSym) => {
                 if (fetchSym === 'USD' || !fetchSym) return;
                 try {
+                    // Always fetch ALL for long-term context
                     const res = await fetch(`/api/history?symbol=${fetchSym}&range=ALL`);
                     const data = await res.json();
+                    let historyData = [];
                     if (data.history) {
-                        const historyData = data.history.map(d => ({
-                            date: d.date.split('T')[0],
+                        historyData = data.history.map(d => ({
+                            date: d.date, // Use full timestamp
                             price: d.price
                         }));
-                        historyMap[fetchSym] = historyData;
-                        // Map back from 'EURUSD=X' to 'EUR' for the logic
-                        const regex = new RegExp(`^([A-Z]{3})${baseCurrency}(=X)$`, 'i');
-                        const fxMatch = fetchSym.match(regex);
-                        if (fxMatch) {
-                            historyMap[fxMatch[1].toUpperCase()] = historyData;
+                    }
+
+                    // If short timeframe, augment with granular data
+                    if (timeframe === '1D' || timeframe === '1W') {
+                        const granularRes = await fetch(`/api/history?symbol=${fetchSym}&range=${timeframe}`);
+                        const granularData = await granularRes.json();
+                        if (granularData.history) {
+                            const newPoints = granularData.history.map(d => ({
+                                date: d.date,
+                                price: d.price
+                            }));
+                            // Merge and unique by date, preferring granular
+                            const merged = [...historyData, ...newPoints];
+                            const unique = Array.from(new Map(merged.map(item => [item.date, item])).values());
+                            historyData = unique.sort((a, b) => a.date.localeCompare(b.date));
                         }
+                    }
+
+                    historyMap[fetchSym] = historyData;
+
+                    // Map back from 'EURUSD=X' to 'EUR' for the logic
+                    const regex = new RegExp(`^([A-Z]{3})${baseCurrency}(=X)$`, 'i');
+                    const fxMatch = fetchSym.match(regex);
+                    if (fxMatch) {
+                        historyMap[fxMatch[1].toUpperCase()] = historyData;
                     }
                 } catch (e) { console.error(e); }
             }));
@@ -262,7 +282,7 @@ export default function Dashboard({ initialTransactions }) {
             else if (timeframe === 'YTD') cutoff = new Date(now.getFullYear(), 0, 1);
             else if (timeframe === 'ALL') cutoff = new Date(0); // Epoch
 
-            const cutoffStr = cutoff.toISOString().split('T')[0];
+            const cutoffStr = cutoff.toISOString();
             setHistory(chartData.filter(d => d.date >= cutoffStr));
             setHistoryLoading(false);
         }

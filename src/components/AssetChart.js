@@ -20,7 +20,7 @@ export default function AssetChart({ symbol, baseCurrency = 'USD', fxRate = 1, p
                 if (json.history && json.history.length > 0) {
                     // Store raw prices without FX conversion
                     setRawData(json.history.map(p => ({
-                        date: p.date.split('T')[0],
+                        date: p.date, // Use full timestamp
                         rawPrice: p.price // Store raw price, convert later
                     })));
                 } else {
