@@ -5,9 +5,18 @@ const config: CapacitorConfig = {
   appName: 'Portfolio Tracker',
   webDir: 'out',
   server: {
-    // For development, point to local Next.js server
     url: 'https://portfolio-tracker-xi-three.vercel.app/',
     cleartext: true
+  },
+  plugins: {
+    SplashScreen: {
+      launchShowDuration: 2000,
+      launchAutoHide: true,
+      backgroundColor: '#0a0a0a',
+      showSpinner: false,
+      splashFullScreen: true,
+      splashImmersive: true
+    }
   },
   ios: {
     contentInset: 'automatic'
