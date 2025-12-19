@@ -30,14 +30,21 @@ export function calculatePortfolioHistory(transactions, historicalPrices, baseCu
     const currentBalances = {};
     let txIndex = 0;
 
-    // Use price cache for each asset for efficient forward-filling
+    // 3. Pre-populate lastKnownPrices with the EARLIEST available price for each asset
+    // This prevents the portfolio value from dropping to 0 at the start of an asset's history
     const lastKnownPrices = {};
+    Object.entries(historicalPrices).forEach(([sym, history]) => {
+        if (history && history.length > 0) {
+            // Find the point with the earliest date
+            const earliest = [...history].sort((a, b) => a.date.localeCompare(b.date))[0];
+            lastKnownPrices[sym] = parseFloat(earliest.price) || 0;
+        }
+    });
 
     for (const timestamp of sortedTimestamps) {
         // Process all transactions that occurred at or before this timestamp
         while (txIndex < sortedTx.length) {
             const tx = sortedTx[txIndex];
-            // Compare ISO strings or Date objects
             if (tx.date > timestamp) break;
 
             const { type, baseAmount, baseCurrency: rawBase, quoteAmount, quoteCurrency: rawQuote, fee, feeCurrency: rawFee } = tx;
@@ -87,8 +94,6 @@ export function calculatePortfolioHistory(transactions, historicalPrices, baseCu
             } else {
                 const history = historicalPrices[priceSym];
                 if (history && history.length > 0) {
-                    // Optimized lookup: since timestamps are sorted, we can be smart, 
-                    // but for simplicity, we find the entry or use last known.
                     const exactEntry = history.find(p => p.date === timestamp);
                     if (exactEntry) {
                         localPrice = parseFloat(exactEntry.price) || 0;
@@ -96,6 +101,8 @@ export function calculatePortfolioHistory(transactions, historicalPrices, baseCu
                     } else {
                         localPrice = lastKnownPrices[priceSym] || 0;
                     }
+                } else {
+                    localPrice = lastKnownPrices[priceSym] || 0;
                 }
             }
 
@@ -112,6 +119,8 @@ export function calculatePortfolioHistory(transactions, historicalPrices, baseCu
                     } else {
                         fxRate = lastKnownPrices[fxSym] || lastKnownPrices[quoteCurr] || 1;
                     }
+                } else {
+                    fxRate = lastKnownPrices[fxSym] || lastKnownPrices[quoteCurr] || 1;
                 }
             }
 
@@ -121,6 +130,22 @@ export function calculatePortfolioHistory(transactions, historicalPrices, baseCu
         if (!isNaN(totalValue)) {
             dailyData.push({ date: timestamp, value: totalValue });
         }
+    }
+
+    // SMOOTHING PASS: Simple Moving Average (3 points) to normalize abrupt spikes from bad data points
+    if (dailyData.length > 5) {
+        return dailyData.map((point, i, arr) => {
+            if (i === 0 || i === arr.length - 1) return point;
+            const prev = arr[i - 1].value;
+            const curr = point.value;
+            const next = arr[i + 1].value;
+            // Detect single-point extreme outliers (more than 15% deviation from neighbors)
+            const isAbrupt = Math.abs(curr - prev) / (prev || 1) > 0.15 && Math.abs(curr - next) / (next || 1) > 0.15;
+            if (isAbrupt) {
+                return { ...point, value: (prev + next) / 2 };
+            }
+            return point;
+        });
     }
 
     return dailyData;
