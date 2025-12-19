@@ -1,54 +1,92 @@
+export function normalizeAsset(asset) {
+    if (!asset) return asset;
+    const s = asset.toUpperCase();
+
+    // Yahoo Currency: EUR=X or EURUSD=X
+    if (s.endsWith('=X')) {
+        const base = s.replace('=X', '');
+        // For EURUSD=X, we want EUR. For EUR=X, we want EUR.
+        return base.length > 3 ? base.substring(0, 3) : base;
+    }
+
+    // Crypto/Pairs: BTC-USD or BTC/EUR
+    // Be careful with stocks like BRK-B or RDS-A. 
+    // Usually crypto pairs have a 3+ letter quote currency.
+    if (s.includes('-') || s.includes('/')) {
+        const parts = s.split(/[-/]/);
+        const lastPart = parts[parts.length - 1];
+        const commonQuotes = ['USD', 'EUR', 'GBP', 'BTC', 'ETH', 'USDT', 'USDC', 'BNB'];
+        if (parts.length > 1 && (commonQuotes.includes(lastPart) || lastPart.length >= 3)) {
+            // It's likely a pair, return the base asset
+            return parts[0];
+        }
+    }
+
+    return s;
+}
+
 export function calculateHoldings(transactions, priceMap, baseCurrency = 'USD') {
     const balances = {};
     const cashFlow = {}; // To calculate total amount made (in local quote currency)
-    const quoteMap = {}; // Map asset -> quoteCurrency
+    const quoteMap = {}; // Map normalizedAsset -> quoteCurrency
+    const priceSymbolMap = {}; // Map normalizedAsset -> actual symbol for price lookup
 
     // Sort ascending for calculation
     const sortedTx = [...transactions].sort((a, b) => new Date(a.date) - new Date(b.date));
 
     sortedTx.forEach(tx => {
-        const { type, baseAmount, baseCurrency: sym, quoteAmount, quoteCurrency, fee, feeCurrency } = tx;
+        const { type, baseCurrency: rawBase, baseAmount, quoteCurrency: rawQuote, quoteAmount, fee, feeCurrency: rawFee } = tx;
 
-        if (sym && !balances[sym]) balances[sym] = 0;
-        if (sym && !cashFlow[sym]) cashFlow[sym] = 0;
+        const base = normalizeAsset(rawBase);
+        const quote = normalizeAsset(rawQuote);
+        const feeCurr = normalizeAsset(rawFee);
 
-        if (sym && !quoteMap[sym]) {
-            if (quoteCurrency) {
-                quoteMap[sym] = quoteCurrency;
-            } else if (sym.includes('-') || sym.includes('/')) {
-                const parts = sym.split(/[-/]/);
-                quoteMap[sym] = parts[parts.length - 1].toUpperCase();
+        if (base && !balances[base]) balances[base] = 0;
+        if (base && !cashFlow[base]) cashFlow[base] = 0;
+
+        // Track which symbol to use for fetching prices (prefer the one with most info)
+        if (base && !priceSymbolMap[base]) {
+            priceSymbolMap[base] = rawBase;
+        }
+
+        if (base && !quoteMap[base]) {
+            if (rawQuote) {
+                quoteMap[base] = rawQuote;
+            } else if (rawBase.includes('-') || rawBase.includes('/')) {
+                const parts = rawBase.split(/[-/]/);
+                quoteMap[base] = parts[parts.length - 1].toUpperCase();
             }
         }
 
         // Also initialize quote currency balance if it exists
-        if (quoteCurrency && !balances[quoteCurrency]) balances[quoteCurrency] = 0;
-        if (quoteCurrency && !quoteMap[quoteCurrency]) quoteMap[quoteCurrency] = 'USD';
+        if (quote && !balances[quote]) balances[quote] = 0;
+        if (quote && !quoteMap[quote]) quoteMap[quote] = 'USD';
+        if (quote && !priceSymbolMap[quote]) priceSymbolMap[quote] = rawQuote || quote;
 
         const bAmt = parseFloat(baseAmount) || 0;
         const qAmt = parseFloat(quoteAmount) || 0;
         const fAmt = parseFloat(fee) || 0;
 
         if (type === 'BUY') {
-            balances[sym] += bAmt;
-            cashFlow[sym] += qAmt;
-            if (quoteCurrency) balances[quoteCurrency] -= qAmt;
+            balances[base] += bAmt;
+            cashFlow[base] += qAmt;
+            if (quote) balances[quote] -= qAmt;
         } else if (type === 'SELL') {
-            balances[sym] -= bAmt;
-            cashFlow[sym] -= qAmt;
-            if (quoteCurrency) balances[quoteCurrency] += qAmt;
+            balances[base] -= bAmt;
+            cashFlow[base] -= qAmt;
+            if (quote) balances[quote] += qAmt;
         } else if (type === 'DEPOSIT') {
-            balances[sym] += bAmt;
+            balances[base] += bAmt;
         } else if (type === 'WITHDRAW') {
-            balances[sym] -= bAmt;
+            balances[base] -= bAmt;
         }
 
-        if (fAmt && feeCurrency) {
-            if (!balances[feeCurrency]) balances[feeCurrency] = 0;
-            balances[feeCurrency] -= fAmt;
+        if (fAmt && feeCurr) {
+            if (!balances[feeCurr]) balances[feeCurr] = 0;
+            balances[feeCurr] -= fAmt;
             // For profit calculation we also track fees in the base asset's local flow if they match
-            if (feeCurrency === (quoteCurrency || 'USD')) {
-                cashFlow[sym] += fAmt;
+            if (feeCurr === quote) {
+                cashFlow[base] += fAmt;
             }
         }
     });
@@ -57,7 +95,8 @@ export function calculateHoldings(transactions, priceMap, baseCurrency = 'USD') 
     return Object.entries(balances)
         .filter(([_, amount]) => Math.abs(amount) > 0.00001)
         .map(([asset, amount]) => {
-            const quote = priceMap[asset] || { price: 0, changePercent: 0 };
+            const priceSym = priceSymbolMap[asset] || asset;
+            const quote = priceMap[priceSym] || { price: 0, changePercent: 0 };
             const changePercent = parseFloat(quote.changePercent) || 0;
 
             // Priority: Transaction stored quote -> Price data from Yahoo -> Symbol parsing -> USD
@@ -70,10 +109,6 @@ export function calculateHoldings(transactions, priceMap, baseCurrency = 'USD') 
                 localPrice = 1;
             }
 
-            // Special case: if Yahoo returned something like 'CCY', normalize it
-            if (quoteCurr === 'HKD' && !quoteMap[asset]) {
-                console.log(`[FX Discovery] Detected HKD for ${asset} from live data`);
-            }
             // FX Rate: How many baseCurrency (USD) is 1 quoteCurrency?
             let fxRate = 1;
             if (quoteCurr !== baseCurrency) {
@@ -83,11 +118,6 @@ export function calculateHoldings(transactions, priceMap, baseCurrency = 'USD') 
                     priceMap[`${quoteCurr}=X`] ||
                     { price: 1 };
                 fxRate = parseFloat(fxQuote.price) || 1;
-
-                // Debug log for multi-currency assets
-                if (quoteCurr !== 'USD') {
-                    console.log(`[Holdings FX] ${asset}: Local=${localPrice}, Rate=${fxRate}, USD Total=${localPrice * fxRate}`);
-                }
             }
 
             const localValue = amount * localPrice;
@@ -108,7 +138,6 @@ export function calculateHoldings(transactions, priceMap, baseCurrency = 'USD') 
             }
 
             // Calculate total combined change percent (forex + asset)
-            // Combined Change Factor = (1 + assetChange) * (1 + fxChange)
             const combinedChangePercent = ((1 + assetChangePercent / 100) * (1 + fxChangePercent / 100) - 1) * 100;
 
             // Daily PnL in base currency based on combined change
@@ -120,21 +149,14 @@ export function calculateHoldings(transactions, priceMap, baseCurrency = 'USD') 
             const localProfit = localValue - (cashFlow[asset] || 0);
             const totalProfit = localProfit * fxRate;
 
-            // Branding: Simplified label for forex-based cash
-            let displayAsset = asset;
-            if (asset.endsWith(`${baseCurrency}=X`)) {
-                displayAsset = asset.replace(`${baseCurrency}=X`, '');
-            } else if (asset.endsWith('=X')) {
-                displayAsset = asset.split('=')[0];
-                if (displayAsset.length > 3) displayAsset = displayAsset.substring(0, 3);
-            }
-
             // Categorization
             let category = 'Shares'; // Default fallback
             const qt = (quote.quoteType || '').toUpperCase();
             const td = (quote.typeDisp || '').toUpperCase();
 
-            if (asset.endsWith('=X') || asset === quoteCurr || asset === baseCurrency || qt === 'CURRENCY' || td.includes('CURRENCY')) {
+            const isFiat = asset.length <= 4 && (priceSym.endsWith('=X') || asset === quoteCurr || asset === baseCurrency || qt === 'CURRENCY' || td.includes('CURRENCY'));
+
+            if (isFiat) {
                 category = 'Currencies';
             } else if (qt === 'ETF' || td.includes('ETF')) {
                 category = 'ETFs';
@@ -147,9 +169,9 @@ export function calculateHoldings(transactions, priceMap, baseCurrency = 'USD') 
             }
 
             return {
-                asset: displayAsset,
-                originalAsset: asset,
-                name: quote.name || displayAsset,
+                asset,
+                originalAsset: priceSym,
+                name: quote.name || asset,
                 amount,
                 localPrice,
                 price: localPrice * fxRate, // Price in base currency
@@ -158,7 +180,7 @@ export function calculateHoldings(transactions, priceMap, baseCurrency = 'USD') 
                 totalProfit,
                 dailyPnl,
                 quoteCurrency: quoteCurr,
-                isFiat: asset.endsWith('=X') || asset === quoteCurr || asset === baseCurrency,
+                isFiat,
                 category
             };
         })

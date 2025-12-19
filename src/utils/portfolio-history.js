@@ -1,3 +1,5 @@
+import { normalizeAsset } from './portfolio-logic';
+
 export function calculatePortfolioHistory(transactions, historicalPrices, baseCurrency = 'USD', externalQuoteMap = {}) {
     if (!transactions || transactions.length === 0) return [];
 
@@ -6,21 +8,32 @@ export function calculatePortfolioHistory(transactions, historicalPrices, baseCu
     if (sortedTx.length === 0) return [];
 
     const quoteMap = {};
+    const priceSymbolMap = {}; // Map normalizedAsset -> actual symbol for price lookup
+
     transactions.forEach(tx => {
+        const base = normalizeAsset(tx.baseCurrency);
+        const quote = normalizeAsset(tx.quoteCurrency);
+
         // Track the quote currency for the primary asset
-        if (tx.baseCurrency && !quoteMap[tx.baseCurrency]) {
+        if (base && !quoteMap[base]) {
             if (tx.quoteCurrency) {
-                quoteMap[tx.baseCurrency] = tx.quoteCurrency;
+                quoteMap[base] = tx.quoteCurrency;
             } else {
                 const parts = tx.baseCurrency.split(/[-/]/);
                 if (parts.length > 1) {
-                    quoteMap[tx.baseCurrency] = parts[parts.length - 1].toUpperCase();
+                    quoteMap[base] = parts[parts.length - 1].toUpperCase();
                 }
             }
         }
+
+        // Track price symbol
+        if (base && !priceSymbolMap[base]) {
+            priceSymbolMap[base] = tx.baseCurrency;
+        }
+
         // If an asset is used as a quote currency elsewhere, its own quote is USD
-        if (tx.quoteCurrency && !quoteMap[tx.quoteCurrency]) {
-            quoteMap[tx.quoteCurrency] = 'USD';
+        if (quote && !quoteMap[quote]) {
+            quoteMap[quote] = 'USD';
         }
     });
 
@@ -43,29 +56,33 @@ export function calculatePortfolioHistory(transactions, historicalPrices, baseCu
 
             if (txDate > dayStr) break;
 
-            const { type, baseAmount, baseCurrency, quoteAmount, quoteCurrency, fee, feeCurrency } = tx;
+            const { type, baseAmount, baseCurrency: rawBase, quoteAmount, quoteCurrency: rawQuote, fee, feeCurrency: rawFee } = tx;
+            const base = normalizeAsset(rawBase);
+            const quote = normalizeAsset(rawQuote);
+            const feeCurr = normalizeAsset(rawFee);
+
             const bAmt = parseFloat(baseAmount) || 0;
             const qAmt = parseFloat(quoteAmount) || 0;
             const fAmt = parseFloat(fee) || 0;
 
-            if (!currentBalances[baseCurrency]) currentBalances[baseCurrency] = 0;
-            if (quoteCurrency && !currentBalances[quoteCurrency]) currentBalances[quoteCurrency] = 0;
+            if (base && !currentBalances[base]) currentBalances[base] = 0;
+            if (quote && !currentBalances[quote]) currentBalances[quote] = 0;
 
             if (type === 'BUY') {
-                currentBalances[baseCurrency] += bAmt;
-                if (quoteCurrency) currentBalances[quoteCurrency] -= qAmt;
+                currentBalances[base] += bAmt;
+                if (quote) currentBalances[quote] -= qAmt;
             } else if (type === 'SELL') {
-                currentBalances[baseCurrency] -= bAmt;
-                if (quoteCurrency) currentBalances[quoteCurrency] += qAmt;
+                currentBalances[base] -= bAmt;
+                if (quote) currentBalances[quote] += qAmt;
             } else if (type === 'DEPOSIT') {
-                currentBalances[baseCurrency] += bAmt;
+                currentBalances[base] += bAmt;
             } else if (type === 'WITHDRAW') {
-                currentBalances[baseCurrency] -= bAmt;
+                currentBalances[base] -= bAmt;
             }
 
-            if (fAmt && feeCurrency) {
-                if (!currentBalances[feeCurrency]) currentBalances[feeCurrency] = 0;
-                currentBalances[feeCurrency] -= fAmt;
+            if (fAmt && feeCurr) {
+                if (!currentBalances[feeCurr]) currentBalances[feeCurr] = 0;
+                currentBalances[feeCurr] -= fAmt;
             }
 
             txIndex++;
@@ -83,7 +100,8 @@ export function calculatePortfolioHistory(transactions, historicalPrices, baseCu
             if (asset === quoteCurr) {
                 localPrice = 1;
             } else {
-                const history = historicalPrices[asset];
+                const priceSym = priceSymbolMap[asset] || asset;
+                const history = historicalPrices[priceSym];
                 if (history && history.length > 0) {
                     const dayPrice = history.find(p => p.date === dayStr);
                     localPrice = dayPrice ? (parseFloat(dayPrice.price) || 0) : (history.filter(p => p.date <= dayStr).pop()?.price || 0);
