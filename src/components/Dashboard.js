@@ -580,27 +580,29 @@ export default function Dashboard() {
                                             <div
                                                 className="absolute right-0 top-full mt-2 py-2 rounded-xl shadow-2xl z-50 border border-white-10"
                                                 style={{
-                                                    minWidth: '180px',
-                                                    backgroundColor: '#1a1a1a',
-                                                    boxShadow: '0 10px 40px rgba(0,0,0,0.8)'
+                                                    minWidth: '200px',
+                                                    backgroundColor: '#121212',
+                                                    boxShadow: '0 10px 40px rgba(0,0,0,0.9)'
                                                 }}
                                             >
                                                 <label
-                                                    className="flex items-center gap-3 px-4 py-3 text-sm cursor-pointer hover:bg-white-10 transition-colors"
-                                                    style={{ color: 'white' }}
+                                                    className="flex items-center gap-3 px-4 py-3 text-sm cursor-pointer hover:bg-white-10 transition-colors w-full"
+                                                    style={{ color: 'white', display: 'flex' }}
                                                 >
                                                     <span style={{ fontSize: '1.2rem', marginRight: '5px' }}>📥</span>
                                                     <span>Import CSV</span>
                                                     <input type="file" accept=".csv" onChange={(e) => { handleImportCsv(e); setShowSettings(false); }} style={{ display: 'none' }} />
                                                 </label>
+                                                <div style={{ height: '1px', backgroundColor: 'rgba(255,255,255,0.05)', margin: '0 8px' }}></div>
                                                 <button
                                                     onClick={() => { handleExportCsv(); setShowSettings(false); }}
                                                     className="flex items-center gap-3 px-4 py-3 text-sm w-full text-left hover:bg-white-10 transition-colors"
                                                     style={{
-                                                        background: 'transparent',
                                                         border: 'none',
                                                         color: 'white',
-                                                        cursor: 'pointer'
+                                                        cursor: 'pointer',
+                                                        outline: 'none',
+                                                        background: 'none'
                                                     }}
                                                 >
                                                     <span style={{ fontSize: '1.2rem', marginRight: '5px' }}>📤</span>
