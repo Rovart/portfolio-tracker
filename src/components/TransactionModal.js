@@ -215,12 +215,24 @@ export default function TransactionModal({ mode, holding, transactions, onClose,
         setCurrentView('FORM');
     };
 
-    const toList = () => {
-        if (mode === 'ADD' && !holding) {
-            setCurrentView('SEARCH');
-        } else {
+    const handleBack = () => {
+        if (currentView === 'FORM') {
             setCurrentView('LIST');
+            setEditingTx(null);
+        } else if (currentView === 'LIST') {
+            if (mode === 'ADD') {
+                setCurrentView('SEARCH');
+                setSelectedAsset(null);
+            } else {
+                onClose();
+            }
+        } else {
+            onClose();
         }
+    };
+
+    const toList = () => {
+        setCurrentView('LIST');
     };
 
     // Layout fixed
@@ -246,7 +258,7 @@ export default function TransactionModal({ mode, holding, transactions, onClose,
             <div className="flex items-center justify-between p-6 sm:px-8" style={{ borderBottom: '1px solid #262626' }}>
                 <div className="flex items-center gap-4">
                     <button
-                        onClick={onClose}
+                        onClick={handleBack}
                         className="p-2 -ml-2 rounded-full hover-bg-surface transition-all text-muted hover:text-white"
                         style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: 'inherit' }}
                     >
