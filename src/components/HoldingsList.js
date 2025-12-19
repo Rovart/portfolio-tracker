@@ -49,9 +49,9 @@ export default function HoldingsList({ holdings, onSelect, loading, hideBalances
                 </div>
             ))}
             {holdings.length === 0 && !loading && (
-                <div className="flex flex-col items-center justify-center py-10 opacity-60">
-                    <p className="text-sm">No assets yet.</p>
-                    <p className="text-[10px] uppercase tracking-widest font-bold">Start adding assets</p>
+                <div className="card flex flex-col items-center justify-center py-10 bg-white-5 rounded-2xl border border-white-5 border-dashed gap-2 animate-enter">
+                    <p className="text-sm font-medium text-white/80" style={{ margin: 0 }}>No assets yet.</p>
+                    <p className="text-[10px] uppercase tracking-widest font-bold text-muted" style={{ margin: 0 }}>Start adding assets</p>
                 </div>
             )}
         </div>
