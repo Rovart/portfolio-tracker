@@ -235,27 +235,45 @@ export default function Dashboard({ initialTransactions }) {
                         }
                     }
 
-                    // PRE-SMOOTH: Apply IQR-based outlier detection to individual asset prices
-                    // This catches dividend spikes, splits, and API errors at the source
+                    // PRE-SMOOTH: Apply aggressive IQR + V-shape detection to individual asset prices
+                    // This catches dividend spikes, splits, and API errors BEFORE portfolio aggregation
                     if (historyData.length > 10) {
-                        const prices = historyData.map(d => d.price).sort((a, b) => a - b);
+                        const prices = historyData.map(d => d.price).filter(p => p > 0).sort((a, b) => a - b);
                         const q1 = prices[Math.floor(prices.length * 0.25)];
                         const q3 = prices[Math.floor(prices.length * 0.75)];
                         const iqr = q3 - q1;
                         const lower = q1 - (1.5 * iqr);
                         const upper = q3 + (1.5 * iqr);
 
+                        // Pass 1: IQR outlier replacement
                         historyData = historyData.map((point, i, arr) => {
                             if (point.price < lower || point.price > upper) {
-                                // Replace with median of 5 neighbors
                                 const start = Math.max(0, i - 2);
                                 const end = Math.min(arr.length, i + 3);
-                                const neighborPrices = arr.slice(start, end).map(p => p.price).sort((a, b) => a - b);
-                                const median = neighborPrices[Math.floor(neighborPrices.length / 2)];
-                                return { ...point, price: median };
+                                const neighborPrices = arr.slice(start, end).map(p => p.price).filter(p => p > 0).sort((a, b) => a - b);
+                                if (neighborPrices.length > 0) {
+                                    const median = neighborPrices[Math.floor(neighborPrices.length / 2)];
+                                    return { ...point, price: median };
+                                }
                             }
                             return point;
                         });
+
+                        // Pass 2-4: V-shape spike detection (catches 15%+ deviations from neighbors)
+                        for (let pass = 0; pass < 3; pass++) {
+                            for (let i = 1; i < historyData.length - 1; i++) {
+                                const prev = historyData[i - 1].price;
+                                const curr = historyData[i].price;
+                                const next = historyData[i + 1].price;
+                                if (prev > 0 && next > 0) {
+                                    const diffPrev = Math.abs(curr - prev) / prev;
+                                    const diffNext = Math.abs(curr - next) / next;
+                                    if (diffPrev > 0.15 && diffNext > 0.15) {
+                                        historyData[i] = { ...historyData[i], price: (prev + next) / 2 };
+                                    }
+                                }
+                            }
+                        }
                     }
 
                     historyMap[fetchSym] = historyData;
