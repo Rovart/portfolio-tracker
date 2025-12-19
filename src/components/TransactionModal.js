@@ -219,14 +219,8 @@ export default function TransactionModal({ mode, holding, transactions, onClose,
         if (currentView === 'FORM') {
             setCurrentView('LIST');
             setEditingTx(null);
-        } else if (currentView === 'LIST') {
-            if (mode === 'ADD') {
-                setCurrentView('SEARCH');
-                setSelectedAsset(null);
-            } else {
-                onClose();
-            }
         } else {
+            // Close modal from SEARCH or LIST views
             onClose();
         }
     };
