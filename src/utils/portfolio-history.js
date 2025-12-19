@@ -3,8 +3,7 @@ import { normalizeAsset } from './portfolio-logic';
 export function calculatePortfolioHistory(transactions, historicalPrices, baseCurrency = 'USD', externalQuoteMap = {}) {
     if (!transactions || transactions.length === 0) return [];
 
-    // 1. Identify all unique assets and quote mappings
-    // 2. Identify all unique timestamps across all history entries
+    // 1. Identify all unique timestamps across all history entries
     const allHistoryEntries = Object.values(historicalPrices).flat();
     const sortedTimestamps = [...new Set(allHistoryEntries.map(h => h.date))].sort();
 
@@ -30,16 +29,8 @@ export function calculatePortfolioHistory(transactions, historicalPrices, baseCu
     const currentBalances = {};
     let txIndex = 0;
 
-    // 3. Pre-populate lastKnownPrices with the EARLIEST available price for each asset
-    // This prevents the portfolio value from dropping to 0 at the start of an asset's history
+    // Simple forward-fill: only value assets once we have seen a price for them
     const lastKnownPrices = {};
-    Object.entries(historicalPrices).forEach(([sym, history]) => {
-        if (history && history.length > 0) {
-            // Find the point with the earliest date
-            const earliest = [...history].sort((a, b) => a.date.localeCompare(b.date))[0];
-            lastKnownPrices[sym] = parseFloat(earliest.price) || 0;
-        }
-    });
 
     for (const timestamp of sortedTimestamps) {
         // Process all transactions that occurred at or before this timestamp
@@ -99,12 +90,14 @@ export function calculatePortfolioHistory(transactions, historicalPrices, baseCu
                         localPrice = parseFloat(exactEntry.price) || 0;
                         lastKnownPrices[priceSym] = localPrice;
                     } else {
+                        // Only use last known if we've actually seen a price
                         localPrice = lastKnownPrices[priceSym] || 0;
                     }
-                } else {
-                    localPrice = lastKnownPrices[priceSym] || 0;
                 }
             }
+
+            // Skip this asset if we have no price (don't use 0, just skip contribution)
+            if (localPrice === 0 && asset !== quoteCurr) continue;
 
             // 2. Get FX rate
             let fxRate = 1;
@@ -117,47 +110,40 @@ export function calculatePortfolioHistory(transactions, historicalPrices, baseCu
                         fxRate = parseFloat(exactFx.price) || 1;
                         lastKnownPrices[fxSym] = fxRate;
                     } else {
-                        fxRate = lastKnownPrices[fxSym] || lastKnownPrices[quoteCurr] || 1;
+                        fxRate = lastKnownPrices[fxSym] || 1;
                     }
-                } else {
-                    fxRate = lastKnownPrices[fxSym] || lastKnownPrices[quoteCurr] || 1;
                 }
             }
 
             totalValue += (amount * localPrice * fxRate);
         }
 
-        if (!isNaN(totalValue)) {
+        if (!isNaN(totalValue) && totalValue > 0) {
             dailyData.push({ date: timestamp, value: totalValue });
         }
     }
 
-    // SMOOTHING PASS: Filter out abrupt data outliers (dips/spikes) from bad Yahoo response bars
-    // We target "V" or "inverted V" shapes that represent more than 25% instantaneous change
-    if (dailyData.length > 5) {
-        return dailyData.map((point, i, arr) => {
+    // MULTI-PASS SMOOTHING: Iteratively remove outliers (up to 3 passes)
+    let smoothed = dailyData;
+    for (let pass = 0; pass < 3 && smoothed.length > 5; pass++) {
+        smoothed = smoothed.map((point, i, arr) => {
             if (i === 0 || i === arr.length - 1) return point;
             const prev = arr[i - 1].value;
             const curr = point.value;
             const next = arr[i + 1].value;
 
-            if (prev === 0 || next === 0) return point; // Don't smooth the very start
+            if (prev === 0 || next === 0) return point;
 
-            // Detect single-point extreme outliers (more than 25% deviation from both neighbors)
             const diffPrev = Math.abs(curr - prev) / prev;
             const diffNext = Math.abs(curr - next) / next;
 
-            const isSpike = diffPrev > 0.25 && diffNext > 0.25;
-
-            // Special case: if curr is 0 but neighbors aren't, it's almost certainly a bad point
-            const isZeroDip = curr === 0 && prev > 0 && next > 0;
-
-            if (isSpike || isZeroDip) {
+            // Catch spikes that deviate more than 40% from BOTH neighbors
+            if (diffPrev > 0.4 && diffNext > 0.4) {
                 return { ...point, value: (prev + next) / 2 };
             }
             return point;
         });
     }
 
-    return dailyData;
+    return smoothed;
 }
