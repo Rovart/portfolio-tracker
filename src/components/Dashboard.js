@@ -213,7 +213,7 @@ export default function Dashboard({ initialTransactions }) {
                         historyData = data.history
                             .filter(d => d.price !== null && d.price !== undefined && d.price > 0)
                             .map(d => ({
-                                date: d.date, // Use full timestamp
+                                date: d.date,
                                 price: d.price
                             }));
                     }
@@ -229,11 +229,33 @@ export default function Dashboard({ initialTransactions }) {
                                     date: d.date,
                                     price: d.price
                                 }));
-                            // Merge and unique by date, preferring granular
                             const merged = [...historyData, ...newPoints];
                             const unique = Array.from(new Map(merged.map(item => [item.date, item])).values());
                             historyData = unique.sort((a, b) => a.date.localeCompare(b.date));
                         }
+                    }
+
+                    // PRE-SMOOTH: Apply IQR-based outlier detection to individual asset prices
+                    // This catches dividend spikes, splits, and API errors at the source
+                    if (historyData.length > 10) {
+                        const prices = historyData.map(d => d.price).sort((a, b) => a - b);
+                        const q1 = prices[Math.floor(prices.length * 0.25)];
+                        const q3 = prices[Math.floor(prices.length * 0.75)];
+                        const iqr = q3 - q1;
+                        const lower = q1 - (1.5 * iqr);
+                        const upper = q3 + (1.5 * iqr);
+
+                        historyData = historyData.map((point, i, arr) => {
+                            if (point.price < lower || point.price > upper) {
+                                // Replace with median of 5 neighbors
+                                const start = Math.max(0, i - 2);
+                                const end = Math.min(arr.length, i + 3);
+                                const neighborPrices = arr.slice(start, end).map(p => p.price).sort((a, b) => a - b);
+                                const median = neighborPrices[Math.floor(neighborPrices.length / 2)];
+                                return { ...point, price: median };
+                            }
+                            return point;
+                        });
                     }
 
                     historyMap[fetchSym] = historyData;
