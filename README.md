@@ -73,7 +73,7 @@ A premium, dark-mode portfolio tracker built with Next.js, Recharts, and Yahoo F
 - Track P/L for each buy transaction
 
 ### Customization
-- Switch between USD and EUR base currencies
+- Switch between USD, EUR and other base currencies
 - Toggle privacy mode to hide balances
 - Adjust chart timeframes for different perspectives
 
