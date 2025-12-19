@@ -45,12 +45,17 @@ A premium, dark-mode portfolio tracker built with Next.js, Recharts, and Yahoo F
    npm install
    ```
 
-3. Run the development server:
+3. Build the production application:
    ```bash
-   npm run dev
+   npm run build
    ```
 
-4. Open [http://localhost:3000](http://localhost:3000) in your browser.
+4. Start the production server:
+   ```bash
+   npm run start
+   ```
+
+5. Open [http://localhost:3000](http://localhost:3000) in your browser.
 
 ## 📊 Usage
 
