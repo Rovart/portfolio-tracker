@@ -258,11 +258,13 @@ export default function TransactionModal({ mode, holding, transactions, onClose,
                 flexDirection: 'column',
                 animation: 'fadeIn 0.2s ease-out',
                 height: '100dvh',
-                width: '100vw'
+                width: '100vw',
+                paddingTop: 'env(safe-area-inset-top, 0px)',
+                paddingBottom: 'env(safe-area-inset-bottom, 0px)'
             }}
         >
             {/* Header Area */}
-            <div className="flex items-center justify-between p-6 sm:px-8" style={{ borderBottom: '1px solid #262626' }}>
+            <div className="flex items-center justify-between p-4 sm:p-6 sm:px-8" style={{ borderBottom: '1px solid #262626' }}>
                 <div className="flex items-center gap-4">
                     <button
                         onClick={handleBack}

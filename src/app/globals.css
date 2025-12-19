@@ -44,11 +44,6 @@ body {
   flex-direction: column;
 }
 
-/* Safe area padding for native mobile apps only */
-body.native-app {
-  padding-top: env(safe-area-inset-top, 0px);
-  padding-bottom: env(safe-area-inset-bottom, 0px);
-}
 
 * {
   box-sizing: border-box;
@@ -74,6 +69,7 @@ a {
   max-width: 600px;
   margin: 0 auto;
   padding: 16px;
+  padding-top: calc(16px + env(safe-area-inset-top, 0px));
   width: 100%;
 }
 
