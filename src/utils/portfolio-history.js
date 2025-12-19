@@ -123,27 +123,54 @@ export function calculatePortfolioHistory(transactions, historicalPrices, baseCu
         }
     }
 
-    // MULTI-PASS SMOOTHING: Iteratively remove outliers (up to 3 passes)
-    let smoothed = dailyData;
-    for (let pass = 0; pass < 3 && smoothed.length > 5; pass++) {
-        smoothed = smoothed.map((point, i, arr) => {
-            if (i === 0 || i === arr.length - 1) return point;
-            const prev = arr[i - 1].value;
-            const curr = point.value;
-            const next = arr[i + 1].value;
+    // STATISTICAL OUTLIER DETECTION using IQR (Interquartile Range)
+    // This catches both single-point spikes and sustained anomalies
+    if (dailyData.length > 10) {
+        const values = dailyData.map(d => d.value).sort((a, b) => a - b);
+        const q1Index = Math.floor(values.length * 0.25);
+        const q3Index = Math.floor(values.length * 0.75);
+        const q1 = values[q1Index];
+        const q3 = values[q3Index];
+        const iqr = q3 - q1;
 
-            if (prev === 0 || next === 0) return point;
+        // Bounds: anything outside 2x IQR from Q1/Q3 is an outlier
+        const lowerBound = q1 - (2 * iqr);
+        const upperBound = q3 + (2 * iqr);
 
-            const diffPrev = Math.abs(curr - prev) / prev;
-            const diffNext = Math.abs(curr - next) / next;
-
-            // Catch spikes that deviate more than 40% from BOTH neighbors
-            if (diffPrev > 0.4 && diffNext > 0.4) {
-                return { ...point, value: (prev + next) / 2 };
+        // Replace outliers with rolling median of 5 neighbors
+        const smoothed = dailyData.map((point, i, arr) => {
+            if (point.value < lowerBound || point.value > upperBound) {
+                // Get up to 5 neighbors (2 before, current, 2 after)
+                const start = Math.max(0, i - 2);
+                const end = Math.min(arr.length, i + 3);
+                const neighbors = arr.slice(start, end).map(p => p.value).sort((a, b) => a - b);
+                const median = neighbors[Math.floor(neighbors.length / 2)];
+                return { ...point, value: median };
             }
             return point;
         });
+
+        // SECOND PASS: Catch remaining V-shape spikes using neighbor comparison
+        for (let pass = 0; pass < 2; pass++) {
+            for (let i = 1; i < smoothed.length - 1; i++) {
+                const prev = smoothed[i - 1].value;
+                const curr = smoothed[i].value;
+                const next = smoothed[i + 1].value;
+
+                if (prev === 0 || next === 0) continue;
+
+                const diffPrev = Math.abs(curr - prev) / prev;
+                const diffNext = Math.abs(curr - next) / next;
+
+                // Catch remaining spikes: >30% deviation from BOTH neighbors
+                if (diffPrev > 0.3 && diffNext > 0.3) {
+                    smoothed[i] = { ...smoothed[i], value: (prev + next) / 2 };
+                }
+            }
+        }
+
+        return smoothed;
     }
 
-    return smoothed;
+    return dailyData;
 }
