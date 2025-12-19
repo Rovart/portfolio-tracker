@@ -450,38 +450,50 @@ export default function Dashboard({ initialTransactions }) {
                         </header>
 
                         <div className="no-select">
-                            <ProfitChart
-                                data={history}
-                                baseCurrency={baseCurrency}
-                                hideBalances={hideBalances}
-                                loading={historyLoading}
-                            />
+                            {transactions.length === 0 && !loading ? (
+                                <div className="flex flex-col items-center justify-center py-20 bg-white-5 rounded-3xl border border-white-5 border-dashed">
+                                    <Search size={48} className="text-muted mb-4 opacity-20" />
+                                    <p className="text-lg font-medium text-muted">Your portfolio is empty</p>
+                                    <p className="text-sm text-muted opacity-60">Tap the search button below to add your first asset</p>
+                                </div>
+                            ) : (
+                                <ProfitChart
+                                    data={history}
+                                    baseCurrency={baseCurrency}
+                                    hideBalances={hideBalances}
+                                    loading={historyLoading}
+                                />
+                            )}
                         </div>
 
 
-                        <div className="flex justify-between mb-8 overflow-x-auto gap-1 sm:gap-2 no-scrollbar">
-                            {TIMEFRAMES.map((tf) => (
-                                <button
-                                    key={tf}
-                                    onClick={() => setTimeframe(tf)}
-                                    className={`btn ${timeframe === tf ? 'bg-white text-black shadow-lg' : 'btn-ghost opacity-60 hover:opacity-100'}`}
-                                    style={{
-                                        background: timeframe === tf ? 'var(--foreground)' : 'transparent',
-                                        color: timeframe === tf ? 'var(--background)' : 'var(--muted)',
-                                        flex: 1,
-                                        minWidth: '45px',
-                                        padding: '8px 4px',
-                                        fontSize: '0.75rem'
-                                    }}
-                                >
-                                    {tf}
-                                </button>
-                            ))}
-                        </div>
+                        {transactions.length > 0 && (
+                            <div className="flex justify-between mb-8 overflow-x-auto gap-1 sm:gap-2 no-scrollbar">
+                                {TIMEFRAMES.map((tf) => (
+                                    <button
+                                        key={tf}
+                                        onClick={() => setTimeframe(tf)}
+                                        className={`btn ${timeframe === tf ? 'bg-white text-black shadow-lg' : 'btn-ghost opacity-60 hover:opacity-100'}`}
+                                        style={{
+                                            background: timeframe === tf ? 'var(--foreground)' : 'transparent',
+                                            color: timeframe === tf ? 'var(--background)' : 'var(--muted)',
+                                            flex: 1,
+                                            minWidth: '45px',
+                                            padding: '8px 4px',
+                                            fontSize: '0.75rem'
+                                        }}
+                                    >
+                                        {tf}
+                                    </button>
+                                ))}
+                            </div>
+                        )}
 
-                        <div className="mb-6 desktop-only no-select">
-                            <CompositionChart holdings={holdings} baseCurrency={baseCurrency} hideBalances={hideBalances} loading={pricesLoading} />
-                        </div>
+                        {transactions.length > 0 && (
+                            <div className="mb-6 desktop-only no-select">
+                                <CompositionChart holdings={holdings} baseCurrency={baseCurrency} hideBalances={hideBalances} loading={pricesLoading} />
+                            </div>
+                        )}
                     </div>
 
                     {/* Sidebar: Balance & Holdings */}

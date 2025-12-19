@@ -48,6 +48,12 @@ export default function HoldingsList({ holdings, onSelect, loading, hideBalances
                     </div>
                 </div>
             ))}
+            {holdings.length === 0 && !loading && (
+                <div className="flex flex-col items-center justify-center py-10 opacity-60">
+                    <p className="text-sm">No assets yet.</p>
+                    <p className="text-[10px] uppercase tracking-widest font-bold">Start adding assets</p>
+                </div>
+            )}
         </div>
     );
 }
