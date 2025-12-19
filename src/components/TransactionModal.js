@@ -435,6 +435,7 @@ export default function TransactionModal({ mode, holding, transactions, onClose,
                             <TransactionForm
                                 holding={selectedAsset}
                                 existingTx={editingTx}
+                                transactions={transactions}
                                 fetchedCurrency={selectedAsset.currency}
                                 onSave={(tx) => { onSave(tx); setCurrentView('LIST'); setEditingTx(null); }}
                                 onCancel={toList}
@@ -451,7 +452,7 @@ function handleDelete(fn, id) {
     if (confirm('Delete this transaction? This cannot be undone.')) fn(id);
 }
 
-function TransactionForm({ holding, existingTx, onSave, onCancel, fetchedCurrency }) {
+function TransactionForm({ holding, existingTx, transactions, onSave, onCancel, fetchedCurrency }) {
     // Standardize symbol access
     const sym = holding.symbol || holding.asset;
 
@@ -472,7 +473,29 @@ function TransactionForm({ holding, existingTx, onSave, onCancel, fetchedCurrenc
     const [amount, setAmount] = useState(existingTx?.baseAmount || '');
     const [price, setPrice] = useState(existingTx ? (existingTx.quoteAmount / (existingTx.baseAmount || 1)) : '');
     const [date, setDate] = useState(existingTx?.date ? new Date(existingTx.date).toISOString().split('T')[0] : new Date().toISOString().split('T')[0]);
-    const [useFiat, setUseFiat] = useState(existingTx ? !!existingTx.quoteCurrency : true);
+
+    // Calculate quote balance to determine default toggle state
+    const quoteBalance = useMemo(() => {
+        if (!transactions) return 0;
+        return transactions
+            .filter(t => t.baseCurrency === detectedQuote)
+            .reduce((acc, t) => {
+                const bAmt = parseFloat(t.baseAmount) || 0;
+                if (['BUY', 'DEPOSIT'].includes(t.type)) return acc + bAmt;
+                if (['SELL', 'WITHDRAW'].includes(t.type)) return acc - bAmt;
+                return acc;
+            }, 0);
+    }, [transactions, detectedQuote]);
+
+    const [useFiat, setUseFiat] = useState(existingTx ? !!existingTx.quoteCurrency : quoteBalance > 0);
+
+    // Sync useFiat when quote currency changes (for new transactions)
+    useEffect(() => {
+        if (!existingTx) {
+            setUseFiat(quoteBalance > 0);
+        }
+    }, [detectedQuote, quoteBalance, existingTx]);
+
     const [fetchingPrice, setFetchingPrice] = useState(false);
     const [isManualPrice, setIsManualPrice] = useState(false);
 
