@@ -206,7 +206,7 @@ export default function TransactionModal({ mode, holding, transactions, onClose,
             originalType: asset.type,
             currency: asset.currency // Use currency from search result
         });
-        setCurrentView('FORM');
+        setCurrentView('LIST');
         setEditingTx(null);
     };
 

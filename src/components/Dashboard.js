@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
-import { Eye, EyeOff } from 'lucide-react';
+import { Eye, EyeOff, Search } from 'lucide-react';
 import ProfitChart from './ProfitChart';
 import CompositionChart from './CompositionChart';
 import HoldingsList from './HoldingsList';
@@ -532,7 +532,7 @@ export default function Dashboard({ initialTransactions }) {
                         boxShadow: '0 12px 40px rgba(0,0,0,0.5)'
                     }}
                 >
-                    +
+                    <Search size={32} />
                 </button>
             )}
         </>
