@@ -1,15 +1,26 @@
 'use client';
 
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { Eye, EyeOff, Search, Settings, RefreshCw } from 'lucide-react';
+import { Eye, EyeOff, Search, Settings } from 'lucide-react';
 import ProfitChart from './ProfitChart';
 import CompositionChart from './CompositionChart';
 import HoldingsList from './HoldingsList';
 import TransactionModal from './TransactionModal';
+import SettingsModal from './SettingsModal';
 import PullToRefresh from './PullToRefresh';
 import { calculateHoldings } from '@/utils/portfolio-logic';
 import { calculatePortfolioHistory } from '@/utils/portfolio-history';
-import { getAllTransactions, addTransaction, updateTransaction, deleteTransaction, getSetting, setSetting } from '@/utils/db';
+import {
+    getAllTransactions,
+    getTransactionsByPortfolio,
+    addTransaction,
+    updateTransaction,
+    deleteTransaction,
+    getSetting,
+    setSetting,
+    ensureDefaultPortfolio,
+    getAllPortfolios
+} from '@/utils/db';
 
 const TIMEFRAMES = ['1D', '1W', '1M', '1Y', 'YTD', 'ALL'];
 
@@ -21,6 +32,7 @@ export default function Dashboard() {
     const [timeframe, setTimeframe] = useState('1D');
     const [selectedHolding, setSelectedHolding] = useState(null);
     const [isModalOpen, setIsModalOpen] = useState(false);
+    const [isSettingsModalOpen, setIsSettingsModalOpen] = useState(false);
     const [modalMode, setModalMode] = useState('MANAGE');
     const [loading, setLoading] = useState(true);
     const [pricesLoading, setPricesLoading] = useState(true);
@@ -28,12 +40,12 @@ export default function Dashboard() {
     const [rawHistory, setRawHistory] = useState([]);
     const [hideBalances, setHideBalances] = useState(false);
     const [baseCurrency, setBaseCurrency] = useState('USD');
-    const [showSettings, setShowSettings] = useState(false);
-    const [refreshTrigger, setRefreshTrigger] = useState(0); // Increments to force data refetch
+    const [refreshTrigger, setRefreshTrigger] = useState(0);
+    const [portfolios, setPortfolios] = useState([]);
+    const [currentPortfolioId, setCurrentPortfolioId] = useState('all'); // 'all' or portfolio id
     const prevTimeframeRef = useRef(timeframe);
     const prevBaseCurrencyRef = useRef(baseCurrency);
     const prevBaseCurrencyQuotesRef = useRef(baseCurrency);
-    const settingsRef = useRef(null);
 
     const CURRENCIES = ['USD', 'EUR', 'GBP', 'JPY', 'CAD', 'AUD', 'CHF', 'CNY', 'HKD', 'SGD'];
 
@@ -41,7 +53,18 @@ export default function Dashboard() {
     useEffect(() => {
         async function loadData() {
             try {
-                const savedTransactions = await getAllTransactions();
+                // Ensure default portfolio exists
+                const allPortfolios = await ensureDefaultPortfolio();
+                setPortfolios(allPortfolios);
+
+                // Load saved portfolio preference
+                const savedPortfolioId = await getSetting('current_portfolio', 'all');
+                setCurrentPortfolioId(savedPortfolioId);
+
+                // Load transactions for current portfolio
+                const savedTransactions = savedPortfolioId === 'all'
+                    ? await getAllTransactions()
+                    : await getTransactionsByPortfolio(savedPortfolioId);
                 setTransactions(savedTransactions || []);
 
                 const savedPrivacy = await getSetting('hide_balances', false);
@@ -57,16 +80,7 @@ export default function Dashboard() {
         loadData();
     }, []);
 
-    // Close settings dropdown when clicking outside
-    useEffect(() => {
-        const handleClickOutside = (event) => {
-            if (settingsRef.current && !settingsRef.current.contains(event.target)) {
-                setShowSettings(false);
-            }
-        };
-        document.addEventListener('mousedown', handleClickOutside);
-        return () => document.removeEventListener('mousedown', handleClickOutside);
-    }, []);
+
 
     const togglePrivacy = async () => {
         const newState = !hideBalances;
@@ -77,6 +91,31 @@ export default function Dashboard() {
     const handleCurrencyChange = async (curr) => {
         setBaseCurrency(curr);
         await setSetting('base_currency', curr);
+    };
+
+    // Handle portfolio change
+    const handlePortfolioChange = async (portfolioId) => {
+        setCurrentPortfolioId(portfolioId);
+        await setSetting('current_portfolio', portfolioId);
+
+        // Reload transactions for the new portfolio
+        const newTransactions = portfolioId === 'all'
+            ? await getAllTransactions()
+            : await getTransactionsByPortfolio(portfolioId);
+        setTransactions(newTransactions || []);
+
+        // Trigger data refresh
+        setPricesLoading(true);
+        setHistoryLoading(true);
+        setPrices({});
+        setRawHistory([]);
+        setRefreshTrigger(prev => prev + 1);
+    };
+
+    // Reload portfolios (called after settings modal closes)
+    const reloadPortfolios = async () => {
+        const allPortfolios = await getAllPortfolios();
+        setPortfolios(allPortfolios);
     };
 
     // Pull-to-refresh handler - forces a full data reload
@@ -420,8 +459,13 @@ export default function Dashboard() {
             await updateTransaction(tx.id, tx);
             updated = transactions.map(t => t.id === tx.id ? tx : t);
         } else {
-            const newId = await addTransaction(tx);
-            const newTx = { ...tx, id: newId };
+            // Add portfolioId if not already set
+            const txWithPortfolio = {
+                ...tx,
+                portfolioId: tx.portfolioId || (currentPortfolioId === 'all' ? 1 : currentPortfolioId)
+            };
+            const newId = await addTransaction(txWithPortfolio);
+            const newTx = { ...txWithPortfolio, id: newId };
             updated = [newTx, ...transactions];
         }
         setTransactions(updated);
@@ -571,6 +615,35 @@ export default function Dashboard() {
         <>
             <PullToRefresh onRefresh={handleRefresh} disabled={holdings.length === 0}>
                 <div className="container animate-enter">
+                    {/* Portfolio Selector - only show if more than 1 portfolio */}
+                    {portfolios.length > 1 && (
+                        <div className="flex gap-2 mb-4 overflow-x-auto pb-2 -mx-2 px-2" style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}>
+                            <button
+                                onClick={() => handlePortfolioChange('all')}
+                                className={`px-4 py-2 rounded-full font-medium text-sm whitespace-nowrap transition-all ${currentPortfolioId === 'all'
+                                    ? 'bg-white text-black'
+                                    : 'bg-white/5 text-white/60 hover:bg-white/10'
+                                    }`}
+                                style={{ border: 'none', cursor: 'pointer' }}
+                            >
+                                All Portfolios
+                            </button>
+                            {portfolios.map(p => (
+                                <button
+                                    key={p.id}
+                                    onClick={() => handlePortfolioChange(p.id)}
+                                    className={`px-4 py-2 rounded-full font-medium text-sm whitespace-nowrap transition-all ${currentPortfolioId === p.id
+                                        ? 'bg-white text-black'
+                                        : 'bg-white/5 text-white/60 hover:bg-white/10'
+                                        }`}
+                                    style={{ border: 'none', cursor: 'pointer' }}
+                                >
+                                    {p.name}
+                                </button>
+                            ))}
+                        </div>
+                    )}
+
                     <div className="grid-desktop">
                         {/* Main Content: Charts & Performance */}
                         <div className="main-content">
@@ -612,52 +685,14 @@ export default function Dashboard() {
                                                 ))}
                                             </select>
                                         </div>
-                                        <div className="relative" ref={settingsRef}>
-                                            <button
-                                                onClick={() => setShowSettings(!showSettings)}
-                                                className="p-2 text-muted hover:text-white transition-colors rounded-full hover:bg-white-5"
-                                                style={{ background: 'transparent', border: 'none', cursor: 'pointer', display: 'flex' }}
-                                                title="Settings"
-                                            >
-                                                <Settings size={18} />
-                                            </button>
-                                            {showSettings && (
-                                                <div
-                                                    className="absolute right-0 top-full mt-2 py-2 rounded-xl shadow-2xl z-50 border border-white-10"
-                                                    style={{
-                                                        minWidth: '180px',
-                                                        width: 'max-content',
-                                                        backgroundColor: '#161616',
-                                                        boxShadow: '0 10px 40px rgba(0,0,0,0.9)',
-                                                        right: '0px'
-                                                    }}
-                                                >
-                                                    <label
-                                                        className="flex items-center gap-3 px-4 py-3 text-sm cursor-pointer hover:bg-white-10 transition-colors w-full"
-                                                        style={{ color: 'white', display: 'flex' }}
-                                                    >
-                                                        <span style={{ fontSize: '1.2rem', marginRight: '5px' }}>📥</span>
-                                                        <span>Import CSV</span>
-                                                        <input type="file" accept=".csv" onChange={(e) => { handleImportCsv(e); setShowSettings(false); }} style={{ display: 'none' }} />
-                                                    </label>
-                                                    <div style={{ height: '1px', backgroundColor: 'rgba(255,255,255,0.05)', margin: '0 8px' }}></div>
-                                                    <button
-                                                        onClick={() => { handleExportCsv(); setShowSettings(false); }}
-                                                        className="flex items-center gap-3 px-4 py-3 text-sm w-full text-left hover:bg-white-10 transition-colors"
-                                                        style={{
-                                                            border: 'none',
-                                                            color: 'white',
-                                                            cursor: 'pointer',
-                                                            outline: 'none',
-                                                            background: 'none'
-                                                        }}
-                                                    >
-                                                        <span style={{ fontSize: '1.2rem', marginRight: '5px' }}>📤</span>
-                                                        <span>Export CSV</span>
-                                                    </button>
-                                                </div>
-                                            )}
-                                        </div>
+                                        <button
+                                            onClick={() => setIsSettingsModalOpen(true)}
+                                            className="p-2 text-muted hover:text-white transition-colors rounded-full hover:bg-white-5"
+                                            style={{ background: 'transparent', border: 'none', cursor: 'pointer', display: 'flex' }}
+                                            title="Settings"
+                                        >
+                                            <Settings size={18} />
+                                        </button>
                                     </div>
                                 </div>
                                 {pricesLoading || (historyLoading && timeframe !== '1D') ? (
@@ -767,8 +802,8 @@ export default function Dashboard() {
 
             {isModalOpen && (
                 <TransactionModal
-                    mode={modalMode} // ADD or MANAGE
-                    holding={selectedHolding} // Null if ADD
+                    mode={modalMode}
+                    holding={selectedHolding}
                     transactions={transactions}
                     hideBalances={hideBalances}
                     baseCurrency={baseCurrency}
@@ -778,7 +813,19 @@ export default function Dashboard() {
                 />
             )}
 
-            {!isModalOpen && (
+            {isSettingsModalOpen && (
+                <SettingsModal
+                    onClose={() => {
+                        setIsSettingsModalOpen(false);
+                        reloadPortfolios();
+                        setRefreshTrigger(prev => prev + 1);
+                    }}
+                    onPortfolioChange={handlePortfolioChange}
+                    currentPortfolioId={currentPortfolioId}
+                />
+            )}
+
+            {!isModalOpen && !isSettingsModalOpen && (
                 <button
                     onClick={openAddModal}
                     className="btn fixed hover-scale active-scale shadow-lg"

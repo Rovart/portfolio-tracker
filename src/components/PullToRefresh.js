@@ -9,6 +9,7 @@ export default function PullToRefresh({ onRefresh, children, disabled = false })
     const containerRef = useRef(null);
     const startY = useRef(0);
     const currentY = useRef(0);
+    const startedAtTop = useRef(false); // Track if touch started at top
 
     const THRESHOLD = 80; // Distance needed to trigger refresh
     const MAX_PULL = 120; // Maximum visual pull distance
@@ -16,20 +17,33 @@ export default function PullToRefresh({ onRefresh, children, disabled = false })
     const handleTouchStart = useCallback((e) => {
         // Don't allow pull if disabled
         if (disabled) return;
-        // Only start if we're at the top of the page
-        if (window.scrollY === 0) {
+
+        // Only allow pull if we're exactly at the top of the page
+        const isAtTop = window.scrollY <= 0;
+        startedAtTop.current = isAtTop;
+
+        if (isAtTop) {
             startY.current = e.touches[0].clientY;
             setPulling(true);
         }
     }, [disabled]);
 
     const handleTouchMove = useCallback((e) => {
-        if (!pulling || refreshing) return;
+        // Must have started at top AND still be at top
+        if (!pulling || refreshing || !startedAtTop.current) return;
+
+        // If user scrolled away from top, cancel the pull
+        if (window.scrollY > 0) {
+            setPullDistance(0);
+            setPulling(false);
+            return;
+        }
 
         currentY.current = e.touches[0].clientY;
         const delta = currentY.current - startY.current;
 
-        if (delta > 0 && window.scrollY === 0) {
+        // Only pull down, not up
+        if (delta > 0) {
             // Apply resistance to make it feel more natural
             const distance = Math.min(delta * 0.5, MAX_PULL);
             setPullDistance(distance);
@@ -38,6 +52,9 @@ export default function PullToRefresh({ onRefresh, children, disabled = false })
             if (distance > 10) {
                 e.preventDefault();
             }
+        } else {
+            // User is scrolling up, cancel the pull
+            setPullDistance(0);
         }
     }, [pulling, refreshing]);
 
