@@ -1,7 +1,7 @@
 import YahooFinance from 'yahoo-finance2';
 import { NextResponse } from 'next/server';
 
-const yahooFinance = new YahooFinance();
+const yahooFinance = new YahooFinance({ suppressNotices: ['yahooSurvey'] });
 
 export async function GET(request) {
     const { searchParams } = new URL(request.url);
