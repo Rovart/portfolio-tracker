@@ -24,7 +24,6 @@ export const metadata = {
   viewport: {
     width: "device-width",
     initialScale: 1,
-    viewportFit: "cover",
   },
   icons: {
     icon: "/icon-192.png",
