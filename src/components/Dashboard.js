@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
-import { Eye, EyeOff, Search } from 'lucide-react';
+import { Eye, EyeOff, Search, Settings } from 'lucide-react';
 import ProfitChart from './ProfitChart';
 import CompositionChart from './CompositionChart';
 import HoldingsList from './HoldingsList';
@@ -27,9 +27,11 @@ export default function Dashboard() {
     const [rawHistory, setRawHistory] = useState([]);
     const [hideBalances, setHideBalances] = useState(false);
     const [baseCurrency, setBaseCurrency] = useState('USD');
+    const [showSettings, setShowSettings] = useState(false);
     const prevTimeframeRef = useRef(timeframe);
     const prevBaseCurrencyRef = useRef(baseCurrency);
     const prevBaseCurrencyQuotesRef = useRef(baseCurrency);
+    const settingsRef = useRef(null);
 
     const CURRENCIES = ['USD', 'EUR', 'GBP', 'JPY', 'CAD', 'AUD', 'CHF', 'CNY', 'HKD', 'SGD'];
 
@@ -51,6 +53,17 @@ export default function Dashboard() {
             setLoading(false);
         }
         loadData();
+    }, []);
+
+    // Close settings dropdown when clicking outside
+    useEffect(() => {
+        const handleClickOutside = (event) => {
+            if (settingsRef.current && !settingsRef.current.contains(event.target)) {
+                setShowSettings(false);
+            }
+        };
+        document.addEventListener('mousedown', handleClickOutside);
+        return () => document.removeEventListener('mousedown', handleClickOutside);
     }, []);
 
     const togglePrivacy = async () => {
@@ -553,6 +566,34 @@ export default function Dashboard() {
                                         ))}
                                     </select>
                                 </div>
+                                <div className="relative" ref={settingsRef}>
+                                    <button
+                                        onClick={() => setShowSettings(!showSettings)}
+                                        className="p-2 text-muted hover:text-white transition-colors"
+                                        style={{ background: 'transparent', border: 'none', cursor: 'pointer' }}
+                                        title="Settings"
+                                    >
+                                        <Settings size={18} />
+                                    </button>
+                                    {showSettings && (
+                                        <div
+                                            className="absolute right-0 mt-2 py-2 bg-glass border border-white-10 rounded-lg shadow-xl z-50"
+                                            style={{ minWidth: '160px' }}
+                                        >
+                                            <label className="flex items-center gap-2 px-4 py-2 text-sm text-white hover:bg-white-10 cursor-pointer transition-colors">
+                                                📥 Import CSV
+                                                <input type="file" accept=".csv" onChange={(e) => { handleImportCsv(e); setShowSettings(false); }} style={{ display: 'none' }} />
+                                            </label>
+                                            <button
+                                                onClick={() => { handleExportCsv(); setShowSettings(false); }}
+                                                className="flex items-center gap-2 px-4 py-2 text-sm text-white hover:bg-white-10 w-full text-left transition-colors"
+                                                style={{ background: 'transparent', border: 'none' }}
+                                            >
+                                                📤 Export CSV
+                                            </button>
+                                        </div>
+                                    )}
+                                </div>
                             </div>
                             {pricesLoading || (historyLoading && timeframe !== '1D') ? (
                                 <div className="flex flex-col gap-2">
@@ -647,16 +688,6 @@ export default function Dashboard() {
 
                     {/* Sidebar: Balance & Holdings */}
                     <div className="sidebar">
-                        <div style={{ display: 'flex', gap: '8px', marginBottom: '16px' }}>
-                            <label className="btn btn-secondary" style={{ flex: 1, cursor: 'pointer', textAlign: 'center', fontSize: '0.75rem' }}>
-                                📥 Import CSV
-                                <input type="file" accept=".csv" onChange={handleImportCsv} style={{ display: 'none' }} />
-                            </label>
-                            <button onClick={handleExportCsv} className="btn btn-secondary" style={{ flex: 1, fontSize: '0.75rem' }}>
-                                📤 Export CSV
-                            </button>
-                        </div>
-
                         <HoldingsList
                             holdings={holdings}
                             loading={pricesLoading}
