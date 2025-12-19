@@ -6,8 +6,8 @@ const config: CapacitorConfig = {
   webDir: 'out',
   server: {
     // For development, point to local Next.js server
-    // url: 'http://localhost:3000',
-    // cleartext: true
+    url: 'https://portfolio-tracker-xi-three.vercel.app/',
+    cleartext: true
   },
   ios: {
     contentInset: 'automatic'
