@@ -1,11 +1,12 @@
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { Eye, EyeOff, Search, Settings } from 'lucide-react';
 import ProfitChart from './ProfitChart';
 import CompositionChart from './CompositionChart';
 import HoldingsList from './HoldingsList';
 import TransactionModal from './TransactionModal';
+import PullToRefresh from './PullToRefresh';
 import { calculateHoldings } from '@/utils/portfolio-logic';
 import { calculatePortfolioHistory } from '@/utils/portfolio-history';
 import { getAllTransactions, addTransaction, updateTransaction, deleteTransaction, getSetting, setSetting } from '@/utils/db';
@@ -76,6 +77,17 @@ export default function Dashboard() {
         setBaseCurrency(curr);
         await setSetting('base_currency', curr);
     };
+
+    // Pull to refresh handler - forces a full data reload
+    const handleRefresh = useCallback(async () => {
+        setPricesLoading(true);
+        setHistoryLoading(true);
+        // Clear cached data to force fresh fetch
+        setPrices({});
+        setRawHistory([]);
+        // Small delay to show the refresh indicator
+        await new Promise(resolve => setTimeout(resolve, 500));
+    }, []);
 
     // Fetch Prices when transactions change (implies holdings might change)
     useEffect(() => {
@@ -525,237 +537,240 @@ export default function Dashboard() {
 
     return (
         <>
-            <div className="container animate-enter">
-                <div className="grid-desktop">
-                    {/* Main Content: Charts & Performance */}
-                    <div className="main-content">
-                        <header className="flex flex-col items-start px-1 pb-8 gap-4 w-full">
-                            <div className="flex items-center justify-between w-full gap-2">
-                                <div className="flex items-center gap-2 min-w-0">
-                                    <span className="text-muted text-xs sm:text-sm uppercase tracking-wider font-bold truncate">Portfolio Performance</span>
-                                    <button
-                                        onClick={togglePrivacy}
-                                        className="p-1 text-muted hover:text-white transition-colors shrink-0"
-                                        style={{ background: 'transparent', border: 'none', cursor: 'pointer' }}
-                                        title={hideBalances ? "Show Balances" : "Hide Balances"}
-                                    >
-                                        {hideBalances ? <EyeOff size={16} /> : <Eye size={16} />}
-                                    </button>
-                                </div>
-                                <div className="flex items-center gap-2 sm:gap-3 shrink-0">
-                                    <div className="relative">
-                                        <select
-                                            value={baseCurrency}
-                                            onChange={(e) => handleCurrencyChange(e.target.value)}
-                                            className="bg-white-5 hover:bg-white-10 border border-white-10 text-white text-xs font-bold rounded-full cursor-pointer transition-all focus:outline-none"
-                                            style={{
-                                                appearance: 'none',
-                                                WebkitAppearance: 'none',
-                                                MozAppearance: 'none',
-                                                padding: '6px 28px 6px 12px',
-                                                width: 'auto',
-                                                minWidth: '70px',
-                                                backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='white' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E")`,
-                                                backgroundRepeat: 'no-repeat',
-                                                backgroundPosition: 'right 10px center'
-                                            }}
-                                        >
-                                            {CURRENCIES.map(c => (
-                                                <option key={c} value={c} style={{ backgroundColor: '#171717', color: 'white' }}>
-                                                    {c}
-                                                </option>
-                                            ))}
-                                        </select>
-                                    </div>
-                                    <div className="relative" ref={settingsRef}>
+            <PullToRefresh onRefresh={handleRefresh}>
+                <div className="container animate-enter">
+                    <div className="grid-desktop">
+                        {/* Main Content: Charts & Performance */}
+                        <div className="main-content">
+                            <header className="flex flex-col items-start px-1 pb-8 gap-4 w-full">
+                                <div className="flex items-center justify-between w-full gap-2">
+                                    <div className="flex items-center gap-2 min-w-0">
+                                        <span className="text-muted text-xs sm:text-sm uppercase tracking-wider font-bold truncate">Portfolio Performance</span>
                                         <button
-                                            onClick={() => setShowSettings(!showSettings)}
-                                            className="p-2 text-muted hover:text-white transition-colors rounded-full hover:bg-white-5"
-                                            style={{ background: 'transparent', border: 'none', cursor: 'pointer', display: 'flex' }}
-                                            title="Settings"
+                                            onClick={togglePrivacy}
+                                            className="p-1 text-muted hover:text-white transition-colors shrink-0"
+                                            style={{ background: 'transparent', border: 'none', cursor: 'pointer' }}
+                                            title={hideBalances ? "Show Balances" : "Hide Balances"}
                                         >
-                                            <Settings size={18} />
+                                            {hideBalances ? <EyeOff size={16} /> : <Eye size={16} />}
                                         </button>
-                                        {showSettings && (
-                                            <div
-                                                className="absolute right-0 top-full mt-2 py-2 rounded-xl shadow-2xl z-50 border border-white-10"
+                                    </div>
+                                    <div className="flex items-center gap-2 sm:gap-3 shrink-0">
+                                        <div className="relative">
+                                            <select
+                                                value={baseCurrency}
+                                                onChange={(e) => handleCurrencyChange(e.target.value)}
+                                                className="bg-white-5 hover:bg-white-10 border border-white-10 text-white text-xs font-bold rounded-full cursor-pointer transition-all focus:outline-none"
                                                 style={{
-                                                    minWidth: '180px',
-                                                    width: 'max-content',
-                                                    backgroundColor: '#161616',
-                                                    boxShadow: '0 10px 40px rgba(0,0,0,0.9)',
-                                                    right: '0px'
+                                                    appearance: 'none',
+                                                    WebkitAppearance: 'none',
+                                                    MozAppearance: 'none',
+                                                    padding: '6px 28px 6px 12px',
+                                                    width: 'auto',
+                                                    minWidth: '70px',
+                                                    backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='white' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E")`,
+                                                    backgroundRepeat: 'no-repeat',
+                                                    backgroundPosition: 'right 10px center'
                                                 }}
                                             >
-                                                <label
-                                                    className="flex items-center gap-3 px-4 py-3 text-sm cursor-pointer hover:bg-white-10 transition-colors w-full"
-                                                    style={{ color: 'white', display: 'flex' }}
-                                                >
-                                                    <span style={{ fontSize: '1.2rem', marginRight: '5px' }}>📥</span>
-                                                    <span>Import CSV</span>
-                                                    <input type="file" accept=".csv" onChange={(e) => { handleImportCsv(e); setShowSettings(false); }} style={{ display: 'none' }} />
-                                                </label>
-                                                <div style={{ height: '1px', backgroundColor: 'rgba(255,255,255,0.05)', margin: '0 8px' }}></div>
-                                                <button
-                                                    onClick={() => { handleExportCsv(); setShowSettings(false); }}
-                                                    className="flex items-center gap-3 px-4 py-3 text-sm w-full text-left hover:bg-white-10 transition-colors"
+                                                {CURRENCIES.map(c => (
+                                                    <option key={c} value={c} style={{ backgroundColor: '#171717', color: 'white' }}>
+                                                        {c}
+                                                    </option>
+                                                ))}
+                                            </select>
+                                        </div>
+                                        <div className="relative" ref={settingsRef}>
+                                            <button
+                                                onClick={() => setShowSettings(!showSettings)}
+                                                className="p-2 text-muted hover:text-white transition-colors rounded-full hover:bg-white-5"
+                                                style={{ background: 'transparent', border: 'none', cursor: 'pointer', display: 'flex' }}
+                                                title="Settings"
+                                            >
+                                                <Settings size={18} />
+                                            </button>
+                                            {showSettings && (
+                                                <div
+                                                    className="absolute right-0 top-full mt-2 py-2 rounded-xl shadow-2xl z-50 border border-white-10"
                                                     style={{
-                                                        border: 'none',
-                                                        color: 'white',
-                                                        cursor: 'pointer',
-                                                        outline: 'none',
-                                                        background: 'none'
+                                                        minWidth: '180px',
+                                                        width: 'max-content',
+                                                        backgroundColor: '#161616',
+                                                        boxShadow: '0 10px 40px rgba(0,0,0,0.9)',
+                                                        right: '0px'
                                                     }}
                                                 >
-                                                    <span style={{ fontSize: '1.2rem', marginRight: '5px' }}>📤</span>
-                                                    <span>Export CSV</span>
-                                                </button>
-                                            </div>
-                                        )}
-                                    </div>
-                                </div>
-                            </div>
-                            {pricesLoading || (historyLoading && timeframe !== '1D') ? (
-                                <div className="flex flex-col gap-2">
-                                    {/* Consolidated loading state: only show skeletons for what's missing */}
-                                    {pricesLoading ? (
-                                        <>
-                                            <div className="h-10 w-48 bg-white-10 rounded animate-pulse" />
-                                            <div className="flex gap-4">
-                                                <div className="h-6 w-32 bg-white-10 rounded animate-pulse" />
-                                                <div className="h-6 w-40 bg-white-10 rounded animate-pulse" />
-                                            </div>
-                                        </>
-                                    ) : (
-                                        <>
-                                            <div className="flex flex-wrap items-center gap-3">
-                                                <div className="text-2xl font-bold tracking-tight">
-                                                    {hideBalances ? '••••••' : `${totalValue.toLocaleString(undefined, { maximumFractionDigits: 2 })} ${baseCurrency === 'USD' ? '$' : baseCurrency}`}
+                                                    <label
+                                                        className="flex items-center gap-3 px-4 py-3 text-sm cursor-pointer hover:bg-white-10 transition-colors w-full"
+                                                        style={{ color: 'white', display: 'flex' }}
+                                                    >
+                                                        <span style={{ fontSize: '1.2rem', marginRight: '5px' }}>📥</span>
+                                                        <span>Import CSV</span>
+                                                        <input type="file" accept=".csv" onChange={(e) => { handleImportCsv(e); setShowSettings(false); }} style={{ display: 'none' }} />
+                                                    </label>
+                                                    <div style={{ height: '1px', backgroundColor: 'rgba(255,255,255,0.05)', margin: '0 8px' }}></div>
+                                                    <button
+                                                        onClick={() => { handleExportCsv(); setShowSettings(false); }}
+                                                        className="flex items-center gap-3 px-4 py-3 text-sm w-full text-left hover:bg-white-10 transition-colors"
+                                                        style={{
+                                                            border: 'none',
+                                                            color: 'white',
+                                                            cursor: 'pointer',
+                                                            outline: 'none',
+                                                            background: 'none'
+                                                        }}
+                                                    >
+                                                        <span style={{ fontSize: '1.2rem', marginRight: '5px' }}>📤</span>
+                                                        <span>Export CSV</span>
+                                                    </button>
                                                 </div>
-                                            </div>
-                                            <div className="flex gap-4">
-                                                <div className="h-6 w-32 bg-white-10 rounded animate-pulse" />
-                                                <div className="h-6 w-40 bg-white-10 rounded animate-pulse" />
-                                            </div>
-                                        </>
-                                    )}
-                                </div>
-                            ) : (
-                                <div className="flex flex-col gap-1">
-                                    <div className="flex flex-wrap items-center gap-3">
-                                        <div className="text-2xl font-bold tracking-tight">
-                                            {hideBalances ? '••••••' : `${totalValue.toLocaleString(undefined, { maximumFractionDigits: 2 })} ${baseCurrency === 'USD' ? '$' : baseCurrency}`}
-                                        </div>
-                                        {timeframe !== '1D' && (
-                                            <div style={{ marginLeft: '5px' }} className={`text-xs px-2 py-0.5 rounded-md font-medium ${displayDiffDay >= 0 ? 'bg-success/10 text-success' : 'bg-danger/10 text-danger'}`}>
-                                                {hideBalances ? (
-                                                    `(${displayPercentDay >= 0 ? '+' : ''}${displayPercentDay.toFixed(2)}%)`
-                                                ) : (
-                                                    `${displayDiffDay >= 0 ? '+' : '-'}${Math.abs(displayDiffDay).toLocaleString(undefined, { maximumFractionDigits: 0 })} ${baseCurrency === 'USD' ? '$' : baseCurrency} (${displayPercentDay >= 0 ? '+' : ''}${displayPercentDay.toFixed(2)}%)`
-                                                )}
-                                            </div>
-                                        )}
-                                    </div>
-                                    <div className={`text font-medium flex flex-wrap items-center gap-x-3`}>
-                                        <div className={safeDiff >= 0 ? 'text-success' : 'text-danger'}>
-                                            {hideBalances ? (
-                                                <span className="flex items-center gap-1">
-                                                    {safePercent >= 0 ? '+' : ''}{safePercent.toFixed(2)}%
-                                                </span>
-                                            ) : (
-                                                <span>{safeDiff >= 0 ? '+' : '-'}{Math.abs(safeDiff).toLocaleString(undefined, { maximumFractionDigits: 2 })} {baseCurrency === 'USD' ? '$' : baseCurrency} ({safePercent >= 0 ? '+' : ''}{safePercent.toFixed(2)}%)</span>
                                             )}
                                         </div>
                                     </div>
                                 </div>
-                            )}
-                        </header>
+                                {pricesLoading || (historyLoading && timeframe !== '1D') ? (
+                                    <div className="flex flex-col gap-2">
+                                        {/* Consolidated loading state: only show skeletons for what's missing */}
+                                        {pricesLoading ? (
+                                            <>
+                                                <div className="h-10 w-48 bg-white-10 rounded animate-pulse" />
+                                                <div className="flex gap-4">
+                                                    <div className="h-6 w-32 bg-white-10 rounded animate-pulse" />
+                                                    <div className="h-6 w-40 bg-white-10 rounded animate-pulse" />
+                                                </div>
+                                            </>
+                                        ) : (
+                                            <>
+                                                <div className="flex flex-wrap items-center gap-3">
+                                                    <div className="text-2xl font-bold tracking-tight">
+                                                        {hideBalances ? '••••••' : `${totalValue.toLocaleString(undefined, { maximumFractionDigits: 2 })} ${baseCurrency === 'USD' ? '$' : baseCurrency}`}
+                                                    </div>
+                                                </div>
+                                                <div className="flex gap-4">
+                                                    <div className="h-6 w-32 bg-white-10 rounded animate-pulse" />
+                                                    <div className="h-6 w-40 bg-white-10 rounded animate-pulse" />
+                                                </div>
+                                            </>
+                                        )}
+                                    </div>
+                                ) : (
+                                    <div className="flex flex-col gap-1">
+                                        <div className="flex flex-wrap items-center gap-3">
+                                            <div className="text-2xl font-bold tracking-tight">
+                                                {hideBalances ? '••••••' : `${totalValue.toLocaleString(undefined, { maximumFractionDigits: 2 })} ${baseCurrency === 'USD' ? '$' : baseCurrency}`}
+                                            </div>
+                                            {timeframe !== '1D' && (
+                                                <div style={{ marginLeft: '5px' }} className={`text-xs px-2 py-0.5 rounded-md font-medium ${displayDiffDay >= 0 ? 'bg-success/10 text-success' : 'bg-danger/10 text-danger'}`}>
+                                                    {hideBalances ? (
+                                                        `(${displayPercentDay >= 0 ? '+' : ''}${displayPercentDay.toFixed(2)}%)`
+                                                    ) : (
+                                                        `${displayDiffDay >= 0 ? '+' : '-'}${Math.abs(displayDiffDay).toLocaleString(undefined, { maximumFractionDigits: 0 })} ${baseCurrency === 'USD' ? '$' : baseCurrency} (${displayPercentDay >= 0 ? '+' : ''}${displayPercentDay.toFixed(2)}%)`
+                                                    )}
+                                                </div>
+                                            )}
+                                        </div>
+                                        <div className={`text font-medium flex flex-wrap items-center gap-x-3`}>
+                                            <div className={safeDiff >= 0 ? 'text-success' : 'text-danger'}>
+                                                {hideBalances ? (
+                                                    <span className="flex items-center gap-1">
+                                                        {safePercent >= 0 ? '+' : ''}{safePercent.toFixed(2)}%
+                                                    </span>
+                                                ) : (
+                                                    <span>{safeDiff >= 0 ? '+' : '-'}{Math.abs(safeDiff).toLocaleString(undefined, { maximumFractionDigits: 2 })} {baseCurrency === 'USD' ? '$' : baseCurrency} ({safePercent >= 0 ? '+' : ''}{safePercent.toFixed(2)}%)</span>
+                                                )}
+                                            </div>
+                                        </div>
+                                    </div>
+                                )}
+                            </header>
 
-                        <div className="no-select">
-                            <ProfitChart
-                                data={history}
-                                baseCurrency={baseCurrency}
+                            <div className="no-select">
+                                <ProfitChart
+                                    data={history}
+                                    baseCurrency={baseCurrency}
+                                    hideBalances={hideBalances}
+                                    loading={historyLoading}
+                                />
+                            </div>
+
+
+                            <div className="flex justify-between mb-8 overflow-x-auto gap-1 sm:gap-2 no-scrollbar">
+                                {TIMEFRAMES.map((tf) => (
+                                    <button
+                                        key={tf}
+                                        onClick={() => setTimeframe(tf)}
+                                        className={`btn ${timeframe === tf ? 'bg-white text-black shadow-lg' : 'btn-ghost opacity-60 hover:opacity-100'}`}
+                                        style={{
+                                            background: timeframe === tf ? 'var(--foreground)' : 'transparent',
+                                            color: timeframe === tf ? 'var(--background)' : 'var(--muted)',
+                                            flex: 1,
+                                            minWidth: '45px',
+                                            padding: '8px 4px',
+                                            fontSize: '0.75rem'
+                                        }}
+                                    >
+                                        {tf}
+                                    </button>
+                                ))}
+                            </div>
+
+                            <div className="mb-6 desktop-only no-select">
+                                <CompositionChart holdings={holdings} baseCurrency={baseCurrency} hideBalances={hideBalances} loading={pricesLoading} />
+                            </div>
+                        </div>
+
+                        {/* Sidebar: Balance & Holdings */}
+                        <div className="sidebar">
+                            <HoldingsList
+                                holdings={holdings}
+                                loading={pricesLoading}
+                                onSelect={openManageModal}
                                 hideBalances={hideBalances}
-                                loading={historyLoading}
+                                baseCurrency={baseCurrency}
                             />
                         </div>
-
-
-                        <div className="flex justify-between mb-8 overflow-x-auto gap-1 sm:gap-2 no-scrollbar">
-                            {TIMEFRAMES.map((tf) => (
-                                <button
-                                    key={tf}
-                                    onClick={() => setTimeframe(tf)}
-                                    className={`btn ${timeframe === tf ? 'bg-white text-black shadow-lg' : 'btn-ghost opacity-60 hover:opacity-100'}`}
-                                    style={{
-                                        background: timeframe === tf ? 'var(--foreground)' : 'transparent',
-                                        color: timeframe === tf ? 'var(--background)' : 'var(--muted)',
-                                        flex: 1,
-                                        minWidth: '45px',
-                                        padding: '8px 4px',
-                                        fontSize: '0.75rem'
-                                    }}
-                                >
-                                    {tf}
-                                </button>
-                            ))}
-                        </div>
-
-                        <div className="mb-6 desktop-only no-select">
-                            <CompositionChart holdings={holdings} baseCurrency={baseCurrency} hideBalances={hideBalances} loading={pricesLoading} />
-                        </div>
-                    </div>
-
-                    {/* Sidebar: Balance & Holdings */}
-                    <div className="sidebar">
-                        <HoldingsList
-                            holdings={holdings}
-                            loading={pricesLoading}
-                            onSelect={openManageModal}
-                            hideBalances={hideBalances}
-                            baseCurrency={baseCurrency}
-                        />
                     </div>
                 </div>
+
+                {isModalOpen && (
+                    <TransactionModal
+                        mode={modalMode} // ADD or MANAGE
+                        holding={selectedHolding} // Null if ADD
+                        transactions={transactions}
+                        hideBalances={hideBalances}
+                        baseCurrency={baseCurrency}
+                        onClose={() => setIsModalOpen(false)}
+                        onSave={handleSaveTransaction}
+                        onDelete={handleDeleteTransaction}
+                    />
+                )}
+
+                {!isModalOpen && (
+                    <button
+                        onClick={openAddModal}
+                        className="btn fixed hover-scale active-scale shadow-lg"
+                        style={{
+                            bottom: '32px',
+                            right: '32px',
+                            width: '64px',
+                            height: '64px',
+                            borderRadius: '50%',
+                            fontSize: '32px',
+                            lineHeight: '1',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            background: 'white',
+                            color: 'black',
+                            zIndex: 10,
+                            boxShadow: '0 12px 40px rgba(0,0,0,0.5)'
+                        }}
+                    >
+                        <Search size={32} />
+                    </button>
+                )}
             </div>
-
-            {isModalOpen && (
-                <TransactionModal
-                    mode={modalMode} // ADD or MANAGE
-                    holding={selectedHolding} // Null if ADD
-                    transactions={transactions}
-                    hideBalances={hideBalances}
-                    baseCurrency={baseCurrency}
-                    onClose={() => setIsModalOpen(false)}
-                    onSave={handleSaveTransaction}
-                    onDelete={handleDeleteTransaction}
-                />
-            )}
-
-            {!isModalOpen && (
-                <button
-                    onClick={openAddModal}
-                    className="btn fixed hover-scale active-scale shadow-lg"
-                    style={{
-                        bottom: '32px',
-                        right: '32px',
-                        width: '64px',
-                        height: '64px',
-                        borderRadius: '50%',
-                        fontSize: '32px',
-                        lineHeight: '1',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        background: 'white',
-                        color: 'black',
-                        zIndex: 10,
-                        boxShadow: '0 12px 40px rgba(0,0,0,0.5)'
-                    }}
-                >
-                    <Search size={32} />
-                </button>
-            )}
+            </PullToRefresh>
         </>
     );
 }
