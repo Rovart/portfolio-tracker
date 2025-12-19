@@ -3,7 +3,7 @@ import { NextResponse } from 'next/server';
 
 const yahooFinance = new YahooFinance({ suppressNotices: ['yahooSurvey'] });
 
-// IQR-based outlier smoothing helper
+// IQR-based outlier smoothing + percentage-based V-shape detection
 function smoothOutliers(data) {
     if (!data || data.length < 10) return data;
 
@@ -16,9 +16,9 @@ function smoothOutliers(data) {
     const lower = q1 - (1.5 * iqr);
     const upper = q3 + (1.5 * iqr);
 
-    return data.map((point, i, arr) => {
+    // Pass 1: IQR outliers
+    let smoothed = data.map((point, i, arr) => {
         if (point.price < lower || point.price > upper) {
-            // Replace with median of 5 neighbors
             const start = Math.max(0, i - 2);
             const end = Math.min(arr.length, i + 3);
             const neighborPrices = arr.slice(start, end).map(p => p.price).filter(p => p > 0).sort((a, b) => a - b);
@@ -29,6 +29,26 @@ function smoothOutliers(data) {
         }
         return point;
     });
+
+    // Pass 2-4: Percentage-based V-shape detection (catches 25%+ single-point deviations)
+    for (let pass = 0; pass < 3; pass++) {
+        for (let i = 1; i < smoothed.length - 1; i++) {
+            const prev = smoothed[i - 1].price;
+            const curr = smoothed[i].price;
+            const next = smoothed[i + 1].price;
+
+            if (prev > 0 && next > 0) {
+                const diffPrev = Math.abs(curr - prev) / prev;
+                const diffNext = Math.abs(curr - next) / next;
+                // Catch spikes: >25% deviation from BOTH neighbors
+                if (diffPrev > 0.25 && diffNext > 0.25) {
+                    smoothed[i] = { ...smoothed[i], price: (prev + next) / 2 };
+                }
+            }
+        }
+    }
+
+    return smoothed;
 }
 
 export async function GET(request) {
