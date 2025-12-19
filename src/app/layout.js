@@ -1,5 +1,6 @@
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
+import MobileInit from "@/components/MobileInit";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -24,6 +25,7 @@ export const metadata = {
   viewport: {
     width: "device-width",
     initialScale: 1,
+    viewportFit: "cover",
   },
   icons: {
     icon: "/icon-192.png",
@@ -45,6 +47,7 @@ export default function RootLayout({ children }) {
         <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
       </head>
       <body className={`${geistSans.variable} ${geistMono.variable}`}>
+        <MobileInit />
         {children}
       </body>
     </html>
