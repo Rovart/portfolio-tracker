@@ -41,26 +41,33 @@ export default function TransactionModal({ mode, holding, transactions, onClose,
         };
     }, []);
 
-    // 2. Handle Android back gesture via history API
+    // 2. Handle Android back button/gesture via Capacitor App plugin
     useEffect(() => {
-        // Push a state so back gesture doesn't exit app
-        window.history.pushState({ modal: 'transaction' }, '');
+        let backButtonListener = null;
 
-        const handlePopState = (event) => {
-            // When back is pressed, close modal or navigate back within modal
-            if (currentView === 'FORM') {
-                setCurrentView('LIST');
-                setEditingTx(null);
-                // Push state again to keep modal open
-                window.history.pushState({ modal: 'transaction' }, '');
-            } else {
-                onClose();
+        const setupBackButton = async () => {
+            try {
+                const { App } = await import('@capacitor/app');
+                backButtonListener = await App.addListener('backButton', () => {
+                    if (currentView === 'FORM') {
+                        setCurrentView('LIST');
+                        setEditingTx(null);
+                    } else {
+                        onClose();
+                    }
+                });
+            } catch (e) {
+                // Capacitor App plugin not available (web browser)
+                console.log('Capacitor App plugin not available');
             }
         };
 
-        window.addEventListener('popstate', handlePopState);
+        setupBackButton();
+
         return () => {
-            window.removeEventListener('popstate', handlePopState);
+            if (backButtonListener) {
+                backButtonListener.remove();
+            }
         };
     }, [currentView, onClose]);
 
