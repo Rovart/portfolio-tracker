@@ -311,9 +311,10 @@ export default function Dashboard({ initialTransactions }) {
     const openManageModal = (holding) => {
         setSelectedHolding({
             asset: holding.asset,
-            price: holding.localPrice, // Use local price for the modal context
-            amount: holding.amount, // Pass current amount for MAX button
-            originalType: holding.originalType // Ensure type is passed for normalization
+            symbol: holding.originalAsset, // Pass the actual market symbol
+            price: holding.localPrice,
+            amount: holding.amount,
+            originalType: holding.originalType
         });
         setModalMode('MANAGE');
         setIsModalOpen(true);

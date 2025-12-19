@@ -4,6 +4,7 @@ import { useState, useEffect, useMemo, useRef } from 'react';
 import AssetSearch from './AssetSearch';
 import AssetChart from './AssetChart';
 import { Trash2, Edit2, X, Plus, ChevronLeft, ArrowLeft } from 'lucide-react';
+import { normalizeAsset } from '@/utils/portfolio-logic';
 
 const DISPLAY_NAME = true; // true = Name, false = Symbol
 
@@ -145,7 +146,11 @@ export default function TransactionModal({ mode, holding, transactions, onClose,
     const { price: assetPrice, changePercent, fxRate, historicalFx, isLoading: loadingPrice } = priceData;
 
     const assetTransactions = selectedAsset
-        ? transactions.filter(t => t.baseCurrency === selectedAsset.symbol || t.quoteCurrency === selectedAsset.symbol).sort((a, b) => new Date(b.date) - new Date(a.date))
+        ? transactions.filter(t => {
+            const normalizedBase = normalizeAsset(t.baseCurrency);
+            const normalizedTarget = normalizeAsset(selectedAsset.symbol);
+            return normalizedBase === normalizedTarget || normalizeAsset(t.quoteCurrency) === normalizedTarget;
+        }).sort((a, b) => new Date(b.date) - new Date(a.date))
         : [];
 
     const { currentBalance, averagePurchasePrice } = useMemo(() => {
@@ -161,8 +166,10 @@ export default function TransactionModal({ mode, holding, transactions, onClose,
             quoteCurr = parts.length > 1 ? parts[parts.length - 1].toUpperCase() : 'USD';
         }
 
+        const normalizedSymbol = normalizeAsset(selectedAsset.symbol);
+
         transactions
-            .filter(t => t.baseCurrency === selectedAsset.symbol)
+            .filter(t => normalizeAsset(t.baseCurrency) === normalizedSymbol)
             .forEach(t => {
                 const bAmt = parseFloat(t.baseAmount) || 0;
                 const qAmt = parseFloat(t.quoteAmount) || 0;
@@ -188,9 +195,10 @@ export default function TransactionModal({ mode, holding, transactions, onClose,
 
     const handleAssetSelect = (asset) => {
         // Calculate current balance for the selected asset from transaction history
+        const normalizedTarget = normalizeAsset(asset.symbol);
         const balance = transactions
             ? transactions
-                .filter(t => t.baseCurrency === asset.symbol)
+                .filter(t => normalizeAsset(t.baseCurrency) === normalizedTarget)
                 .reduce((acc, t) => {
                     const bAmt = parseFloat(t.baseAmount) || 0;
                     if (['BUY', 'DEPOSIT'].includes(t.type)) return acc + bAmt;
