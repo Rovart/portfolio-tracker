@@ -132,16 +132,27 @@ export function calculatePortfolioHistory(transactions, historicalPrices, baseCu
         }
     }
 
-    // SMOOTHING PASS: Simple Moving Average (3 points) to normalize abrupt spikes from bad data points
+    // SMOOTHING PASS: Filter out abrupt data outliers (dips/spikes) from bad Yahoo response bars
+    // We target "V" or "inverted V" shapes that represent more than 25% instantaneous change
     if (dailyData.length > 5) {
         return dailyData.map((point, i, arr) => {
             if (i === 0 || i === arr.length - 1) return point;
             const prev = arr[i - 1].value;
             const curr = point.value;
             const next = arr[i + 1].value;
-            // Detect single-point extreme outliers (more than 15% deviation from neighbors)
-            const isAbrupt = Math.abs(curr - prev) / (prev || 1) > 0.15 && Math.abs(curr - next) / (next || 1) > 0.15;
-            if (isAbrupt) {
+
+            if (prev === 0 || next === 0) return point; // Don't smooth the very start
+
+            // Detect single-point extreme outliers (more than 25% deviation from both neighbors)
+            const diffPrev = Math.abs(curr - prev) / prev;
+            const diffNext = Math.abs(curr - next) / next;
+
+            const isSpike = diffPrev > 0.25 && diffNext > 0.25;
+
+            // Special case: if curr is 0 but neighbors aren't, it's almost certainly a bad point
+            const isZeroDip = curr === 0 && prev > 0 && next > 0;
+
+            if (isSpike || isZeroDip) {
                 return { ...point, value: (prev + next) / 2 };
             }
             return point;

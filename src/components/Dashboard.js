@@ -208,10 +208,12 @@ export default function Dashboard({ initialTransactions }) {
                     const data = await res.json();
                     let historyData = [];
                     if (data.history) {
-                        historyData = data.history.map(d => ({
-                            date: d.date, // Use full timestamp
-                            price: d.price
-                        }));
+                        historyData = data.history
+                            .filter(d => d.price !== null && d.price !== undefined && d.price > 0)
+                            .map(d => ({
+                                date: d.date, // Use full timestamp
+                                price: d.price
+                            }));
                     }
 
                     // If short timeframe, augment with granular data
@@ -219,10 +221,12 @@ export default function Dashboard({ initialTransactions }) {
                         const granularRes = await fetch(`/api/history?symbol=${fetchSym}&range=${timeframe}`);
                         const granularData = await granularRes.json();
                         if (granularData.history) {
-                            const newPoints = granularData.history.map(d => ({
-                                date: d.date,
-                                price: d.price
-                            }));
+                            const newPoints = granularData.history
+                                .filter(d => d.price !== null && d.price !== undefined && d.price > 0)
+                                .map(d => ({
+                                    date: d.date,
+                                    price: d.price
+                                }));
                             // Merge and unique by date, preferring granular
                             const merged = [...historyData, ...newPoints];
                             const unique = Array.from(new Map(merged.map(item => [item.date, item])).values());
@@ -273,10 +277,13 @@ export default function Dashboard({ initialTransactions }) {
         // 1. Calculate the real-time point
         const realTimeHoldings = calculateHoldings(transactions, prices, baseCurrency);
         const currentTotal = realTimeHoldings.reduce((acc, h) => acc + h.value, 0);
+
+        // Critical: Only push the real-time point if prices are loaded and the total isn't inexplicably 0
         const hasPrices = Object.keys(prices).length > 0;
+        const isSafeToPush = !pricesLoading && hasPrices && (currentTotal > 0 || transactions.length === 0);
 
         const finalHistory = [...rawHistory];
-        if (hasPrices) {
+        if (isSafeToPush) {
             finalHistory.push({
                 date: new Date().toISOString(),
                 value: currentTotal
@@ -300,7 +307,26 @@ export default function Dashboard({ initialTransactions }) {
         }
 
         const cutoffStr = cutoff.toISOString();
-        setHistory(finalHistory.filter(d => d.date >= cutoffStr));
+        let filtered = finalHistory.filter(d => d.date >= cutoffStr);
+
+        // EXTRA SMOOTHING: Final pass to catch spikes at the junction of history and real-time
+        if (filtered.length > 5) {
+            filtered = filtered.map((point, i, arr) => {
+                if (i === 0 || i === arr.length - 1) return point;
+                const prev = arr[i - 1].value;
+                const curr = point.value;
+                const next = arr[i + 1].value;
+                if (prev === 0 || next === 0) return point;
+                const diffPrev = Math.abs(curr - prev) / prev;
+                const diffNext = Math.abs(curr - next) / next;
+                if ((diffPrev > 0.25 && diffNext > 0.25) || (curr === 0 && prev > 0 && next > 0)) {
+                    return { ...point, value: (prev + next) / 2 };
+                }
+                return point;
+            });
+        }
+
+        setHistory(filtered);
 
     }, [rawHistory, prices, transactions, timeframe, baseCurrency]);
 
