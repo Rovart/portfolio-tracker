@@ -150,7 +150,12 @@ export default function TransactionModal({ mode, holding, transactions, onClose,
             const normalizedBase = normalizeAsset(t.baseCurrency);
             const normalizedTarget = normalizeAsset(selectedAsset.symbol);
             return normalizedBase === normalizedTarget || normalizeAsset(t.quoteCurrency) === normalizedTarget;
-        }).sort((a, b) => new Date(b.date) - new Date(a.date))
+        })
+            .map(t => {
+                const isReverse = normalizeAsset(t.quoteCurrency) === normalizeAsset(selectedAsset.symbol);
+                return { ...t, isReverse };
+            })
+            .sort((a, b) => new Date(b.date) - new Date(a.date))
         : [];
 
     const { currentBalance, averagePurchasePrice } = useMemo(() => {
@@ -353,15 +358,20 @@ export default function TransactionModal({ mode, holding, transactions, onClose,
                                         assetTransactions.map(tx => (
                                             <div key={tx.id} className="flex justify-between items-center p-4 rounded-2xl hover-bg-surface transition-all" style={{ border: '1px solid transparent' }}>
                                                 <div className="flex items-center gap-4">
-                                                    <div style={{ width: 8, height: 8, borderRadius: '50%', backgroundColor: ['BUY', 'DEPOSIT'].includes(tx.type) ? '#22c55e' : '#ef4444' }} />
+                                                    <div style={{ width: 8, height: 8, borderRadius: '50%', backgroundColor: tx.isReverse ? (tx.type === 'BUY' ? '#ef4444' : '#22c55e') : (['BUY', 'DEPOSIT'].includes(tx.type) ? '#22c55e' : '#ef4444') }} />
                                                     <div className="flex flex-col">
-                                                        <span className="font-bold" style={{ fontSize: '1rem' }}>{tx.type}</span>
-                                                        <span className="text-sm text-muted">{new Date(tx.date).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' })}</span>
+                                                        <span className="font-bold" style={{ fontSize: '1rem' }}>
+                                                            {tx.isReverse ? (tx.type === 'BUY' ? 'SPENT' : 'RECEIVED') : tx.type}
+                                                        </span>
+                                                        <span className="text-sm text-muted">
+                                                            {tx.isReverse ? `${tx.type === 'BUY' ? 'Purchased' : 'Sold'} ${tx.baseCurrency} | ` : ''}
+                                                            {new Date(tx.date).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' })}
+                                                        </span>
                                                     </div>
                                                 </div>
 
                                                 <div className="flex-1 flex flex-col items-end">
-                                                    {tx.type === 'BUY' && (
+                                                    {tx.type === 'BUY' && !tx.isReverse && (
                                                         <>
                                                             {loadingPrice || !assetPrice ? (
                                                                 <div className="h-5 w-20 bg-white-10 rounded animate-pulse ml-auto" style={{ marginRight: '10px' }} />
@@ -389,9 +399,9 @@ export default function TransactionModal({ mode, holding, transactions, onClose,
                                                 <div className="flex items-center gap-4">
                                                     <div className="flex flex-col items-end">
                                                         <span className="font-mono font-medium" style={{ fontSize: '1rem' }}>
-                                                            {hideBalances ? '••••' : tx.baseAmount.toLocaleString()} {tx.baseCurrency}
+                                                            {hideBalances ? '••••' : (tx.isReverse ? tx.quoteAmount : tx.baseAmount).toLocaleString()} {tx.isReverse ? tx.quoteCurrency : tx.baseCurrency}
                                                         </span>
-                                                        {(tx.quoteAmount > 0) && (
+                                                        {(tx.quoteAmount > 0 && !tx.isReverse) && (
                                                             <div className="flex items-center gap-1">
                                                                 {loadingPrice ? (
                                                                     <div className="h-3 w-12 bg-white-10 rounded animate-pulse ml-auto" />
@@ -422,12 +432,16 @@ export default function TransactionModal({ mode, holding, transactions, onClose,
                                                     </div>
 
                                                     <div className="flex flex-col">
-                                                        <button onClick={() => handleEdit(tx)} className="p-1 text-muted hover:text-white hover-bg-surface rounded-full transition-all" style={{ background: 'transparent', border: 'none', cursor: 'pointer' }}>
-                                                            <Edit2 size={16} />
-                                                        </button>
-                                                        <button onClick={() => handleDelete(onDelete, tx.id)} className="p-1 text-danger hover-bg-surface rounded-full transition-all" style={{ background: 'transparent', border: 'none', cursor: 'pointer' }}>
-                                                            <Trash2 size={16} />
-                                                        </button>
+                                                        {!tx.isReverse && (
+                                                            <>
+                                                                <button onClick={() => handleEdit(tx)} className="p-1 text-muted hover:text-white hover-bg-surface rounded-full transition-all" style={{ background: 'transparent', border: 'none', cursor: 'pointer' }}>
+                                                                    <Edit2 size={16} />
+                                                                </button>
+                                                                <button onClick={() => handleDelete(onDelete, tx.id)} className="p-1 text-danger hover-bg-surface rounded-full transition-all" style={{ background: 'transparent', border: 'none', cursor: 'pointer' }}>
+                                                                    <Trash2 size={16} />
+                                                                </button>
+                                                            </>
+                                                        )}
                                                     </div>
                                                 </div>
                                             </div>
