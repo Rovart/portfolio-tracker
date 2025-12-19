@@ -165,7 +165,8 @@ export default function Dashboard({ initialTransactions }) {
 
     // TRUE PORTFOLIO HISTORY
     useEffect(() => {
-        if (!transactions || transactions.length === 0) return;
+        // Wait for prices to be loaded first - ensures FX rates are available
+        if (!transactions || transactions.length === 0 || pricesLoading) return;
 
         async function loadTrueHistory() {
             // Only show skeleton on timeframe/currency change or initial load
@@ -268,7 +269,7 @@ export default function Dashboard({ initialTransactions }) {
         const tId = setTimeout(loadTrueHistory, 500);
         return () => clearTimeout(tId);
 
-    }, [transactions, timeframe, baseCurrency]);
+    }, [transactions, timeframe, baseCurrency, pricesLoading]);
 
     // DERIVED HISTORY: Apply timeframe cutoff to raw history
     // NOTE: We no longer append a "real-time" point as it was causing value mismatches.
