@@ -270,27 +270,13 @@ export default function Dashboard({ initialTransactions }) {
 
     }, [transactions, timeframe, baseCurrency]);
 
-    // DERIVED HISTORY: Merge static history with real-time price point
+    // DERIVED HISTORY: Apply timeframe cutoff to raw history
+    // NOTE: We no longer append a "real-time" point as it was causing value mismatches.
+    // The chart shows historical performance; the header shows the live total.
     useEffect(() => {
         if (!rawHistory.length) return;
 
-        // 1. Calculate the real-time point
-        const realTimeHoldings = calculateHoldings(transactions, prices, baseCurrency);
-        const currentTotal = realTimeHoldings.reduce((acc, h) => acc + h.value, 0);
-
-        // Critical: Only push the real-time point if prices are loaded and the total isn't inexplicably 0
-        const hasPrices = Object.keys(prices).length > 0;
-        const isSafeToPush = !pricesLoading && hasPrices && (currentTotal > 0 || transactions.length === 0);
-
-        const finalHistory = [...rawHistory];
-        if (isSafeToPush) {
-            finalHistory.push({
-                date: new Date().toISOString(),
-                value: currentTotal
-            });
-        }
-
-        // 2. Apply Timeframe Cutoff
+        // Apply Timeframe Cutoff
         const now = new Date();
         let cutoff = new Date();
         if (timeframe === '1D') cutoff.setDate(now.getDate() - 1);
@@ -299,7 +285,6 @@ export default function Dashboard({ initialTransactions }) {
         else if (timeframe === '1Y') cutoff.setFullYear(now.getFullYear() - 1);
         else if (timeframe === 'YTD') cutoff = new Date(now.getFullYear(), 0, 1);
         else if (timeframe === 'ALL') {
-            // Find the first transaction date
             const firstTxDate = transactions.length > 0
                 ? new Date(Math.min(...transactions.map(t => new Date(t.date))))
                 : new Date(0);
@@ -307,9 +292,9 @@ export default function Dashboard({ initialTransactions }) {
         }
 
         const cutoffStr = cutoff.toISOString();
-        let filtered = finalHistory.filter(d => d.date >= cutoffStr);
+        let filtered = rawHistory.filter(d => d.date >= cutoffStr);
 
-        // EXTRA SMOOTHING: Final pass to catch spikes at the junction of history and real-time
+        // SMOOTHING: Final pass to catch spikes
         if (filtered.length > 5) {
             filtered = filtered.map((point, i, arr) => {
                 if (i === 0 || i === arr.length - 1) return point;
@@ -328,7 +313,7 @@ export default function Dashboard({ initialTransactions }) {
 
         setHistory(filtered);
 
-    }, [rawHistory, prices, transactions, timeframe, baseCurrency]);
+    }, [rawHistory, transactions, timeframe]);
 
 
     const syncTransactionsToFile = async (updatedTx) => {
