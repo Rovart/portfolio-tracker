@@ -529,7 +529,7 @@ export default function Dashboard() {
                 <div className="grid-desktop">
                     {/* Main Content: Charts & Performance */}
                     <div className="main-content">
-                        <header className="flex flex-col items-start pb-8 gap-4 w-full overflow-hidden">
+                        <header className="flex flex-col items-start pb-8 gap-4 w-full">
                             <div className="flex items-center justify-between w-full gap-2">
                                 <div className="flex items-center gap-2">
                                     <span className="text-muted text-sm uppercase tracking-wider font-bold">Portfolio Performance</span>
@@ -542,69 +542,69 @@ export default function Dashboard() {
                                         {hideBalances ? <EyeOff size={16} /> : <Eye size={16} />}
                                     </button>
                                 </div>
-                                <div className="flex items-center gap-2">
-                                    <select
-                                        value={baseCurrency}
-                                        onChange={(e) => handleCurrencyChange(e.target.value)}
-                                        className="bg-white-5 hover:bg-white-10 border border-white-10 text-white text-xs font-bold rounded-full cursor-pointer transition-all focus:outline-none"
-                                        style={{
-                                            appearance: 'none',
-                                            WebkitAppearance: 'none',
-                                            MozAppearance: 'none',
-                                            padding: '6px 32px 6px 16px',
-                                            width: 'auto',
-                                            minWidth: '80px',
-                                            backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='white' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E")`,
-                                            backgroundRepeat: 'no-repeat',
-                                            backgroundPosition: 'right 12px center'
-                                        }}
-                                    >
-                                        {CURRENCIES.map(c => (
-                                            <option key={c} value={c} style={{ backgroundColor: '#171717', color: 'white' }}>
-                                                {c}
-                                            </option>
-                                        ))}
-                                    </select>
+                                <div className="flex items-center gap-3">
+                                    <div className="relative">
+                                        <select
+                                            value={baseCurrency}
+                                            onChange={(e) => handleCurrencyChange(e.target.value)}
+                                            className="bg-white-5 hover:bg-white-10 border border-white-10 text-white text-xs font-bold rounded-full cursor-pointer transition-all focus:outline-none"
+                                            style={{
+                                                appearance: 'none',
+                                                WebkitAppearance: 'none',
+                                                MozAppearance: 'none',
+                                                padding: '6px 32px 6px 16px',
+                                                width: 'auto',
+                                                minWidth: '80px',
+                                                backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='white' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E")`,
+                                                backgroundRepeat: 'no-repeat',
+                                                backgroundPosition: 'right 12px center'
+                                            }}
+                                        >
+                                            {CURRENCIES.map(c => (
+                                                <option key={c} value={c} style={{ backgroundColor: '#171717', color: 'white' }}>
+                                                    {c}
+                                                </option>
+                                            ))}
+                                        </select>
+                                    </div>
                                     <div className="relative" ref={settingsRef}>
                                         <button
                                             onClick={() => setShowSettings(!showSettings)}
-                                            className="p-2 text-muted hover:text-white transition-colors"
-                                            style={{ background: 'transparent', border: 'none', cursor: 'pointer' }}
+                                            className="p-2 text-muted hover:text-white transition-colors rounded-full hover:bg-white-5"
+                                            style={{ background: 'transparent', border: 'none', cursor: 'pointer', display: 'flex' }}
                                             title="Settings"
                                         >
                                             <Settings size={18} />
                                         </button>
                                         {showSettings && (
                                             <div
-                                                className="absolute right-0 top-full mt-2 py-2 rounded-lg shadow-xl z-50"
+                                                className="absolute right-0 top-full mt-2 py-2 rounded-xl shadow-2xl z-50 border border-white-10"
                                                 style={{
-                                                    minWidth: '160px',
+                                                    minWidth: '180px',
                                                     backgroundColor: '#1a1a1a',
-                                                    border: '1px solid rgba(255,255,255,0.1)'
+                                                    boxShadow: '0 10px 40px rgba(0,0,0,0.8)'
                                                 }}
                                             >
                                                 <label
-                                                    className="flex items-center gap-2 px-4 py-2 text-sm cursor-pointer"
+                                                    className="flex items-center gap-3 px-4 py-3 text-sm cursor-pointer hover:bg-white-10 transition-colors"
                                                     style={{ color: 'white' }}
-                                                    onMouseEnter={(e) => e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.1)'}
-                                                    onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
                                                 >
-                                                    📥 Import CSV
+                                                    <span style={{ fontSize: '1.2rem' }}>📥</span>
+                                                    <span>Import CSV</span>
                                                     <input type="file" accept=".csv" onChange={(e) => { handleImportCsv(e); setShowSettings(false); }} style={{ display: 'none' }} />
                                                 </label>
                                                 <button
                                                     onClick={() => { handleExportCsv(); setShowSettings(false); }}
-                                                    className="flex items-center gap-2 px-4 py-2 text-sm w-full text-left"
+                                                    className="flex items-center gap-3 px-4 py-3 text-sm w-full text-left hover:bg-white-10 transition-colors"
                                                     style={{
                                                         background: 'transparent',
                                                         border: 'none',
                                                         color: 'white',
                                                         cursor: 'pointer'
                                                     }}
-                                                    onMouseEnter={(e) => e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.1)'}
-                                                    onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
                                                 >
-                                                    📤 Export CSV
+                                                    <span style={{ fontSize: '1.2rem' }}>📤</span>
+                                                    <span>Export CSV</span>
                                                 </button>
                                             </div>
                                         )}
