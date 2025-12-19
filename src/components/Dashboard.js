@@ -27,6 +27,7 @@ export default function Dashboard({ initialTransactions }) {
     const [baseCurrency, setBaseCurrency] = useState('USD');
     const prevTimeframeRef = useRef(timeframe);
     const prevBaseCurrencyRef = useRef(baseCurrency);
+    const prevBaseCurrencyQuotesRef = useRef(baseCurrency);
 
     const CURRENCIES = ['USD', 'EUR', 'GBP', 'JPY', 'CAD', 'AUD', 'CHF', 'CNY', 'HKD', 'SGD'];
 
@@ -74,10 +75,12 @@ export default function Dashboard({ initialTransactions }) {
 
         // 2. Fetch prices
         async function fetchQuotes() {
-            // Only show skeletons on the first load or if we have no prices yet
-            if (Object.keys(prices).length === 0) {
+            // Only show skeletons on the first load, if we have no prices yet, or if base currency changed
+            const currencyChanged = prevBaseCurrencyQuotesRef.current !== baseCurrency;
+            if (Object.keys(prices).length === 0 || currencyChanged) {
                 setPricesLoading(true);
             }
+            prevBaseCurrencyQuotesRef.current = baseCurrency;
 
             try {
                 // Pass 1: Fetch asset prices and discover currencies
