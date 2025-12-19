@@ -2,7 +2,7 @@
 
 import { useState, useRef, useCallback, useEffect } from 'react';
 
-export default function PullToRefresh({ onRefresh, children }) {
+export default function PullToRefresh({ onRefresh, children, disabled = false }) {
     const [pulling, setPulling] = useState(false);
     const [pullDistance, setPullDistance] = useState(0);
     const [refreshing, setRefreshing] = useState(false);
@@ -14,12 +14,14 @@ export default function PullToRefresh({ onRefresh, children }) {
     const MAX_PULL = 120; // Maximum visual pull distance
 
     const handleTouchStart = useCallback((e) => {
+        // Don't allow pull if disabled
+        if (disabled) return;
         // Only start if we're at the top of the page
         if (window.scrollY === 0) {
             startY.current = e.touches[0].clientY;
             setPulling(true);
         }
-    }, []);
+    }, [disabled]);
 
     const handleTouchMove = useCallback((e) => {
         if (!pulling || refreshing) return;

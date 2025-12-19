@@ -537,7 +537,7 @@ export default function Dashboard() {
 
     return (
         <>
-            <PullToRefresh onRefresh={handleRefresh}>
+            <PullToRefresh onRefresh={handleRefresh} disabled={holdings.length === 0}>
                 <div className="container animate-enter">
                     <div className="grid-desktop">
                         {/* Main Content: Charts & Performance */}
