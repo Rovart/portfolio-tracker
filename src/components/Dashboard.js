@@ -8,22 +8,23 @@ import HoldingsList from './HoldingsList';
 import TransactionModal from './TransactionModal';
 import { calculateHoldings } from '@/utils/portfolio-logic';
 import { calculatePortfolioHistory } from '@/utils/portfolio-history';
+import { getAllTransactions, addTransaction, updateTransaction, deleteTransaction, getSetting, setSetting } from '@/utils/db';
 
 const TIMEFRAMES = ['1D', '1W', '1M', '1Y', 'YTD', 'ALL'];
 
-export default function Dashboard({ initialTransactions }) {
-    const [transactions, setTransactions] = useState(initialTransactions);
+export default function Dashboard() {
+    const [transactions, setTransactions] = useState([]);
     const [holdings, setHoldings] = useState([]);
     const [prices, setPrices] = useState({});
     const [history, setHistory] = useState([]);
     const [timeframe, setTimeframe] = useState('1D');
-    const [selectedHolding, setSelectedHolding] = useState(null); // Valid holding object
-    const [isModalOpen, setIsModalOpen] = useState(false); // General modal state
-    const [modalMode, setModalMode] = useState('MANAGE'); // MANAGE (existing) or ADD (new)
+    const [selectedHolding, setSelectedHolding] = useState(null);
+    const [isModalOpen, setIsModalOpen] = useState(false);
+    const [modalMode, setModalMode] = useState('MANAGE');
     const [loading, setLoading] = useState(true);
     const [pricesLoading, setPricesLoading] = useState(true);
     const [historyLoading, setHistoryLoading] = useState(false);
-    const [rawHistory, setRawHistory] = useState([]); // Static historical data
+    const [rawHistory, setRawHistory] = useState([]);
     const [hideBalances, setHideBalances] = useState(false);
     const [baseCurrency, setBaseCurrency] = useState('USD');
     const prevTimeframeRef = useRef(timeframe);
@@ -32,33 +33,35 @@ export default function Dashboard({ initialTransactions }) {
 
     const CURRENCIES = ['USD', 'EUR', 'GBP', 'JPY', 'CAD', 'AUD', 'CHF', 'CNY', 'HKD', 'SGD'];
 
-    // Load from LocalStorage
+    // Load from IndexedDB
     useEffect(() => {
-        const saved = localStorage.getItem('portfolio_transactions');
-        if (saved) {
-            setTransactions(JSON.parse(saved));
-        } else {
-            setTransactions(initialTransactions);
+        async function loadData() {
+            try {
+                const savedTransactions = await getAllTransactions();
+                setTransactions(savedTransactions || []);
+
+                const savedPrivacy = await getSetting('hide_balances', false);
+                setHideBalances(savedPrivacy);
+
+                const savedCurrency = await getSetting('base_currency', 'USD');
+                setBaseCurrency(savedCurrency);
+            } catch (e) {
+                console.error('Failed to load from IndexedDB:', e);
+            }
+            setLoading(false);
         }
+        loadData();
+    }, []);
 
-        const savedPrivacy = localStorage.getItem('hide_balances');
-        if (savedPrivacy === 'true') setHideBalances(true);
-
-        const savedCurrency = localStorage.getItem('base_currency');
-        if (savedCurrency) setBaseCurrency(savedCurrency);
-
-        setLoading(false);
-    }, [initialTransactions]);
-
-    const togglePrivacy = () => {
+    const togglePrivacy = async () => {
         const newState = !hideBalances;
         setHideBalances(newState);
-        localStorage.setItem('hide_balances', newState.toString());
+        await setSetting('hide_balances', newState);
     };
 
-    const handleCurrencyChange = (curr) => {
+    const handleCurrencyChange = async (curr) => {
         setBaseCurrency(curr);
-        localStorage.setItem('base_currency', curr);
+        await setSetting('base_currency', curr);
     };
 
     // Fetch Prices when transactions change (implies holdings might change)
@@ -383,24 +386,80 @@ export default function Dashboard({ initialTransactions }) {
         }
     };
 
-    const handleSaveTransaction = (tx) => {
+    const handleSaveTransaction = async (tx) => {
         const exists = transactions.find(t => t.id === tx.id);
         let updated;
         if (exists) {
+            await updateTransaction(tx.id, tx);
             updated = transactions.map(t => t.id === tx.id ? tx : t);
         } else {
-            updated = [tx, ...transactions];
+            const newId = await addTransaction(tx);
+            const newTx = { ...tx, id: newId };
+            updated = [newTx, ...transactions];
         }
         setTransactions(updated);
-        localStorage.setItem('portfolio_transactions', JSON.stringify(updated));
-        syncTransactionsToFile(updated);
     };
 
-    const handleDeleteTransaction = (id) => {
+    const handleDeleteTransaction = async (id) => {
+        await deleteTransaction(id);
         const updated = transactions.filter(t => t.id !== id);
         setTransactions(updated);
-        localStorage.setItem('portfolio_transactions', JSON.stringify(updated));
-        syncTransactionsToFile(updated);
+    };
+
+    const handleImportCsv = async (event) => {
+        const file = event.target.files[0];
+        if (!file) return;
+
+        const text = await file.text();
+        const { importTransactions, clearAllTransactions } = await import('@/utils/db');
+        const Papa = (await import('papaparse')).default;
+
+        Papa.parse(text, {
+            header: true,
+            skipEmptyLines: true,
+            complete: async (results) => {
+                // Process CSV rows similar to data.js
+                const parsed = results.data.map(row => {
+                    let symbol = row['Base currency (name)'] || row['Base currency'] || '';
+                    const type = row['Base type'];
+
+                    if (type === 'CRYPTO' && !symbol.includes('-')) symbol += '-USD';
+                    else if (type === 'FIAT' && symbol !== 'USD') symbol += '=X';
+
+                    return {
+                        date: new Date(row.Date).toISOString(),
+                        type: row.Way,
+                        baseAmount: parseFloat(row['Base amount']) || 0,
+                        baseCurrency: symbol,
+                        quoteAmount: parseFloat(row['Quote amount']) || 0,
+                        quoteCurrency: row['Quote currency'] || '',
+                        exchange: row.Exchange || '',
+                        fee: parseFloat(row['Fee amount']) || 0,
+                        feeCurrency: row['Fee currency (name)'] || '',
+                        originalType: type || 'MANUAL'
+                    };
+                }).filter(t => t.baseCurrency);
+
+                await clearAllTransactions();
+                await importTransactions(parsed);
+                const updated = await getAllTransactions();
+                setTransactions(updated);
+                alert(`Imported ${parsed.length} transactions`);
+            }
+        });
+    };
+
+    const handleExportCsv = async () => {
+        const { exportToCsv } = await import('@/utils/db');
+        const csv = await exportToCsv();
+
+        const blob = new Blob([csv], { type: 'text/csv' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `portfolio-${new Date().toISOString().split('T')[0]}.csv`;
+        a.click();
+        URL.revokeObjectURL(url);
     };
 
     const openAddModal = () => {
@@ -588,6 +647,15 @@ export default function Dashboard({ initialTransactions }) {
 
                     {/* Sidebar: Balance & Holdings */}
                     <div className="sidebar">
+                        <div style={{ display: 'flex', gap: '8px', marginBottom: '16px' }}>
+                            <label className="btn btn-secondary" style={{ flex: 1, cursor: 'pointer', textAlign: 'center', fontSize: '0.75rem' }}>
+                                📥 Import CSV
+                                <input type="file" accept=".csv" onChange={handleImportCsv} style={{ display: 'none' }} />
+                            </label>
+                            <button onClick={handleExportCsv} className="btn btn-secondary" style={{ flex: 1, fontSize: '0.75rem' }}>
+                                📤 Export CSV
+                            </button>
+                        </div>
 
                         <HoldingsList
                             holdings={holdings}

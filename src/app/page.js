@@ -1,16 +1,11 @@
-import { getPortfolioData } from '@/utils/data';
+'use client';
+
 import Dashboard from '@/components/Dashboard';
 
-export default async function Home() {
-  const { transactions, holdings, performance } = await getPortfolioData();
-
+export default function Home() {
   return (
     <main style={{ minHeight: '100vh', paddingBottom: '40px' }}>
-      <Dashboard
-        initialTransactions={transactions}
-        initialHoldings={holdings}
-        initialPerformance={performance}
-      />
+      <Dashboard />
     </main>
   );
 }
