@@ -259,23 +259,53 @@ export default function SettingsModal({ onClose, onPortfolioChange, currentPortf
                                                     type="text"
                                                     value={editingName}
                                                     onChange={e => setEditingName(e.target.value)}
-                                                    className="flex-1 bg-white/5 border border-white/10 rounded-xl px-3 py-1.5 text-white focus:outline-none focus:border-white/30 transition-all text-sm font-medium"
+                                                    className="flex-1 text-white text-sm font-medium"
+                                                    style={{
+                                                        background: 'rgba(255, 255, 255, 0.08)',
+                                                        border: '1px solid rgba(255, 255, 255, 0.15)',
+                                                        borderRadius: '12px',
+                                                        padding: '10px 14px',
+                                                        outline: 'none',
+                                                        transition: 'all 0.2s ease'
+                                                    }}
+                                                    onFocus={(e) => e.target.style.borderColor = 'rgba(255, 255, 255, 0.3)'}
+                                                    onBlur={(e) => e.target.style.borderColor = 'rgba(255, 255, 255, 0.15)'}
                                                     autoFocus
                                                 />
-                                                <div className="flex items-center gap-2 pl-2">
+                                                <div className="flex items-center gap-2">
                                                     <button
                                                         onClick={() => handleUpdatePortfolio(portfolio.id)}
-                                                        className="p-1.5 rounded-lg transition-all"
-                                                        style={{ background: 'rgba(34, 197, 94, 0.12)', border: '1px solid rgba(34, 197, 94, 0.2)', color: '#4ade80', cursor: 'pointer' }}
+                                                        className="transition-all"
+                                                        style={{
+                                                            background: 'rgba(34, 197, 94, 0.15)',
+                                                            border: '1px solid rgba(34, 197, 94, 0.25)',
+                                                            color: '#4ade80',
+                                                            borderRadius: '10px',
+                                                            padding: '8px 12px',
+                                                            cursor: 'pointer',
+                                                            display: 'flex',
+                                                            alignItems: 'center',
+                                                            justifyContent: 'center'
+                                                        }}
                                                     >
-                                                        <Check size={16} strokeWidth={2.5} />
+                                                        <Check size={18} strokeWidth={2.5} />
                                                     </button>
                                                     <button
                                                         onClick={() => { setEditingId(null); setEditingName(''); }}
-                                                        className="p-1.5 rounded-lg transition-all"
-                                                        style={{ background: 'rgba(255, 255, 255, 0.04)', border: '1px solid rgba(255, 255, 255, 0.1)', color: 'rgba(255, 255, 255, 0.5)', cursor: 'pointer' }}
+                                                        className="transition-all"
+                                                        style={{
+                                                            background: 'rgba(255, 255, 255, 0.06)',
+                                                            border: '1px solid rgba(255, 255, 255, 0.12)',
+                                                            color: 'rgba(255, 255, 255, 0.6)',
+                                                            borderRadius: '10px',
+                                                            padding: '8px 12px',
+                                                            cursor: 'pointer',
+                                                            display: 'flex',
+                                                            alignItems: 'center',
+                                                            justifyContent: 'center'
+                                                        }}
                                                     >
-                                                        <X size={16} strokeWidth={2.5} />
+                                                        <X size={18} strokeWidth={2.5} />
                                                     </button>
                                                 </div>
                                             </div>
@@ -308,29 +338,59 @@ export default function SettingsModal({ onClose, onPortfolioChange, currentPortf
 
                             {/* Add New Portfolio */}
                             {showAddForm ? (
-                                <div className="flex items-center gap-2 p-2.5 rounded-xl" style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)' }}>
+                                <div className="flex items-center gap-2 p-3 rounded-xl" style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)' }}>
                                     <input
                                         type="text"
                                         value={newPortfolioName}
                                         onChange={e => setNewPortfolioName(e.target.value)}
                                         placeholder="Portfolio name..."
-                                        className="flex-1 bg-white/5 border border-white/10 rounded-xl px-3 py-1.5 text-white focus:outline-none focus:border-white/30 transition-all text-sm font-medium"
+                                        className="flex-1 text-white text-sm font-medium"
+                                        style={{
+                                            background: 'rgba(255, 255, 255, 0.08)',
+                                            border: '1px solid rgba(255, 255, 255, 0.15)',
+                                            borderRadius: '12px',
+                                            padding: '10px 14px',
+                                            outline: 'none',
+                                            transition: 'all 0.2s ease'
+                                        }}
+                                        onFocus={(e) => e.target.style.borderColor = 'rgba(255, 255, 255, 0.3)'}
+                                        onBlur={(e) => e.target.style.borderColor = 'rgba(255, 255, 255, 0.15)'}
                                         autoFocus
                                     />
-                                    <div className="flex items-center gap-2 pl-2">
+                                    <div className="flex items-center gap-2">
                                         <button
                                             onClick={handleAddPortfolio}
-                                            className="p-1.5 rounded-lg transition-all"
-                                            style={{ background: 'rgba(34, 197, 94, 0.12)', border: '1px solid rgba(34, 197, 94, 0.2)', color: '#4ade80', cursor: 'pointer' }}
+                                            className="transition-all"
+                                            style={{
+                                                background: 'rgba(34, 197, 94, 0.15)',
+                                                border: '1px solid rgba(34, 197, 94, 0.25)',
+                                                color: '#4ade80',
+                                                borderRadius: '10px',
+                                                padding: '8px 12px',
+                                                cursor: 'pointer',
+                                                display: 'flex',
+                                                alignItems: 'center',
+                                                justifyContent: 'center'
+                                            }}
                                         >
-                                            <Check size={16} strokeWidth={2.5} />
+                                            <Check size={18} strokeWidth={2.5} />
                                         </button>
                                         <button
                                             onClick={() => { setShowAddForm(false); setNewPortfolioName(''); }}
-                                            className="p-1.5 rounded-lg transition-all"
-                                            style={{ background: 'rgba(255, 255, 255, 0.04)', border: '1px solid rgba(255, 255, 255, 0.1)', color: 'rgba(255, 255, 255, 0.5)', cursor: 'pointer' }}
+                                            className="transition-all"
+                                            style={{
+                                                background: 'rgba(255, 255, 255, 0.06)',
+                                                border: '1px solid rgba(255, 255, 255, 0.12)',
+                                                color: 'rgba(255, 255, 255, 0.6)',
+                                                borderRadius: '10px',
+                                                padding: '8px 12px',
+                                                cursor: 'pointer',
+                                                display: 'flex',
+                                                alignItems: 'center',
+                                                justifyContent: 'center'
+                                            }}
                                         >
-                                            <X size={16} strokeWidth={2.5} />
+                                            <X size={18} strokeWidth={2.5} />
                                         </button>
                                     </div>
                                 </div>
