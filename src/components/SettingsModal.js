@@ -97,7 +97,9 @@ export default function SettingsModal({ onClose, onPortfolioChange, currentPortf
 
     const handleExportCsv = async () => {
         const { exportToCsv } = await import('@/utils/db');
-        const exportId = ioPortfolioId === 'all' ? null : ioPortfolioId;
+        // If only one portfolio, always use that one
+        const effectiveId = portfolios.length === 1 ? portfolios[0].id : ioPortfolioId;
+        const exportId = effectiveId === 'all' ? null : effectiveId;
         const csv = await exportToCsv(exportId);
         const pName = ioPortfolioId === 'all' ? 'all' : (portfolios.find(p => p.id === ioPortfolioId)?.name || 'export');
         const filename = `portfolio-${pName.toLowerCase().replace(/\s+/g, '-')}-${new Date().toISOString().split('T')[0]}.csv`;
@@ -190,10 +192,26 @@ export default function SettingsModal({ onClose, onPortfolioChange, currentPortf
         // Reset file input so same file can be re-selected
         if (fileInputRef.current) fileInputRef.current.value = '';
 
+        // If importing from "All Portfolios" view and CSV has a portfolio name, auto-create it
+        if (ioPortfolioId === 'all' && csvPortfolioName) {
+            // Check if a portfolio with this name already exists
+            const existingPortfolio = portfolios.find(p => p.name === csvPortfolioName);
+            if (existingPortfolio) {
+                // Portfolio exists - import directly into it
+                await doImport(transactions, existingPortfolio.id);
+            } else {
+                // Create new portfolio with CSV name
+                const newPortfolio = await addPortfolio(csvPortfolioName);
+                await doImport(transactions, newPortfolio.id);
+                await loadPortfolios();
+            }
+            return;
+        }
+
         // Get target portfolio info
         const targetPortfolioId = ioPortfolioId === 'all' ? 1 : ioPortfolioId;
         const targetPortfolio = portfolios.find(p => p.id === targetPortfolioId);
-        const targetPortfolioName = targetPortfolio?.name || 'My Portfolio';
+        const targetPortfolioName = targetPortfolio?.name || 'Default';
 
         // Check if CSV portfolio name differs from target
         if (csvPortfolioName && csvPortfolioName !== targetPortfolioName) {
@@ -462,30 +480,49 @@ export default function SettingsModal({ onClose, onPortfolioChange, currentPortf
                         <div className="flex flex-col gap-4">
                             <div className="flex flex-col gap-2">
                                 <label className="text-muted text-xs font-semibold uppercase tracking-wider">Target Portfolio</label>
-                                <select
-                                    value={ioPortfolioId}
-                                    onChange={(e) => setIoPortfolioId(e.target.value === 'all' ? 'all' : parseInt(e.target.value))}
-                                    style={{
-                                        width: '100%',
-                                        background: `rgba(255, 255, 255, 0.05) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='18' height='18' viewBox='0 0 24 24' fill='none' stroke='rgba(255,255,255,0.5)' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E") no-repeat right 14px center`,
-                                        border: '1px solid rgba(255, 255, 255, 0.1)',
-                                        borderRadius: '12px',
-                                        padding: '12px 44px 12px 14px',
-                                        color: 'white',
-                                        fontSize: '14px',
-                                        fontWeight: '500',
-                                        cursor: 'pointer',
-                                        outline: 'none',
-                                        appearance: 'none',
-                                        WebkitAppearance: 'none',
-                                        MozAppearance: 'none'
-                                    }}
-                                >
-                                    <option value="all" style={{ background: '#121212', color: 'white' }}>All Portfolios (Consolidated)</option>
-                                    {portfolios.map(p => (
-                                        <option key={p.id} value={p.id} style={{ background: '#121212', color: 'white' }}>{p.name}</option>
-                                    ))}
-                                </select>
+                                {portfolios.length === 1 ? (
+                                    // Single portfolio - show as static text
+                                    <div
+                                        style={{
+                                            width: '100%',
+                                            background: 'rgba(255, 255, 255, 0.05)',
+                                            border: '1px solid rgba(255, 255, 255, 0.1)',
+                                            borderRadius: '12px',
+                                            padding: '12px 14px',
+                                            color: 'white',
+                                            fontSize: '14px',
+                                            fontWeight: '500'
+                                        }}
+                                    >
+                                        {portfolios[0].name}
+                                    </div>
+                                ) : (
+                                    // Multiple portfolios - show dropdown
+                                    <select
+                                        value={ioPortfolioId}
+                                        onChange={(e) => setIoPortfolioId(e.target.value === 'all' ? 'all' : parseInt(e.target.value))}
+                                        style={{
+                                            width: '100%',
+                                            background: `rgba(255, 255, 255, 0.05) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='18' height='18' viewBox='0 0 24 24' fill='none' stroke='rgba(255,255,255,0.5)' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E") no-repeat right 14px center`,
+                                            border: '1px solid rgba(255, 255, 255, 0.1)',
+                                            borderRadius: '12px',
+                                            padding: '12px 44px 12px 14px',
+                                            color: 'white',
+                                            fontSize: '14px',
+                                            fontWeight: '500',
+                                            cursor: 'pointer',
+                                            outline: 'none',
+                                            appearance: 'none',
+                                            WebkitAppearance: 'none',
+                                            MozAppearance: 'none'
+                                        }}
+                                    >
+                                        <option value="all" style={{ background: '#121212', color: 'white' }}>All Portfolios (Consolidated)</option>
+                                        {portfolios.map(p => (
+                                            <option key={p.id} value={p.id} style={{ background: '#121212', color: 'white' }}>{p.name}</option>
+                                        ))}
+                                    </select>
+                                )}
                             </div>
 
                             <p className="text-muted text-sm pb-2">
@@ -584,53 +621,55 @@ export default function SettingsModal({ onClose, onPortfolioChange, currentPortf
                             {importConflict.transactions.length} transaction(s) to import
                         </p>
 
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                        <div style={{ display: 'flex', gap: '12px' }}>
                             <button
                                 onClick={handleImportMerge}
                                 style={{
-                                    padding: '14px 20px',
-                                    backgroundColor: '#22c55e',
-                                    color: 'white',
-                                    border: 'none',
-                                    borderRadius: '12px',
+                                    flex: 1,
+                                    padding: '12px 16px',
+                                    backgroundColor: 'rgba(34, 197, 94, 0.15)',
+                                    color: '#22c55e',
+                                    border: '1px solid rgba(34, 197, 94, 0.3)',
+                                    borderRadius: '10px',
                                     cursor: 'pointer',
                                     fontWeight: '600',
-                                    fontSize: '1rem'
+                                    fontSize: '0.9rem'
                                 }}
                             >
-                                Merge into "{importConflict.targetPortfolioName}"
+                                Merge
                             </button>
                             <button
                                 onClick={handleImportCreateNew}
                                 style={{
-                                    padding: '14px 20px',
-                                    backgroundColor: '#3b82f6',
-                                    color: 'white',
-                                    border: 'none',
-                                    borderRadius: '12px',
+                                    flex: 1,
+                                    padding: '12px 16px',
+                                    backgroundColor: 'rgba(59, 130, 246, 0.15)',
+                                    color: '#3b82f6',
+                                    border: '1px solid rgba(59, 130, 246, 0.3)',
+                                    borderRadius: '10px',
                                     cursor: 'pointer',
                                     fontWeight: '600',
-                                    fontSize: '1rem'
+                                    fontSize: '0.9rem'
                                 }}
                             >
-                                Create "{importConflict.csvPortfolioName}"
-                            </button>
-                            <button
-                                onClick={() => setImportConflict(null)}
-                                style={{
-                                    padding: '14px 20px',
-                                    backgroundColor: 'transparent',
-                                    color: '#a1a1aa',
-                                    border: '1px solid #333',
-                                    borderRadius: '12px',
-                                    cursor: 'pointer',
-                                    fontWeight: '500',
-                                    fontSize: '1rem'
-                                }}
-                            >
-                                Cancel
+                                Create New
                             </button>
                         </div>
+                        <button
+                            onClick={() => setImportConflict(null)}
+                            style={{
+                                width: '100%',
+                                marginTop: '12px',
+                                padding: '10px',
+                                backgroundColor: 'transparent',
+                                color: '#666',
+                                border: 'none',
+                                cursor: 'pointer',
+                                fontSize: '0.85rem'
+                            }}
+                        >
+                            Cancel
+                        </button>
                     </div>
                 </div>
             )}
