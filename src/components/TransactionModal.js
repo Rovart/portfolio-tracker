@@ -288,32 +288,19 @@ export default function TransactionModal({ mode, holding, transactions, onClose,
 
                 // For bare currencies (deposits), the asset currency is the bare currency code (e.g., EUR)
                 // For regular assets, use the transaction's quote currency or asset's currency
-                let txQuoteCurr;
-                if (isBareOrigin && bareCurrCode && t.type === 'DEPOSIT') {
-                    // For bare currency deposits, the deposited amount IS the currency itself
-                    txQuoteCurr = bareCurrCode;
-                } else {
-                    txQuoteCurr = (t.quoteCurrency || selectedAsset.currency || 'USD').toUpperCase();
-                }
+                const txQuoteCurr = (t.quoteCurrency || selectedAsset.currency || 'USD').toUpperCase();
 
                 // Get FX rate to convert from txQuoteCurrency to baseCurrency
                 let hFx = 1;
                 if (txQuoteCurr !== baseCurrency) {
-                    // Need FX conversion - use historical if available, otherwise actualFxRate (not fxRate!)
-                    // actualFxRate is the true FX rate, fxRate may be 1 for bare currencies to avoid double conversion
                     hFx = historicalFx[dateStr] || actualFxRate || 1;
                 }
 
                 if (['BUY', 'DEPOSIT'].includes(t.type)) {
                     totalAmount += bAmt;
+                    // Only BUY contributes to avg price (not DEPOSIT)
                     if (t.type === 'BUY') {
-                        // For BUY: cost is the quote amount paid
                         totalCostBase += qAmt * hFx;
-                        buyAmount += bAmt;
-                    } else if (t.type === 'DEPOSIT') {
-                        // For DEPOSIT: cost is the deposited amount at historical FX rate
-                        // This gives a meaningful "average deposit value" for currencies
-                        totalCostBase += bAmt * hFx;
                         buyAmount += bAmt;
                     }
                 } else if (['SELL', 'WITHDRAW'].includes(t.type)) {
@@ -323,7 +310,7 @@ export default function TransactionModal({ mode, holding, transactions, onClose,
 
         const avgBase = buyAmount > 0 ? (totalCostBase / buyAmount) : 0;
         return { currentBalance: totalAmount, averagePurchasePrice: avgBase };
-    }, [transactions, selectedAsset?.symbol, selectedAsset?.currency, selectedAsset?.isBareCurrencyOrigin, historicalFx, actualFxRate, baseCurrency]);
+    }, [transactions, selectedAsset?.symbol, selectedAsset?.currency, historicalFx, actualFxRate, baseCurrency]);
 
     const handleAssetSelect = (asset) => {
         // Calculate current balance for the selected asset from transaction history
@@ -449,16 +436,19 @@ export default function TransactionModal({ mode, holding, transactions, onClose,
                                             </span>
                                         )}
                                     </div>
-                                    <div className="flex flex-col flex-1 items-center">
-                                        <span className="text-xs sm:text-sm text-muted uppercase tracking-wider text-center">Avg Purchase</span>
-                                        {loadingPrice ? (
-                                            <div className="h-7 w-24 bg-white-10 rounded animate-pulse mt-1" />
-                                        ) : (
-                                            <span className="text sm:text-2xl text-center">
-                                                {averagePurchasePrice.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} {baseCurrency === 'USD' ? '$' : baseCurrency}
-                                            </span>
-                                        )}
-                                    </div>
+                                    {/* Only show Avg Purchase if there are BUY transactions (avgPrice > 0) */}
+                                    {averagePurchasePrice > 0 && (
+                                        <div className="flex flex-col flex-1 items-center">
+                                            <span className="text-xs sm:text-sm text-muted uppercase tracking-wider text-center">Avg Purchase</span>
+                                            {loadingPrice ? (
+                                                <div className="h-7 w-24 bg-white-10 rounded animate-pulse mt-1" />
+                                            ) : (
+                                                <span className="text sm:text-2xl text-center">
+                                                    {averagePurchasePrice.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} {baseCurrency === 'USD' ? '$' : baseCurrency}
+                                                </span>
+                                            )}
+                                        </div>
+                                    )}
                                     <div className="flex flex-col flex-1 items-end">
                                         <span className="text-xs sm:text-sm text-muted uppercase tracking-wider text-right">Total Value</span>
                                         {loadingPrice || !assetPrice ? (
@@ -746,23 +736,10 @@ function TransactionForm({ holding, existingTx, transactions, onSave, onCancel, 
             async function fetchPrice() {
                 setFetchingPrice(true);
                 try {
-                    // For bare currencies (EURUSD=X for EUR holdings)
-                    // Show price in baseCurrency terms
-                    if (isBareCurrency && bareCurrencyCode) {
-                        if (bareCurrencyCode === baseCurrency) {
-                            // Holding EUR, baseCurrency is EUR → 1 EUR = 1 EUR
-                            setPrice(1);
-                        } else {
-                            // Holding EUR, baseCurrency is USD → fetch EURUSD=X rate
-                            const fxSym = `${bareCurrencyCode}${baseCurrency}=X`;
-                            const res = await fetch(`/api/quote?symbols=${fxSym}`);
-                            const json = await res.json();
-                            if (json.data && json.data[0]) {
-                                setPrice(json.data[0].price);
-                            } else {
-                                setPrice(1);
-                            }
-                        }
+                    // For bare currencies: DEPOSIT/WITHDRAW don't need a price
+                    // The concept of "price" doesn't apply - you're just moving currency
+                    if (isBareCurrency) {
+                        setPrice('');  // No price for bare currency deposits
                         setFetchingPrice(false);
                         return;
                     }
