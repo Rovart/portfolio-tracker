@@ -733,31 +733,18 @@ export default function SettingsModal({ onClose, onPortfolioChange, currentPortf
                                     <span className="text-white font-medium group-hover:text-green-400 transition-colors">Daily Notifications</span>
                                     <span className="text-xs text-muted">Get a daily summary for each portfolio</span>
                                 </div>
-                                <div
-                                    style={{
-                                        width: '44px',
-                                        height: '24px',
-                                        borderRadius: '12px',
-                                        backgroundColor: notificationsEnabled ? '#22c55e' : '#3f3f46',
-                                        position: 'relative',
-                                        transition: 'all 0.2s ease',
-                                        border: '1.5px solid rgba(255,255,255,0.1)',
-                                        flexShrink: 0
-                                    }}
-                                >
-                                    <div
-                                        style={{
-                                            position: 'absolute',
-                                            top: '2px',
-                                            left: notificationsEnabled ? '22px' : '2px',
-                                            width: '18px',
-                                            height: '18px',
-                                            borderRadius: '50%',
-                                            backgroundColor: '#fff',
-                                            transition: 'all 0.2s cubic-bezier(0.4, 0, 0.2, 1)',
-                                            boxShadow: '0 2px 4px rgba(0,0,0,0.2)'
-                                        }}
-                                    />
+                                <div style={{
+                                    width: '48px', height: '24px', borderRadius: '999px', padding: '2px',
+                                    backgroundColor: notificationsEnabled ? '#22c55e' : '#262626',
+                                    transition: 'background-color 0.2s',
+                                    flexShrink: 0
+                                }}>
+                                    <div style={{
+                                        width: '20px', height: '20px', borderRadius: '50%', background: 'white',
+                                        transform: notificationsEnabled ? 'translateX(24px)' : 'translateX(0)',
+                                        transition: 'transform 0.2s',
+                                        boxShadow: '0 1px 2px 0 rgba(0, 0, 0, 0.05)'
+                                    }} />
                                 </div>
                             </div>
 
