@@ -422,18 +422,34 @@ export default function SettingsModal({ onClose, onPortfolioChange, currentPortf
                         <div className="flex flex-col gap-4">
                             <div className="flex flex-col gap-2">
                                 <label className="text-muted text-xs font-semibold uppercase tracking-wider">Target Portfolio</label>
-                                <div className="relative">
+                                <div className="relative w-full">
                                     <select
-                                        className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-white/30 transition-all text-sm font-medium appearance-none cursor-pointer"
+                                        className="w-full text-white text-sm font-medium cursor-pointer transition-all"
+                                        style={{
+                                            background: 'rgba(255, 255, 255, 0.05)',
+                                            border: '1px solid rgba(255, 255, 255, 0.1)',
+                                            borderRadius: '12px',
+                                            padding: '12px 40px 12px 14px',
+                                            appearance: 'none',
+                                            WebkitAppearance: 'none',
+                                            MozAppearance: 'none',
+                                            outline: 'none',
+                                            width: '100%'
+                                        }}
                                         value={ioPortfolioId}
                                         onChange={(e) => setIoPortfolioId(e.target.value === 'all' ? 'all' : parseInt(e.target.value))}
+                                        onFocus={(e) => e.target.style.borderColor = 'rgba(255, 255, 255, 0.3)'}
+                                        onBlur={(e) => e.target.style.borderColor = 'rgba(255, 255, 255, 0.1)'}
                                     >
-                                        <option value="all">All Portfolios (Consolidated)</option>
+                                        <option value="all" style={{ background: '#121212' }}>All Portfolios (Consolidated)</option>
                                         {portfolios.map(p => (
-                                            <option key={p.id} value={p.id}>{p.name}</option>
+                                            <option key={p.id} value={p.id} style={{ background: '#121212' }}>{p.name}</option>
                                         ))}
                                     </select>
-                                    <div className="absolute right-4 top-1/2 -translate-y-1/2 pointer-events-none text-white/40">
+                                    <div
+                                        className="absolute right-4 top-1/2 -translate-y-1/2 pointer-events-none text-white/40 flex items-center"
+                                        style={{ height: '100%' }}
+                                    >
                                         <ChevronDown size={18} strokeWidth={2.5} />
                                     </div>
                                 </div>
