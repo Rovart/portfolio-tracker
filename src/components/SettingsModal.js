@@ -422,34 +422,34 @@ export default function SettingsModal({ onClose, onPortfolioChange, currentPortf
                         <div className="flex flex-col gap-4">
                             <div className="flex flex-col gap-2">
                                 <label className="text-muted text-xs font-semibold uppercase tracking-wider">Target Portfolio</label>
-                                <div className="relative w-full">
+                                <div
+                                    className="flex items-center gap-2 transition-all"
+                                    style={{
+                                        background: 'rgba(255, 255, 255, 0.05)',
+                                        border: '1px solid rgba(255, 255, 255, 0.1)',
+                                        borderRadius: '12px',
+                                        padding: '0 14px',
+                                        cursor: 'pointer'
+                                    }}
+                                    onFocusCapture={(e) => e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.3)'}
+                                    onBlurCapture={(e) => e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.1)'}
+                                >
                                     <select
-                                        className="w-full text-white text-sm font-medium cursor-pointer transition-all"
+                                        className="flex-1 text-white text-sm font-medium py-3 cursor-pointer outline-none appearance-none bg-transparent"
                                         style={{
-                                            background: 'rgba(255, 255, 255, 0.05)',
-                                            border: '1px solid rgba(255, 255, 255, 0.1)',
-                                            borderRadius: '12px',
-                                            padding: '12px 40px 12px 14px',
-                                            appearance: 'none',
                                             WebkitAppearance: 'none',
                                             MozAppearance: 'none',
-                                            outline: 'none',
-                                            width: '100%'
+                                            border: 'none'
                                         }}
                                         value={ioPortfolioId}
                                         onChange={(e) => setIoPortfolioId(e.target.value === 'all' ? 'all' : parseInt(e.target.value))}
-                                        onFocus={(e) => e.target.style.borderColor = 'rgba(255, 255, 255, 0.3)'}
-                                        onBlur={(e) => e.target.style.borderColor = 'rgba(255, 255, 255, 0.1)'}
                                     >
                                         <option value="all" style={{ background: '#121212' }}>All Portfolios (Consolidated)</option>
                                         {portfolios.map(p => (
                                             <option key={p.id} value={p.id} style={{ background: '#121212' }}>{p.name}</option>
                                         ))}
                                     </select>
-                                    <div
-                                        className="absolute right-4 top-1/2 -translate-y-1/2 pointer-events-none text-white/40 flex items-center"
-                                        style={{ height: '100%' }}
-                                    >
+                                    <div className="pointer-events-none text-white/40 flex items-center">
                                         <ChevronDown size={18} strokeWidth={2.5} />
                                     </div>
                                 </div>
