@@ -8,24 +8,35 @@ A premium, dark-mode portfolio tracker built with Next.js, Recharts, and Yahoo F
 
 ### Core Functionality
 - **Live Market Data**: Real-time prices and performance metrics via Yahoo Finance API
-- **Multi-Currency Support**: Track assets in USD, EUR, and other currencies with automatic FX conversion
+- **Multi-Portfolio Support**: Create and manage multiple portfolios with independent tracking
+- **Multi-Currency Support**: Track assets in USD, EUR, AUD and other currencies with automatic FX conversion using USD-pivot strategy
 - **Transaction Management**: Full buy/sell history with detailed P/L tracking per transaction
+- **Transaction Notes**: Add optional notes to any transaction for better record keeping
+- **Deposits & Withdrawals**: Track fiat currency movements in and out of your portfolios
 - **Privacy Mode**: Toggle to hide sensitive balance information
-- **CSV Import/Export**: Seamlessly import and export your portfolio data
+- **CSV Import/Export**: Seamlessly import and export portfolio data with automatic portfolio detection
 
 ### Visual Analytics
 - **Interactive Performance Charts**: 
-  - Main portfolio chart with customizable timeframes (1D, 1W, 1M, 3M, 1Y, ALL)
+  - Main portfolio chart with customizable timeframes (1D, 1W, 1M, 3M, 1Y, YTD, ALL)
   - Split-color gradients (green for gains, red for losses)
   - Asset-specific historical charts with FX-adjusted pricing
+  - Intelligent resampling for smooth weekly charts
 - **Composition Chart**: Visual breakdown of portfolio allocation by asset
 - **Profit Chart**: Track your gains and losses over time
+- **Per-Transaction P/L**: See profit/loss for each individual buy transaction
+
+### Performance & Reliability
+- **Smart Caching**: Timeframe-aware caching reduces API calls (5min for intraday, 30min for weekly, 1hr for longer periods)
+- **Robust FX Handling**: USD-pivot FX conversion strategy ensures accurate cross-currency calculations
+- **Outlier Detection**: Statistical smoothing catches data anomalies without affecting real market movements
 
 ### Advanced UI/UX
 - **Premium Dark Mode**: Carefully crafted glassmorphic design with smooth animations
 - **Loading Skeletons**: Polished loading states for all components
 - **Responsive Design**: Optimized for desktop and mobile devices
 - **Atomic State Updates**: Optimized rendering prevents UI flicker during data updates
+- **Settings Panel**: Centralized settings with data management, portfolio controls, and import/export
 
 ## 🚀 Getting Started
 
@@ -61,25 +72,38 @@ A premium, dark-mode portfolio tracker built with Next.js, Recharts, and Yahoo F
 
 ## 📊 Usage
 
+### Managing Portfolios
+1. Click the settings icon (gear) to open the Settings panel
+2. Create new portfolios with the "+" button
+3. Switch between portfolios using the dropdown in the header
+4. View "All Portfolios" for a combined view across all portfolios
+
 ### Adding Assets
 1. Click the "Add Asset" button
 2. Search for stocks (e.g., AAPL), cryptocurrencies (e.g., BTC-USD), or forex pairs
 3. Enter transaction details (amount, price, date)
-4. Save to add to your portfolio
+4. Add optional notes to document the transaction
+5. Save to add to your portfolio
 
 ### Managing Transactions
 - View all transactions for an asset by clicking on it in the holdings list
 - Edit or delete individual transactions
-- Track P/L for each buy transaction
+- Track P/L for each buy transaction with current vs. purchase price comparison
+- Add deposits/withdrawals for fiat currencies
+
+### Import/Export
+- Export your portfolio to CSV via Settings > Data Management
+- Import CSV files with automatic portfolio name detection
+- Choose to merge into existing portfolio or create new when importing
 
 ### Customization
-- Switch between USD, EUR and other base currencies
+- Switch between USD, EUR, AUD and other base currencies
 - Toggle privacy mode to hide balances
 - Adjust chart timeframes for different perspectives
 
 ## 🗂️ Data Persistence
 
-Transactions are saved locally in your browser's `localStorage` and can be exported to `data/portfolio.csv` for backup or migration.
+Transactions are saved locally in your browser's `localStorage` and can be exported to CSV for backup or migration. Each portfolio maintains its own transaction history.
 
 ## 🛠️ Tech Stack
 
