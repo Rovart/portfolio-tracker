@@ -35,24 +35,23 @@ export async function GET(request) {
             };
         });
 
-        // Special handling for exact currency code matches like "USD", "EUR", "GBP"
+        // Special handling for 3-letter currency codes - always add at top
         const upperQ = q.toUpperCase().trim();
         const commonCurrencies = ['USD', 'EUR', 'GBP', 'JPY', 'CAD', 'AUD', 'CHF', 'CNY', 'HKD', 'SGD', 'NZD', 'SEK', 'NOK', 'DKK', 'INR', 'BRL', 'MXN', 'ZAR', 'KRW', 'THB'];
 
         if (commonCurrencies.includes(upperQ)) {
-            // Check if we already have this currency in results
-            const hasCurrency = filtered.some(r => r.symbol === `${upperQ}=X` || r.displaySymbol === upperQ);
-            if (!hasCurrency) {
-                // Add the currency at the top
-                filtered.unshift({
-                    symbol: `${upperQ}=X`,
-                    displaySymbol: upperQ,
-                    shortname: `${upperQ} - US Dollar Exchange Rate`,
-                    type: 'CURRENCY',
-                    exchange: 'CCY',
-                    currency: 'USD'
-                });
-            }
+            // Remove any existing matching currency to avoid duplicates
+            filtered = filtered.filter(r => r.symbol !== `${upperQ}=X`);
+
+            // Always add the currency at the top
+            filtered.unshift({
+                symbol: `${upperQ}=X`,
+                displaySymbol: upperQ,
+                shortname: `${upperQ} Currency`,
+                type: 'CURRENCY',
+                exchange: 'CCY',
+                currency: 'USD'
+            });
         }
 
         return NextResponse.json({ results: filtered });

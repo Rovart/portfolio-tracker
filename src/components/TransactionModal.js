@@ -224,22 +224,15 @@ export default function TransactionModal({ mode, holding, transactions, onClose,
                 const qAmt = parseFloat(t.quoteAmount) || 0;
                 const dateStr = t.date.split('T')[0];
 
-                // Use the transaction's ACTUAL quote currency, not the asset's default
-                const txQuoteCurr = normalizeAsset(t.quoteCurrency) || 'USD';
+                // Use the transaction's ACTUAL quote currency
+                const txQuoteCurr = (t.quoteCurrency || 'USD').toUpperCase();
 
-                // Get historical FX rate for this specific transaction's quote currency
+                // Get FX rate to convert from txQuoteCurrency to baseCurrency
                 let hFx = 1;
                 if (txQuoteCurr !== baseCurrency) {
-                    // Try to find historical FX rate, fallback to current fxRate if matching, else 1
-                    const assetQuoteCurr = selectedAsset.currency?.toUpperCase() || 'USD';
-                    if (txQuoteCurr === assetQuoteCurr) {
-                        // This transaction uses the same quote currency as the asset's current quote
-                        hFx = historicalFx[dateStr] || fxRate || 1;
-                    } else {
-                        // Different currency - we don't have historical FX for this, use 1 as approximation
-                        // TODO: In the future, we could fetch additional FX history for better accuracy
-                        hFx = 1;
-                    }
+                    // Need FX conversion - use historical if available, otherwise current fxRate
+                    // Note: historicalFx is fetched for asset's currency, so we use it if currencies match
+                    hFx = historicalFx[dateStr] || fxRate || 1;
                 }
 
                 if (['BUY', 'DEPOSIT'].includes(t.type)) {
@@ -497,7 +490,8 @@ export default function TransactionModal({ mode, holding, transactions, onClose,
                                                                         <span className="text-xs text-[10px] text-muted">
                                                                             | {hideBalances ? '••••••' : (() => {
                                                                                 const dateStr = tx.date.split('T')[0];
-                                                                                const hFx = (tx.quoteCurrency || 'USD') === baseCurrency ? 1 : (historicalFx[dateStr] || fxRate || 1);
+                                                                                const txQuoteCurrency = (tx.quoteCurrency || 'USD').toUpperCase();
+                                                                                const hFx = txQuoteCurrency !== baseCurrency ? (historicalFx[dateStr] || fxRate || 1) : 1;
                                                                                 return `${(tx.quoteAmount * hFx).toLocaleString(undefined, { maximumFractionDigits: 2 })} ${baseCurrency === 'USD' ? '$' : baseCurrency}`;
                                                                             })()}
                                                                         </span>
