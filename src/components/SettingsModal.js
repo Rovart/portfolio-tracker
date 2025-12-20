@@ -734,13 +734,16 @@ export default function SettingsModal({ onClose, onPortfolioChange, currentPortf
                                     <span className="text-xs text-muted">Get a daily summary for each portfolio</span>
                                 </div>
                                 <div
-                                    className="relative w-12 h-6 rounded-full transition-colors duration-200"
-                                    style={{ backgroundColor: notificationsEnabled ? '#22c55e' : '#3f3f46' }}
+                                    className="relative w-12 h-6 rounded-full transition-all duration-200 shadow-inner"
+                                    style={{
+                                        backgroundColor: notificationsEnabled ? '#22c55e' : 'rgba(255,255,255,0.06)',
+                                        border: `1px solid ${notificationsEnabled ? '#22c55e' : 'rgba(255,255,255,0.1)'}`
+                                    }}
                                 >
                                     <div
-                                        className="absolute top-1 w-4 h-4 rounded-full bg-white transition-all duration-200 shadow-sm"
+                                        className="absolute top-[3px] w-4 h-4 rounded-full bg-white transition-all duration-200 shadow-md"
                                         style={{
-                                            left: notificationsEnabled ? 'calc(100% - 20px)' : '4px'
+                                            left: notificationsEnabled ? 'calc(100% - 19px)' : '3px'
                                         }}
                                     />
                                 </div>
