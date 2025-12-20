@@ -194,12 +194,12 @@ export default function Dashboard() {
 
                     // Auto-link bare symbol (AUD) to USD pair (AUDUSD=X)
                     // We anchor everything to USD to avoid cross-rate inversion issues
-                    if (q.quoteType === 'CURRENCY' && q.symbol.endsWith('USD=X')) {
+                    // Trigger on: quoteType CURRENCY OR symbol pattern XXXUSD=X with 3-letter base
+                    if (q.symbol.endsWith('USD=X')) {
                         const bare = q.symbol.replace('USD=X', '');
                         if (bare.length === 3) {
-                            pxMap[bare] = pxMap[q.symbol];
-                            // Explicitly mark that its local price is in USD
-                            pxMap[bare].currency = 'USD';
+                            // Create a new object to avoid reference issues
+                            pxMap[bare] = { ...pxMap[q.symbol], currency: 'USD' };
                         }
                     }
 
