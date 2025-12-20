@@ -23,6 +23,10 @@ export default function SettingsModal({ onClose, onPortfolioChange, currentPortf
     const [ioPortfolioId, setIoPortfolioId] = useState(currentPortfolioId);
     const fileInputRef = useRef(null);
 
+    // Import conflict dialog state
+    const [importConflict, setImportConflict] = useState(null);
+    // { csvPortfolioName, targetPortfolioName, transactions, onMerge, onCreateNew }
+
     useEffect(() => {
         loadPortfolios();
     }, []);
@@ -146,6 +150,7 @@ export default function SettingsModal({ onClose, onPortfolioChange, currentPortf
 
         const headers = lines[0].split(',').map(h => h.trim().replace(/^"|"$/g, ''));
         const transactions = [];
+        let csvPortfolioName = null;
 
         for (let i = 1; i < lines.length; i++) {
             const values = lines[i].split(',').map(v => v.trim().replace(/^"|"$/g, ''));
@@ -166,6 +171,9 @@ export default function SettingsModal({ onClose, onPortfolioChange, currentPortf
                     case 'Fee currency (name)': tx.feeCurrency = val || null; break;
                     case 'Notes': tx.notes = val || null; break;
                     case 'Portfolio ID': tx.portfolioId = parseInt(val) || null; break;
+                    case 'Portfolio Name':
+                        if (val && !csvPortfolioName) csvPortfolioName = val;
+                        break;
                 }
             });
 
@@ -179,17 +187,49 @@ export default function SettingsModal({ onClose, onPortfolioChange, currentPortf
             return;
         }
 
-        // If currently viewing a specific portfolio, force all imported tx to that portfolio
-        // If viewing 'all', respect the Portfolio ID in the CSV if present
-        const targetPortfolioId = ioPortfolioId === 'all' ? 1 : ioPortfolioId;
+        // Reset file input so same file can be re-selected
+        if (fileInputRef.current) fileInputRef.current.value = '';
 
-        if (ioPortfolioId !== 'all') {
-            transactions.forEach(tx => tx.portfolioId = ioPortfolioId);
+        // Get target portfolio info
+        const targetPortfolioId = ioPortfolioId === 'all' ? 1 : ioPortfolioId;
+        const targetPortfolio = portfolios.find(p => p.id === targetPortfolioId);
+        const targetPortfolioName = targetPortfolio?.name || 'My Portfolio';
+
+        // Check if CSV portfolio name differs from target
+        if (csvPortfolioName && csvPortfolioName !== targetPortfolioName) {
+            // Show conflict dialog
+            setImportConflict({
+                csvPortfolioName,
+                targetPortfolioName,
+                transactions,
+                targetPortfolioId
+            });
+            return;
         }
 
-        await importTransactions(transactions, targetPortfolioId);
+        // No conflict - proceed with import
+        await doImport(transactions, targetPortfolioId);
+    };
+
+    const doImport = async (transactions, portfolioId) => {
+        transactions.forEach(tx => tx.portfolioId = portfolioId);
+        await importTransactions(transactions, portfolioId);
         alert(`Imported ${transactions.length} transactions`);
+        setImportConflict(null);
         onClose();
+    };
+
+    const handleImportMerge = async () => {
+        if (!importConflict) return;
+        await doImport(importConflict.transactions, importConflict.targetPortfolioId);
+    };
+
+    const handleImportCreateNew = async () => {
+        if (!importConflict) return;
+        // Create new portfolio with CSV name
+        const newPortfolio = await addPortfolio(importConflict.csvPortfolioName);
+        await doImport(importConflict.transactions, newPortfolio.id);
+        await loadPortfolios();
     };
 
     const tabs = [
@@ -491,6 +531,109 @@ export default function SettingsModal({ onClose, onPortfolioChange, currentPortf
                     )}
                 </div>
             </div>
+
+            {/* Import Conflict Dialog */}
+            {importConflict && (
+                <div style={{
+                    position: 'fixed',
+                    top: 0,
+                    left: 0,
+                    right: 0,
+                    bottom: 0,
+                    backgroundColor: 'rgba(0, 0, 0, 0.8)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    zIndex: 10000,
+                    padding: '20px'
+                }}>
+                    <div style={{
+                        backgroundColor: '#1a1a1a',
+                        borderRadius: '16px',
+                        padding: '24px',
+                        maxWidth: '400px',
+                        width: '100%',
+                        border: '1px solid #333'
+                    }}>
+                        <h3 style={{ margin: '0 0 16px 0', fontSize: '1.25rem', fontWeight: 'bold' }}>
+                            Portfolio Mismatch
+                        </h3>
+                        <p style={{ margin: '0 0 8px 0', color: '#a1a1aa', lineHeight: 1.5 }}>
+                            The CSV contains transactions from:
+                        </p>
+                        <p style={{
+                            margin: '0 0 16px 0',
+                            fontWeight: 'bold',
+                            color: '#3b82f6',
+                            fontSize: '1.1rem'
+                        }}>
+                            "{importConflict.csvPortfolioName}"
+                        </p>
+                        <p style={{ margin: '0 0 8px 0', color: '#a1a1aa', lineHeight: 1.5 }}>
+                            But you're importing into:
+                        </p>
+                        <p style={{
+                            margin: '0 0 24px 0',
+                            fontWeight: 'bold',
+                            color: '#22c55e',
+                            fontSize: '1.1rem'
+                        }}>
+                            "{importConflict.targetPortfolioName}"
+                        </p>
+                        <p style={{ margin: '0 0 24px 0', color: '#a1a1aa', fontSize: '0.9rem' }}>
+                            {importConflict.transactions.length} transaction(s) to import
+                        </p>
+
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                            <button
+                                onClick={handleImportMerge}
+                                style={{
+                                    padding: '14px 20px',
+                                    backgroundColor: '#22c55e',
+                                    color: 'white',
+                                    border: 'none',
+                                    borderRadius: '12px',
+                                    cursor: 'pointer',
+                                    fontWeight: '600',
+                                    fontSize: '1rem'
+                                }}
+                            >
+                                Merge into "{importConflict.targetPortfolioName}"
+                            </button>
+                            <button
+                                onClick={handleImportCreateNew}
+                                style={{
+                                    padding: '14px 20px',
+                                    backgroundColor: '#3b82f6',
+                                    color: 'white',
+                                    border: 'none',
+                                    borderRadius: '12px',
+                                    cursor: 'pointer',
+                                    fontWeight: '600',
+                                    fontSize: '1rem'
+                                }}
+                            >
+                                Create "{importConflict.csvPortfolioName}"
+                            </button>
+                            <button
+                                onClick={() => setImportConflict(null)}
+                                style={{
+                                    padding: '14px 20px',
+                                    backgroundColor: 'transparent',
+                                    color: '#a1a1aa',
+                                    border: '1px solid #333',
+                                    borderRadius: '12px',
+                                    cursor: 'pointer',
+                                    fontWeight: '500',
+                                    fontSize: '1rem'
+                                }}
+                            >
+                                Cancel
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     );
 }
