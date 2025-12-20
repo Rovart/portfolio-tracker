@@ -134,12 +134,14 @@ export default function TransactionModal({ mode, holding, transactions, onClose,
                         // Asset is already in base currency - no conversion needed
                         fetchedFxRate = 1;
                     } else {
-                        // Try to find the FX quote we fetched, or fetch one if we didn't
+                        // Need FX conversion - fetch the rate
                         const expectedFxSymbol = `${fetchedCurrency}${baseCurrency}=X`;
+
+                        // Check if we already have it in the initial fetch
                         let fxQuote = json.data.find(q => q.symbol === expectedFxSymbol);
 
-                        // If we didn't fetch this FX pair (because quoteCurr was different), fetch it now
-                        if (!fxQuote && fetchedCurrency !== quoteCurr) {
+                        // If not found, make a dedicated fetch
+                        if (!fxQuote) {
                             try {
                                 const fxRes = await fetch(`/api/quote?symbols=${expectedFxSymbol}`);
                                 const fxJson = await fxRes.json();
@@ -151,8 +153,10 @@ export default function TransactionModal({ mode, holding, transactions, onClose,
                             }
                         }
 
-                        if (fxQuote) {
+                        if (fxQuote && fxQuote.price) {
                             fetchedFxRate = fxQuote.price;
+                        } else {
+                            console.warn(`Could not get FX rate for ${expectedFxSymbol}, using 1`);
                         }
                     }
                 }
@@ -160,12 +164,16 @@ export default function TransactionModal({ mode, holding, transactions, onClose,
                 // Fetch historical FX if needed (using actual fetched currency)
                 let fetchedHMap = {};
                 if (fetchedCurrency && fetchedCurrency !== baseCurrency) {
-                    const hRes = await fetch(`/api/history?symbol=${fetchedCurrency}${baseCurrency}=X&range=ALL`);
-                    const hJson = await hRes.json();
-                    if (hJson.history) {
-                        hJson.history.forEach(d => {
-                            fetchedHMap[d.date.split('T')[0]] = d.price;
-                        });
+                    try {
+                        const hRes = await fetch(`/api/history?symbol=${fetchedCurrency}${baseCurrency}=X&range=ALL`);
+                        const hJson = await hRes.json();
+                        if (hJson.history && hJson.history.length > 0) {
+                            hJson.history.forEach(d => {
+                                fetchedHMap[d.date.split('T')[0]] = d.price;
+                            });
+                        }
+                    } catch (e) {
+                        console.error('Failed to fetch historical FX:', e);
                     }
                 }
 
