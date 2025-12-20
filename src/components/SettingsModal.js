@@ -678,7 +678,8 @@ export default function SettingsModal({ onClose, onPortfolioChange, currentPortf
                     left: 0,
                     right: 0,
                     bottom: 0,
-                    backgroundColor: 'rgba(0, 0, 0, 0.8)',
+                    backgroundColor: 'rgba(0, 0, 0, 0.85)',
+                    backdropFilter: 'blur(8px)',
                     display: 'flex',
                     alignItems: 'center',
                     justifyContent: 'center',
@@ -686,72 +687,134 @@ export default function SettingsModal({ onClose, onPortfolioChange, currentPortf
                     padding: '20px'
                 }}>
                     <div style={{
-                        backgroundColor: '#1a1a1a',
-                        borderRadius: '16px',
-                        padding: '24px',
-                        maxWidth: '400px',
+                        background: 'linear-gradient(135deg, rgba(30, 30, 35, 0.98) 0%, rgba(20, 20, 25, 0.98) 100%)',
+                        borderRadius: '20px',
+                        padding: '32px',
+                        maxWidth: '420px',
                         width: '100%',
-                        border: '1px solid #333'
+                        border: '1px solid rgba(255, 255, 255, 0.08)',
+                        boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.5)'
                     }}>
-                        <h3 style={{ margin: '0 0 16px 0', fontSize: '1.25rem', fontWeight: 'bold' }}>
-                            Portfolio Mismatch
-                        </h3>
-                        <p style={{ margin: '0 0 8px 0', color: '#a1a1aa', lineHeight: 1.5 }}>
-                            The CSV contains transactions from:
-                        </p>
-                        <p style={{
-                            margin: '0 0 16px 0',
-                            fontWeight: 'bold',
-                            color: '#3b82f6',
-                            fontSize: '1.1rem'
+                        {/* Header with icon */}
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '24px' }}>
+                            <div style={{
+                                width: '40px',
+                                height: '40px',
+                                borderRadius: '12px',
+                                background: 'linear-gradient(135deg, rgba(251, 191, 36, 0.2) 0%, rgba(245, 158, 11, 0.1) 100%)',
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                fontSize: '18px'
+                            }}>
+                                ⚠️
+                            </div>
+                            <h3 style={{ margin: 0, fontSize: '1.25rem', fontWeight: '600', color: '#fff' }}>
+                                Portfolio Mismatch
+                            </h3>
+                        </div>
+
+                        {/* Content */}
+                        <div style={{
+                            background: 'rgba(255, 255, 255, 0.03)',
+                            borderRadius: '12px',
+                            padding: '16px',
+                            marginBottom: '20px'
                         }}>
-                            "{importConflict.csvPortfolioName}"
-                        </p>
-                        <p style={{ margin: '0 0 8px 0', color: '#a1a1aa', lineHeight: 1.5 }}>
-                            But you're importing into:
-                        </p>
+                            <div style={{ marginBottom: '16px' }}>
+                                <span style={{ fontSize: '0.75rem', color: '#71717a', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                                    CSV Portfolio
+                                </span>
+                                <p style={{ margin: '4px 0 0 0', fontSize: '1rem', fontWeight: '600', color: '#fbbf24' }}>
+                                    {importConflict.csvPortfolioName}
+                                </p>
+                            </div>
+
+                            <div style={{
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: '8px',
+                                margin: '12px 0',
+                                color: '#52525b'
+                            }}>
+                                <div style={{ flex: 1, height: '1px', background: 'rgba(255,255,255,0.1)' }} />
+                                <span style={{ fontSize: '0.7rem' }}>↓ importing into ↓</span>
+                                <div style={{ flex: 1, height: '1px', background: 'rgba(255,255,255,0.1)' }} />
+                            </div>
+
+                            <div>
+                                <span style={{ fontSize: '0.75rem', color: '#71717a', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                                    Target Portfolio
+                                </span>
+                                <p style={{ margin: '4px 0 0 0', fontSize: '1rem', fontWeight: '600', color: '#22c55e' }}>
+                                    {importConflict.targetPortfolioName}
+                                </p>
+                            </div>
+                        </div>
+
                         <p style={{
                             margin: '0 0 24px 0',
-                            fontWeight: 'bold',
-                            color: '#22c55e',
-                            fontSize: '1.1rem'
+                            color: '#a1a1aa',
+                            fontSize: '0.875rem',
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '6px'
                         }}>
-                            "{importConflict.targetPortfolioName}"
-                        </p>
-                        <p style={{ margin: '0 0 24px 0', color: '#a1a1aa', fontSize: '0.9rem' }}>
-                            {importConflict.transactions.length} transaction(s) to import
+                            <span style={{
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                background: 'rgba(99, 102, 241, 0.15)',
+                                color: '#818cf8',
+                                fontSize: '0.75rem',
+                                fontWeight: '600',
+                                padding: '2px 8px',
+                                borderRadius: '6px'
+                            }}>
+                                {importConflict.transactions.length}
+                            </span>
+                            transaction{importConflict.transactions.length !== 1 ? 's' : ''} to import
                         </p>
 
+                        {/* Actions */}
                         <div style={{ display: 'flex', gap: '12px' }}>
                             <button
                                 onClick={handleImportMerge}
+                                className="btn"
                                 style={{
                                     flex: 1,
-                                    padding: '12px 16px',
-                                    backgroundColor: 'rgba(34, 197, 94, 0.15)',
+                                    padding: '14px 20px',
+                                    background: 'linear-gradient(135deg, rgba(34, 197, 94, 0.15) 0%, rgba(34, 197, 94, 0.08) 100%)',
                                     color: '#22c55e',
-                                    border: '1px solid rgba(34, 197, 94, 0.3)',
-                                    borderRadius: '10px',
+                                    border: '1px solid rgba(34, 197, 94, 0.25)',
+                                    borderRadius: '12px',
                                     cursor: 'pointer',
                                     fontWeight: '600',
-                                    fontSize: '0.9rem'
+                                    fontSize: '0.9rem',
+                                    transition: 'all 0.2s ease'
                                 }}
+                                onMouseOver={e => e.target.style.background = 'rgba(34, 197, 94, 0.25)'}
+                                onMouseOut={e => e.target.style.background = 'linear-gradient(135deg, rgba(34, 197, 94, 0.15) 0%, rgba(34, 197, 94, 0.08) 100%)'}
                             >
-                                Merge
+                                Merge Here
                             </button>
                             <button
                                 onClick={handleImportCreateNew}
+                                className="btn"
                                 style={{
                                     flex: 1,
-                                    padding: '12px 16px',
-                                    backgroundColor: 'rgba(59, 130, 246, 0.15)',
+                                    padding: '14px 20px',
+                                    background: 'linear-gradient(135deg, rgba(59, 130, 246, 0.15) 0%, rgba(59, 130, 246, 0.08) 100%)',
                                     color: '#3b82f6',
-                                    border: '1px solid rgba(59, 130, 246, 0.3)',
-                                    borderRadius: '10px',
+                                    border: '1px solid rgba(59, 130, 246, 0.25)',
+                                    borderRadius: '12px',
                                     cursor: 'pointer',
                                     fontWeight: '600',
-                                    fontSize: '0.9rem'
+                                    fontSize: '0.9rem',
+                                    transition: 'all 0.2s ease'
                                 }}
+                                onMouseOver={e => e.target.style.background = 'rgba(59, 130, 246, 0.25)'}
+                                onMouseOut={e => e.target.style.background = 'linear-gradient(135deg, rgba(59, 130, 246, 0.15) 0%, rgba(59, 130, 246, 0.08) 100%)'}
                             >
                                 Create New
                             </button>
@@ -761,13 +824,16 @@ export default function SettingsModal({ onClose, onPortfolioChange, currentPortf
                             style={{
                                 width: '100%',
                                 marginTop: '12px',
-                                padding: '10px',
+                                padding: '12px',
                                 backgroundColor: 'transparent',
-                                color: '#666',
+                                color: '#52525b',
                                 border: 'none',
                                 cursor: 'pointer',
-                                fontSize: '0.85rem'
+                                fontSize: '0.85rem',
+                                transition: 'color 0.2s ease'
                             }}
+                            onMouseOver={e => e.target.style.color = '#a1a1aa'}
+                            onMouseOut={e => e.target.style.color = '#52525b'}
                         >
                             Cancel
                         </button>
