@@ -250,8 +250,13 @@ export default function Dashboard() {
 
     // TRUE PORTFOLIO HISTORY
     useEffect(() => {
-        // Wait for prices to be loaded first - ensures FX rates are available
-        if (!transactions || transactions.length === 0 || pricesLoading) return;
+        if (pricesLoading) return;
+
+        if (!transactions || transactions.length === 0) {
+            setRawHistory([]);
+            setHistoryLoading(false);
+            return;
+        }
 
         async function loadTrueHistory() {
             const hasChangedRange = prevTimeframeRef.current !== timeframe || prevBaseCurrencyRef.current !== baseCurrency;
