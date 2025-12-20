@@ -618,34 +618,49 @@ export default function Dashboard() {
         <>
             {/* Portfolio Selector - OUTSIDE PullToRefresh to allow horizontal scrolling */}
             {portfolios.length > 1 && (
-                <div className="container" style={{ paddingBottom: 0 }}>
-                    <div className="w-full overflow-hidden mb-4">
-                        <div
-                            className="flex gap-2 pb-1 overflow-x-auto no-scrollbar"
-                            style={{
-                                WebkitOverflowScrolling: 'touch',
-                                overscrollBehaviorX: 'contain',
-                                touchAction: 'pan-x'
-                            }}
-                            onTouchStart={(e) => e.stopPropagation()}
-                            onTouchMove={(e) => e.stopPropagation()}
+                <div
+                    style={{
+                        padding: '16px',
+                        paddingTop: 'calc(16px + env(safe-area-inset-top, 0px))',
+                        paddingBottom: '8px',
+                        maxWidth: '600px',
+                        margin: '0 auto',
+                        width: '100%',
+                        boxSizing: 'border-box'
+                    }}
+                >
+                    <div
+                        style={{
+                            display: 'flex',
+                            gap: '8px',
+                            overflowX: 'scroll',
+                            overflowY: 'hidden',
+                            WebkitOverflowScrolling: 'touch',
+                            scrollbarWidth: 'none',
+                            msOverflowStyle: 'none',
+                            touchAction: 'pan-x',
+                            paddingBottom: '4px'
+                        }}
+                        onTouchStart={(e) => e.stopPropagation()}
+                        onTouchMove={(e) => e.stopPropagation()}
+                    >
+                        <button
+                            onClick={() => handlePortfolioChange('all')}
+                            className={`pill ${currentPortfolioId === 'all' ? 'active' : ''}`}
+                            style={{ flexShrink: 0 }}
                         >
+                            All
+                        </button>
+                        {portfolios.map(p => (
                             <button
-                                onClick={() => handlePortfolioChange('all')}
-                                className={`pill shrink-0 ${currentPortfolioId === 'all' ? 'active' : ''}`}
+                                key={p.id}
+                                onClick={() => handlePortfolioChange(p.id)}
+                                className={`pill ${currentPortfolioId === p.id ? 'active' : ''}`}
+                                style={{ flexShrink: 0 }}
                             >
-                                All
+                                {p.name}
                             </button>
-                            {portfolios.map(p => (
-                                <button
-                                    key={p.id}
-                                    onClick={() => handlePortfolioChange(p.id)}
-                                    className={`pill shrink-0 ${currentPortfolioId === p.id ? 'active' : ''}`}
-                                >
-                                    {p.name}
-                                </button>
-                            ))}
-                        </div>
+                        ))}
                     </div>
                 </div>
             )}
