@@ -507,6 +507,23 @@ export default function Dashboard() {
         const cutoffStr = cutoff.toISOString();
         let filtered = rawHistory.filter(d => d.date >= cutoffStr);
 
+        // RESAMPLE: Reduce granularity for smoother charts
+        // Weekly: 1-hour buckets, Daily: keep all (15-30 min granularity from Yahoo)
+        if (timeframe === '1W' && filtered.length > 0) {
+            const hourlyBuckets = {};
+            filtered.forEach(point => {
+                // Round to hour
+                const d = new Date(point.date);
+                d.setMinutes(0, 0, 0);
+                const hourKey = d.toISOString();
+                // Keep the last value in each hour bucket
+                hourlyBuckets[hourKey] = point.value;
+            });
+            filtered = Object.entries(hourlyBuckets)
+                .map(([date, value]) => ({ date, value }))
+                .sort((a, b) => a.date.localeCompare(b.date));
+        }
+
         // SMOOTHING: Final pass to catch spikes
         if (filtered.length > 5) {
             filtered = filtered.map((point, i, arr) => {
