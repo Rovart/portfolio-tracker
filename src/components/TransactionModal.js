@@ -477,9 +477,16 @@ export default function TransactionModal({ mode, holding, transactions, onClose,
                                         assetCurrency={selectedAsset.currency || priceData.currency}
                                         // If it's a currency not equal to base, pass the constructed pair (e.g. AUDUSD=X)
                                         // otherwise pass null to let AssetChart decide or use default logic
-                                        chartSymbol={(selectedAsset.currency && selectedAsset.currency !== baseCurrency)
-                                            ? `${selectedAsset.currency}${baseCurrency}=X`
-                                            : selectedAsset.symbol}
+                                        // Improved logic: If it's a bare currency (AUD) or currency asset, force the pair (AUDUSD=X)
+                                        chartSymbol={(() => {
+                                            const isBare = selectedAsset.isBareCurrencyOrigin || (selectedAsset.symbol && selectedAsset.symbol.length === 3 && selectedAsset.currency === selectedAsset.symbol);
+                                            if (isBare && selectedAsset.currency !== baseCurrency) {
+                                                return `${selectedAsset.currency}${baseCurrency}=X`;
+                                            }
+                                            return (selectedAsset.currency && selectedAsset.currency !== baseCurrency && !selectedAsset.symbol.includes('-') && !selectedAsset.symbol.includes('=X'))
+                                                ? `${selectedAsset.currency}${baseCurrency}=X`
+                                                : selectedAsset.symbol;
+                                        })()}
                                     />
                                 </div>
                             </div>
