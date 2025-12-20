@@ -94,10 +94,16 @@ export default function SettingsModal({ onClose, onPortfolioChange, currentPortf
     const confirmDeletePortfolio = async (id) => {
         await deletePortfolio(id);
         await loadPortfolios();
-        // If we deleted the portfolio we are looking at in the dashboard, switch to 'all'
+
+        // Refresh the dashboard's transaction list
         if (currentPortfolioId === id) {
+            // If we deleted the portfolio we were viewing, jump to 'all'
             onPortfolioChange('all');
+        } else {
+            // Otherwise just refresh the current view (like 'all') to reflect deleted transactions
+            onPortfolioChange(currentPortfolioId);
         }
+
         // If we deleted the portfolio selected in the export tab, reset it to 'all'
         if (ioPortfolioId === id) {
             setIoPortfolioId('all');
