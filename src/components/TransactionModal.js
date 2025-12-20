@@ -733,11 +733,23 @@ function TransactionForm({ holding, existingTx, transactions, onSave, onCancel, 
             async function fetchPrice() {
                 setFetchingPrice(true);
                 try {
-                    // For bare currencies (EUR=X), price is always 1
-                    // DEPOSIT/WITHDRAW of currency: 100 EUR is 100 EUR
-                    // FX conversion to baseCurrency happens in dashboard display
-                    if (isBareCurrency) {
-                        setPrice(1);
+                    // For bare currencies (EURUSD=X for EUR holdings)
+                    // Show price in baseCurrency terms
+                    if (isBareCurrency && bareCurrencyCode) {
+                        if (bareCurrencyCode === baseCurrency) {
+                            // Holding EUR, baseCurrency is EUR → 1 EUR = 1 EUR
+                            setPrice(1);
+                        } else {
+                            // Holding EUR, baseCurrency is USD → fetch EURUSD=X rate
+                            const fxSym = `${bareCurrencyCode}${baseCurrency}=X`;
+                            const res = await fetch(`/api/quote?symbols=${fxSym}`);
+                            const json = await res.json();
+                            if (json.data && json.data[0]) {
+                                setPrice(json.data[0].price);
+                            } else {
+                                setPrice(1);
+                            }
+                        }
                         setFetchingPrice(false);
                         return;
                     }
@@ -759,7 +771,7 @@ function TransactionForm({ holding, existingTx, transactions, onSave, onCancel, 
         } else if (existingTx && existingTx.quoteAmount && existingTx.baseAmount) {
             setPrice(existingTx.quoteAmount / existingTx.baseAmount);
         }
-    }, [sym, existingTx, isBareCurrency]);
+    }, [sym, existingTx, isBareCurrency, bareCurrencyCode, baseCurrency]);
 
     // Historical price fetch when date changes - ONLY if NOT editing and NOT manually set
     useEffect(() => {
