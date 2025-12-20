@@ -152,7 +152,7 @@ export default function SettingsModal({ onClose, onPortfolioChange, currentPortf
 
         const headers = lines[0].split(',').map(h => h.trim().replace(/^"|"$/g, ''));
         const transactions = [];
-        let csvPortfolioName = null;
+        let csvPortfolioNames = new Set();
 
         for (let i = 1; i < lines.length; i++) {
             const values = lines[i].split(',').map(v => v.trim().replace(/^"|"$/g, ''));
@@ -174,7 +174,8 @@ export default function SettingsModal({ onClose, onPortfolioChange, currentPortf
                     case 'Notes': tx.notes = val || null; break;
                     case 'Portfolio ID': tx.portfolioId = parseInt(val) || null; break;
                     case 'Portfolio Name':
-                        if (val && !csvPortfolioName) csvPortfolioName = val;
+                        tx.csvPortfolioName = val || null;
+                        if (val) csvPortfolioNames.add(val);
                         break;
                 }
             });
@@ -192,20 +193,36 @@ export default function SettingsModal({ onClose, onPortfolioChange, currentPortf
         // Reset file input so same file can be re-selected
         if (fileInputRef.current) fileInputRef.current.value = '';
 
-        // If importing from "All Portfolios" view and CSV has a portfolio name, auto-create it
-        if (ioPortfolioId === 'all' && csvPortfolioName) {
-            // Check if a portfolio with this name already exists
-            const existingPortfolio = portfolios.find(p => p.name === csvPortfolioName);
-            if (existingPortfolio) {
-                // Portfolio exists - import directly into it
-                await doImport(transactions, existingPortfolio.id);
-            } else {
-                // Create new portfolio with CSV name
-                const newPortfolio = await addPortfolio(csvPortfolioName);
-                await doImport(transactions, newPortfolio.id);
+        const uniquePortfolioNames = Array.from(csvPortfolioNames);
+        const csvPortfolioName = uniquePortfolioNames.length === 1 ? uniquePortfolioNames[0] : null;
+
+        // If importing from "All Portfolios" view, handle multi-portfolio import
+        if (ioPortfolioId === 'all') {
+            if (uniquePortfolioNames.length > 0) {
+                // Group transactions by portfolio name and import each group
+                for (const pName of uniquePortfolioNames) {
+                    const groupTxs = transactions.filter(tx => tx.csvPortfolioName === pName);
+                    // Check if portfolio exists
+                    let targetPortfolio = portfolios.find(p => p.name === pName);
+                    if (!targetPortfolio) {
+                        // Create new portfolio
+                        targetPortfolio = await addPortfolio(pName);
+                    }
+                    // Import this group
+                    const txsToImport = groupTxs.map(tx => ({
+                        ...tx,
+                        portfolioId: targetPortfolio.id
+                    }));
+                    await importTransactions(txsToImport, targetPortfolio.id);
+                }
                 await loadPortfolios();
+                onClose();
+                return;
+            } else {
+                // No portfolio names in CSV - import to default portfolio
+                await doImport(transactions, 1);
+                return;
             }
-            return;
         }
 
         // Get target portfolio info
