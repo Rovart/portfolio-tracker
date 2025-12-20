@@ -75,6 +75,10 @@ export default function AssetSearch({ onSelect, onCancel }) {
                                     // Convert EUR=X to EURUSD=X for consistent FX handling
                                     transformedItem.symbol = `${base}USD=X`;
                                     transformedItem.displaySymbol = item.symbol; // Keep original for display
+                                    transformedItem.isBareCurrencyOrigin = true; // Flag to restrict to DEPOSIT/WITHDRAW
+                                } else if (base === 'USD') {
+                                    // USD=X is also a bare currency
+                                    transformedItem.isBareCurrencyOrigin = true;
                                 }
                             }
 

@@ -5,26 +5,54 @@ import { AreaChart, Area, XAxis, Tooltip, ResponsiveContainer, YAxis } from 'rec
 
 const RANGES = ['1D', '1W', '1M', '3M', '1Y', 'ALL'];
 
-export default function AssetChart({ symbol, baseCurrency = 'USD', fxRate = 1, parentLoading = false }) {
+export default function AssetChart({ symbol, baseCurrency = 'USD', fxRate = 1, parentLoading = false, assetCurrency }) {
     const [rawData, setRawData] = useState([]);
+    const [fxHistory, setFxHistory] = useState({});
     const [loading, setLoading] = useState(true);
     const [range, setRange] = useState('1Y');
 
-    // Fetch raw prices (in asset's native currency) - only when symbol/range changes
+    // Determine if we need FX conversion
+    const needsFxConversion = assetCurrency && assetCurrency !== baseCurrency;
+    const fxSymbol = needsFxConversion ? `${assetCurrency}${baseCurrency}=X` : null;
+
+    // Fetch raw prices and FX history in parallel
     useEffect(() => {
         async function load() {
             setLoading(true);
             try {
-                const res = await fetch(`/api/history?symbol=${symbol}&range=${range}`);
-                const json = await res.json();
-                if (json.history && json.history.length > 0) {
-                    // Store raw prices without FX conversion
-                    setRawData(json.history.map(p => ({
-                        date: p.date, // Use full timestamp
-                        rawPrice: p.price // Store raw price, convert later
+                // Fetch asset history
+                const pricePromise = fetch(`/api/history?symbol=${symbol}&range=${range}`)
+                    .then(res => res.json());
+
+                // Fetch FX history if needed
+                let fxPromise = Promise.resolve({ history: [] });
+                if (fxSymbol) {
+                    fxPromise = fetch(`/api/history?symbol=${fxSymbol}&range=${range}`)
+                        .then(res => res.json());
+                }
+
+                const [priceJson, fxJson] = await Promise.all([pricePromise, fxPromise]);
+
+                if (priceJson.history && priceJson.history.length > 0) {
+                    setRawData(priceJson.history.map(p => ({
+                        date: p.date,
+                        rawPrice: p.price
                     })));
                 } else {
                     setRawData([]);
+                }
+
+                // Build FX history map (date -> rate)
+                if (fxJson.history && fxJson.history.length > 0) {
+                    const fxMap = {};
+                    fxJson.history.forEach(p => {
+                        // Use date only (not full timestamp) for matching
+                        const dateKey = p.date.split('T')[0];
+                        fxMap[dateKey] = p.price;
+                    });
+                    setFxHistory(fxMap);
+                } else {
+                    setFxHistory({});
                 }
             } catch (e) {
                 console.error(e);
@@ -33,7 +61,7 @@ export default function AssetChart({ symbol, baseCurrency = 'USD', fxRate = 1, p
             }
         }
         if (symbol) load();
-    }, [symbol, range]); // Removed fxRate - don't re-fetch when rate changes
+    }, [symbol, range, fxSymbol]);
 
     // Optimize data & Calculate Gradient Offset - apply FX conversion here
     const { chartData, offset, startPrice } = useMemo(() => {
@@ -46,13 +74,35 @@ export default function AssetChart({ symbol, baseCurrency = 'USD', fxRate = 1, p
             processedData = rawData.filter((_, i) => i % step === 0);
         }
 
-        // Apply FX conversion here (not during fetch)
-        const convertedData = processedData.map(d => ({
-            date: d.date,
-            value: d.rawPrice * fxRate
-        }));
+        // Apply FX conversion - use historical rate if available, else current fxRate
+        const convertedData = processedData.map(d => {
+            let rate = fxRate; // Default to current rate
+            if (needsFxConversion && Object.keys(fxHistory).length > 0) {
+                const dateKey = d.date.split('T')[0];
+                // Try exact date, or find closest earlier date
+                if (fxHistory[dateKey]) {
+                    rate = fxHistory[dateKey];
+                } else {
+                    // Find the closest earlier date
+                    const sortedDates = Object.keys(fxHistory).sort();
+                    for (let i = sortedDates.length - 1; i >= 0; i--) {
+                        if (sortedDates[i] <= dateKey) {
+                            rate = fxHistory[sortedDates[i]];
+                            break;
+                        }
+                    }
+                }
+            }
+            return {
+                date: d.date,
+                value: d.rawPrice * rate
+            };
+        });
 
-        const start = rawData[0].rawPrice * fxRate;
+        const firstRate = needsFxConversion && Object.keys(fxHistory).length > 0
+            ? (fxHistory[rawData[0].date.split('T')[0]] || fxRate)
+            : fxRate;
+        const start = rawData[0].rawPrice * firstRate;
         const prices = convertedData.map(d => d.value);
         const max = Math.max(...prices);
         const min = Math.min(...prices);
@@ -68,7 +118,7 @@ export default function AssetChart({ symbol, baseCurrency = 'USD', fxRate = 1, p
         }
 
         return { chartData: convertedData, offset: off, startPrice: start };
-    }, [rawData, fxRate]);
+    }, [rawData, fxRate, fxHistory, needsFxConversion]);
 
     if (loading || parentLoading) return <LoadingChart />;
     if (rawData.length === 0) return <div className="h-40 flex items-center justify-center text-muted">No chart data</div>;

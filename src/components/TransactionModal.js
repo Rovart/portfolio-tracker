@@ -285,7 +285,8 @@ export default function TransactionModal({ mode, holding, transactions, onClose,
             price: null,
             amount: balance,
             originalType: asset.type,
-            currency: asset.currency // Use currency from search result
+            currency: asset.currency, // Use currency from search result
+            isBareCurrencyOrigin: asset.isBareCurrencyOrigin || false
         });
         setCurrentView('LIST');
         setEditingTx(null);
@@ -414,6 +415,7 @@ export default function TransactionModal({ mode, holding, transactions, onClose,
                                         baseCurrency={baseCurrency}
                                         fxRate={fxRate}
                                         parentLoading={loadingPrice}
+                                        assetCurrency={selectedAsset.currency || priceData.currency}
                                     />
                                 </div>
                             </div>
@@ -581,7 +583,11 @@ function TransactionForm({ holding, existingTx, transactions, onSave, onCancel, 
 
     // Detect if this is a bare currency (e.g., EUR=X, USD=X - not a pair like EURUSD=X)
     // Bare currencies can only have DEPOSIT/WITHDRAW, not BUY/SELL
+    // Also check isBareCurrencyOrigin flag (set when EUR=X is converted to EURUSD=X)
     const isBareCurrency = useMemo(() => {
+        // If it was originally a bare currency (EUR=X → EURUSD=X), respect that
+        if (holding.isBareCurrencyOrigin) return true;
+
         if (!sym) return false;
         const upper = sym.toUpperCase();
         // EUR=X, USD=X format: ends with =X and the base part is 3-4 characters (currency code)
@@ -591,12 +597,17 @@ function TransactionForm({ holding, existingTx, transactions, onSave, onCancel, 
             return base.length <= 4;
         }
         return false;
-    }, [sym]);
+    }, [sym, holding.isBareCurrencyOrigin]);
 
-    // Get the currency code from bare currency symbol (EUR from EUR=X)
+    // Get the currency code from bare currency symbol (EUR from EUR=X or EURUSD=X)
     const bareCurrencyCode = useMemo(() => {
         if (!isBareCurrency || !sym) return null;
-        return sym.toUpperCase().replace('=X', '');
+        const upper = sym.toUpperCase().replace('=X', '');
+        // For EURUSD=X (converted from EUR=X), extract EUR
+        if (upper.length > 4) {
+            return upper.substring(0, 3);
+        }
+        return upper;
     }, [isBareCurrency, sym]);
 
     // Available transaction types - bare currencies are limited
