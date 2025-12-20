@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
-import { ArrowLeft, Plus, Trash2, Edit2, Check, X, Upload, Download, FolderOpen, ChevronDown, Star, ArrowRight, FileText } from 'lucide-react';
+import { ArrowLeft, Plus, Trash2, Edit2, Check, X, Upload, Download, FolderOpen, ChevronDown, Star } from 'lucide-react';
 import {
     getAllPortfolios,
     addPortfolio,
@@ -85,10 +85,14 @@ export default function SettingsModal({ onClose, onPortfolioChange, currentPortf
         }
         if (!confirm('Delete this portfolio and all its transactions?')) return;
         await deletePortfolio(id);
-        loadPortfolios();
-        // If we deleted the current portfolio, switch back to 'all'
+        await loadPortfolios();
+        // If we deleted the portfolio we are looking at in the dashboard, switch to 'all'
         if (currentPortfolioId === id) {
             onPortfolioChange('all');
+        }
+        // If we deleted the portfolio selected in the export tab, reset it to 'all'
+        if (ioPortfolioId === id) {
+            setIoPortfolioId('all');
         }
     };
 
@@ -236,7 +240,7 @@ export default function SettingsModal({ onClose, onPortfolioChange, currentPortf
                 return;
             } else {
                 // No portfolio names in CSV - import to default portfolio
-                await doImport(transactions, 1);
+                await doImport(transactions, 1, 1);
                 return;
             }
         }
@@ -281,10 +285,10 @@ export default function SettingsModal({ onClose, onPortfolioChange, currentPortf
         }
 
         // No conflict - proceed with import
-        await doImport(transactions, targetPortfolioId);
+        await doImport(transactions, targetPortfolioId, targetPortfolioId);
     };
 
-    const doImport = async (transactions, portfolioId) => {
+    const doImport = async (transactions, portfolioId, targetViewId) => {
         // Create new transaction objects with the correct portfolioId
         // This ensures we don't mutate the original and correctly assign the ID
         const txsToImport = transactions.map(tx => ({
@@ -292,17 +296,16 @@ export default function SettingsModal({ onClose, onPortfolioChange, currentPortf
             portfolioId: portfolioId  // Force the new portfolio ID
         }));
         await importTransactions(txsToImport, portfolioId);
-
-        // After import, always switch to the affected portfolio
-        onPortfolioChange(portfolioId);
-
+        // Switch to the target view (affected portfolio)
+        onPortfolioChange(targetViewId || portfolioId);
         setImportConflict(null);
         onClose();
     };
 
     const handleImportMerge = async () => {
         if (!importConflict) return;
-        await doImport(importConflict.transactions, importConflict.targetPortfolioId);
+        // Merge should switch to the portfolio we merged INTO
+        await doImport(importConflict.transactions, importConflict.targetPortfolioId, importConflict.targetPortfolioId);
     };
 
     const handleImportCreateNew = async () => {
@@ -317,7 +320,6 @@ export default function SettingsModal({ onClose, onPortfolioChange, currentPortf
         await importTransactions(txsToImport, newPortfolioId);
         await loadPortfolios();
         setImportConflict(null);
-
         // Switch to the newly created portfolio
         onPortfolioChange(newPortfolioId);
         onClose();
@@ -568,49 +570,30 @@ export default function SettingsModal({ onClose, onPortfolioChange, currentPortf
                         <div className="flex flex-col gap-4">
                             <div className="flex flex-col gap-2">
                                 <label className="text-muted text-xs font-semibold uppercase tracking-wider">Target Portfolio</label>
-                                {portfolios.length === 1 && ioPortfolioId !== 'all' ? (
-                                    // Single portfolio and NOT in 'all' view - show as static text
-                                    <div
-                                        style={{
-                                            width: '100%',
-                                            background: 'rgba(255, 255, 255, 0.05)',
-                                            border: '1px solid rgba(255, 255, 255, 0.1)',
-                                            borderRadius: '12px',
-                                            padding: '12px 14px',
-                                            color: 'white',
-                                            fontSize: '14px',
-                                            fontWeight: '500'
-                                        }}
-                                    >
-                                        {portfolios[0].name}
-                                    </div>
-                                ) : (
-                                    // Multiple portfolios OR we are currently in 'all' view
-                                    <select
-                                        value={ioPortfolioId}
-                                        onChange={(e) => setIoPortfolioId(e.target.value === 'all' ? 'all' : parseInt(e.target.value))}
-                                        style={{
-                                            width: '100%',
-                                            background: `rgba(255, 255, 255, 0.05) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='18' height='18' viewBox='0 0 24 24' fill='none' stroke='rgba(255,255,255,0.5)' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E") no-repeat right 14px center`,
-                                            border: '1px solid rgba(255, 255, 255, 0.1)',
-                                            borderRadius: '12px',
-                                            padding: '12px 44px 12px 14px',
-                                            color: 'white',
-                                            fontSize: '14px',
-                                            fontWeight: '500',
-                                            cursor: 'pointer',
-                                            outline: 'none',
-                                            appearance: 'none',
-                                            WebkitAppearance: 'none',
-                                            MozAppearance: 'none'
-                                        }}
-                                    >
-                                        <option value="all" style={{ background: '#121212', color: 'white' }}>All Portfolios (Consolidated)</option>
-                                        {portfolios.map(p => (
-                                            <option key={p.id} value={p.id} style={{ background: '#121212', color: 'white' }}>{p.name}</option>
-                                        ))}
-                                    </select>
-                                )}
+                                <select
+                                    value={ioPortfolioId}
+                                    onChange={(e) => setIoPortfolioId(e.target.value === 'all' ? 'all' : parseInt(e.target.value))}
+                                    style={{
+                                        width: '100%',
+                                        background: `rgba(255, 255, 255, 0.05) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='18' height='18' viewBox='0 0 24 24' fill='none' stroke='rgba(255,255,255,0.5)' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E") no-repeat right 14px center`,
+                                        border: '1px solid rgba(255, 255, 255, 0.1)',
+                                        borderRadius: '12px',
+                                        padding: '12px 44px 12px 14px',
+                                        color: 'white',
+                                        fontSize: '14px',
+                                        fontWeight: '500',
+                                        cursor: 'pointer',
+                                        outline: 'none',
+                                        appearance: 'none',
+                                        WebkitAppearance: 'none',
+                                        MozAppearance: 'none'
+                                    }}
+                                >
+                                    <option value="all" style={{ background: '#121212', color: 'white' }}>All Portfolios (Consolidated)</option>
+                                    {portfolios.map(p => (
+                                        <option key={p.id} value={p.id} style={{ background: '#121212', color: 'white' }}>{p.name}</option>
+                                    ))}
+                                </select>
                             </div>
 
                             <p className="text-muted text-sm pb-2">
@@ -665,8 +648,7 @@ export default function SettingsModal({ onClose, onPortfolioChange, currentPortf
                     left: 0,
                     right: 0,
                     bottom: 0,
-                    backgroundColor: 'rgba(0, 0, 0, 0.7)',
-                    backdropFilter: 'blur(10px)',
+                    backgroundColor: 'rgba(0, 0, 0, 0.8)',
                     display: 'flex',
                     alignItems: 'center',
                     justifyContent: 'center',
@@ -674,99 +656,90 @@ export default function SettingsModal({ onClose, onPortfolioChange, currentPortf
                     padding: '20px'
                 }}>
                     <div style={{
-                        backgroundColor: '#121212',
-                        borderRadius: '24px',
-                        padding: '32px',
-                        maxWidth: '440px',
+                        backgroundColor: '#1a1a1a',
+                        borderRadius: '16px',
+                        padding: '24px',
+                        maxWidth: '400px',
                         width: '100%',
-                        border: '1px solid rgba(255, 255, 255, 0.1)',
-                        boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.5)',
-                        animation: 'enter 0.3s ease-out'
+                        border: '1px solid #333'
                     }}>
-                        <div className="flex items-center gap-3 mb-6">
-                            <div className="p-2 rounded-xl bg-blue-500/10 text-blue-400">
-                                <FileText size={20} />
-                            </div>
-                            <h3 style={{ margin: 0, fontSize: '1.25rem', fontWeight: '700', letterSpacing: '-0.02em' }}>
-                                Portfolio Mismatch
-                            </h3>
-                        </div>
+                        <h3 style={{ margin: '0 0 16px 0', fontSize: '1.25rem', fontWeight: 'bold' }}>
+                            Portfolio Mismatch
+                        </h3>
+                        <p style={{ margin: '0 0 8px 0', color: '#a1a1aa', lineHeight: 1.5 }}>
+                            The CSV contains transactions from:
+                        </p>
+                        <p style={{
+                            margin: '0 0 16px 0',
+                            fontWeight: 'bold',
+                            color: '#3b82f6',
+                            fontSize: '1.1rem'
+                        }}>
+                            "{importConflict.csvPortfolioName}"
+                        </p>
+                        <p style={{ margin: '0 0 8px 0', color: '#a1a1aa', lineHeight: 1.5 }}>
+                            But you're importing into:
+                        </p>
+                        <p style={{
+                            margin: '0 0 24px 0',
+                            fontWeight: 'bold',
+                            color: '#22c55e',
+                            fontSize: '1.1rem'
+                        }}>
+                            "{importConflict.targetPortfolioName}"
+                        </p>
+                        <p style={{ margin: '0 0 24px 0', color: '#a1a1aa', fontSize: '0.9rem' }}>
+                            {importConflict.transactions.length} transaction(s) to import
+                        </p>
 
-                        <div className="space-y-6 mb-8">
-                            <div className="flex flex-col gap-2 p-4 rounded-2xl bg-white/5 border border-white/5">
-                                <span className="text-[10px] font-bold uppercase tracking-wider text-muted/60">CSV SOURCE</span>
-                                <span className="text-lg font-semibold text-white/90 truncate">
-                                    "{importConflict.csvPortfolioName}"
-                                </span>
-                            </div>
-
-                            <div className="flex justify-center -my-2 relative z-10">
-                                <div className="p-2 rounded-full bg-neutral-900 border border-white/10 text-muted">
-                                    <ArrowRight size={16} />
-                                </div>
-                            </div>
-
-                            <div className="flex flex-col gap-2 p-4 rounded-2xl bg-white/5 border border-white/5">
-                                <span className="text-[10px] font-bold uppercase tracking-wider text-muted/60">TARGET DESTINATION</span>
-                                <span className="text-lg font-semibold text-white/90 truncate">
-                                    "{importConflict.targetPortfolioName}"
-                                </span>
-                            </div>
-
-                            <div className="text-center pt-2">
-                                <span className="inline-block px-3 py-1 rounded-full bg-white/5 text-xs font-medium text-muted">
-                                    {importConflict.transactions.length} transactions found
-                                </span>
-                            </div>
-                        </div>
-
-                        <div className="grid grid-cols-2 gap-3">
+                        <div style={{ display: 'flex', gap: '12px' }}>
                             <button
                                 onClick={handleImportMerge}
-                                className="flex flex-col items-center gap-2 p-4 rounded-2xl transition-all group hover:scale-[1.02] active:scale-[0.98]"
                                 style={{
-                                    backgroundColor: 'rgba(34, 197, 94, 0.08)',
-                                    border: '1px solid rgba(34, 197, 94, 0.2)',
-                                    color: '#4ade80',
+                                    flex: 1,
+                                    padding: '12px 16px',
+                                    backgroundColor: 'rgba(34, 197, 94, 0.15)',
+                                    color: '#22c55e',
+                                    border: '1px solid rgba(34, 197, 94, 0.3)',
+                                    borderRadius: '10px',
                                     cursor: 'pointer',
+                                    fontWeight: '600',
+                                    fontSize: '0.9rem'
                                 }}
                             >
-                                <Check size={20} className="group-hover:scale-110 transition-transform" />
-                                <span className="text-sm font-bold">Merge Into</span>
+                                Merge
                             </button>
                             <button
                                 onClick={handleImportCreateNew}
-                                className="flex flex-col items-center gap-2 p-4 rounded-2xl transition-all group hover:scale-[1.02] active:scale-[0.98]"
                                 style={{
-                                    backgroundColor: 'rgba(59, 130, 246, 0.08)',
-                                    border: '1px solid rgba(59, 130, 246, 0.2)',
-                                    color: '#60a5fa',
+                                    flex: 1,
+                                    padding: '12px 16px',
+                                    backgroundColor: 'rgba(59, 130, 246, 0.15)',
+                                    color: '#3b82f6',
+                                    border: '1px solid rgba(59, 130, 246, 0.3)',
+                                    borderRadius: '10px',
                                     cursor: 'pointer',
+                                    fontWeight: '600',
+                                    fontSize: '0.9rem'
                                 }}
                             >
-                                <Plus size={20} className="group-hover:scale-110 transition-transform" />
-                                <span className="text-sm font-bold">New Portfolio</span>
+                                Create New
                             </button>
                         </div>
-
                         <button
                             onClick={() => setImportConflict(null)}
                             style={{
                                 width: '100%',
-                                marginTop: '16px',
-                                padding: '12px',
+                                marginTop: '12px',
+                                padding: '10px',
                                 backgroundColor: 'transparent',
-                                color: 'rgba(255, 255, 255, 0.4)',
+                                color: '#666',
                                 border: 'none',
                                 cursor: 'pointer',
-                                fontSize: '13px',
-                                fontWeight: '500',
-                                transition: 'color 0.2s'
+                                fontSize: '0.85rem'
                             }}
-                            onMouseOver={(e) => e.target.style.color = 'rgba(255, 255, 255, 0.8)'}
-                            onMouseOut={(e) => e.target.style.color = 'rgba(255, 255, 255, 0.4)'}
                         >
-                            Cancel Import
+                            Cancel
                         </button>
                     </div>
                 </div>
