@@ -232,14 +232,14 @@ export default function TransactionModal({ mode, holding, transactions, onClose,
                 const qAmt = parseFloat(t.quoteAmount) || 0;
                 const dateStr = t.date.split('T')[0];
 
-                // Use the transaction's ACTUAL quote currency
-                const txQuoteCurr = (t.quoteCurrency || 'USD').toUpperCase();
+                // Use the transaction's quote currency, or fall back to asset's currency (not USD)
+                // If no quoteCurrency on transaction, assume you paid in the same currency the asset trades in
+                const txQuoteCurr = (t.quoteCurrency || selectedAsset.currency || 'USD').toUpperCase();
 
                 // Get FX rate to convert from txQuoteCurrency to baseCurrency
                 let hFx = 1;
                 if (txQuoteCurr !== baseCurrency) {
                     // Need FX conversion - use historical if available, otherwise current fxRate
-                    // Note: historicalFx is fetched for asset's currency, so we use it if currencies match
                     hFx = historicalFx[dateStr] || fxRate || 1;
                 }
 
@@ -441,8 +441,8 @@ export default function TransactionModal({ mode, holding, transactions, onClose,
                                                                 (() => {
                                                                     const dateStr = tx.date.split('T')[0];
                                                                     // Use the ASSET's currency, not the tx quote currency
-                                                                    const assetCurrency = (selectedAsset.currency || 'USD').toUpperCase();
-                                                                    const txQuoteCurrency = (tx.quoteCurrency || 'USD').toUpperCase();
+                                                                    // Use asset's currency as fallback when tx has no quoteCurrency
+                                                                    const txQuoteCurrency = (tx.quoteCurrency || selectedAsset.currency || 'USD').toUpperCase();
 
                                                                     // FX for cost: convert tx quote currency to base currency
                                                                     let costFx = 1;
@@ -481,7 +481,8 @@ export default function TransactionModal({ mode, holding, transactions, onClose,
                                                                     <span className="text-xs text-muted">
                                                                         {(() => {
                                                                             const dateStr = tx.date.split('T')[0];
-                                                                            const txQuoteCurrency = (tx.quoteCurrency || 'USD').toUpperCase();
+                                                                            // Use asset's currency as fallback when tx has no quoteCurrency
+                                                                            const txQuoteCurrency = (tx.quoteCurrency || selectedAsset.currency || 'USD').toUpperCase();
                                                                             // FX for cost: convert tx quote currency to base currency
                                                                             let costFx = 1;
                                                                             if (txQuoteCurrency !== baseCurrency) {
@@ -498,7 +499,8 @@ export default function TransactionModal({ mode, holding, transactions, onClose,
                                                                         <span className="text-xs text-[10px] text-muted">
                                                                             | {hideBalances ? '••••••' : (() => {
                                                                                 const dateStr = tx.date.split('T')[0];
-                                                                                const txQuoteCurrency = (tx.quoteCurrency || 'USD').toUpperCase();
+                                                                                // Use asset's currency as fallback when tx has no quoteCurrency
+                                                                                const txQuoteCurrency = (tx.quoteCurrency || selectedAsset.currency || 'USD').toUpperCase();
                                                                                 const hFx = txQuoteCurrency !== baseCurrency ? (historicalFx[dateStr] || fxRate || 1) : 1;
                                                                                 return `${(tx.quoteAmount * hFx).toLocaleString(undefined, { maximumFractionDigits: 2 })} ${baseCurrency === 'USD' ? '$' : baseCurrency}`;
                                                                             })()}
