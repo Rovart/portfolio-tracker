@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
-import { ArrowLeft, Plus, Trash2, Edit2, Check, X, Upload, Download, FolderOpen } from 'lucide-react';
+import { ArrowLeft, Plus, Trash2, Edit2, Check, X, Upload, Download, FolderOpen, ChevronDown } from 'lucide-react';
 import {
     getAllPortfolios,
     addPortfolio,
@@ -422,22 +422,21 @@ export default function SettingsModal({ onClose, onPortfolioChange, currentPortf
                         <div className="flex flex-col gap-4">
                             <div className="flex flex-col gap-2">
                                 <label className="text-muted text-xs font-semibold uppercase tracking-wider">Target Portfolio</label>
-                                <select
-                                    className="bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-white/30 transition-all text-sm font-medium appearance-none cursor-pointer"
-                                    value={ioPortfolioId}
-                                    onChange={(e) => setIoPortfolioId(e.target.value === 'all' ? 'all' : parseInt(e.target.value))}
-                                    style={{
-                                        backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 24 24' stroke='white' stroke-width='2.5'%3E%3Cpath stroke-linecap='round' stroke-linejoin='round' d='M19.5 8.25l-7.5 7.5-7.5-7.5' /%3E%3C/svg%3E")`,
-                                        backgroundRepeat: 'no-repeat',
-                                        backgroundPosition: 'right 16px center',
-                                        backgroundSize: '16px'
-                                    }}
-                                >
-                                    <option value="all">All Portfolios (Consolidated)</option>
-                                    {portfolios.map(p => (
-                                        <option key={p.id} value={p.id}>{p.name}</option>
-                                    ))}
-                                </select>
+                                <div className="relative">
+                                    <select
+                                        className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-white/30 transition-all text-sm font-medium appearance-none cursor-pointer"
+                                        value={ioPortfolioId}
+                                        onChange={(e) => setIoPortfolioId(e.target.value === 'all' ? 'all' : parseInt(e.target.value))}
+                                    >
+                                        <option value="all">All Portfolios (Consolidated)</option>
+                                        {portfolios.map(p => (
+                                            <option key={p.id} value={p.id}>{p.name}</option>
+                                        ))}
+                                    </select>
+                                    <div className="absolute right-4 top-1/2 -translate-y-1/2 pointer-events-none text-white/40">
+                                        <ChevronDown size={18} strokeWidth={2.5} />
+                                    </div>
+                                </div>
                             </div>
 
                             <p className="text-muted text-sm pb-2">
