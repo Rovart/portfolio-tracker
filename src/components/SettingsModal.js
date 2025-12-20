@@ -231,6 +231,7 @@ export default function SettingsModal({ onClose, onPortfolioChange, currentPortf
                     await importTransactions(txsToImport, targetId);
                 }
                 await loadPortfolios();
+                onPortfolioChange('all');
                 onClose();
                 return;
             } else {
@@ -290,6 +291,8 @@ export default function SettingsModal({ onClose, onPortfolioChange, currentPortf
             portfolioId: portfolioId  // Force the new portfolio ID
         }));
         await importTransactions(txsToImport, portfolioId);
+        // Refresh current view
+        onPortfolioChange(ioPortfolioId);
         setImportConflict(null);
         onClose();
     };
@@ -297,10 +300,6 @@ export default function SettingsModal({ onClose, onPortfolioChange, currentPortf
     const handleImportMerge = async () => {
         if (!importConflict) return;
         await doImport(importConflict.transactions, importConflict.targetPortfolioId);
-        // Switch to the merged portfolio ONLY if we weren't in 'All'
-        if (currentPortfolioId !== 'all') {
-            onPortfolioChange(importConflict.targetPortfolioId);
-        }
     };
 
     const handleImportCreateNew = async () => {
