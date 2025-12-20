@@ -4,8 +4,16 @@ export function calculatePortfolioHistory(transactions, historicalPrices, baseCu
     if (!transactions || transactions.length === 0) return [];
 
     // 1. Identify all unique timestamps across all history entries
-    const allHistoryEntries = Object.values(historicalPrices).flat();
-    const sortedTimestamps = [...new Set(allHistoryEntries.map(h => h.date))].sort();
+    // Also include the dates of all transactions to ensure they show up on the chart immediately
+    const historicalEntries = Object.values(historicalPrices).flat();
+    const transactionDates = transactions.map(t => t.date.split('T')[0]);
+    const nowStr = new Date().toISOString().split('T')[0];
+
+    const sortedTimestamps = [...new Set([
+        ...historicalEntries.map(h => h.date.split('T')[0]),
+        ...transactionDates,
+        nowStr
+    ])].sort();
 
     const quoteMap = {};
     const priceSymbolMap = {};
@@ -36,7 +44,10 @@ export function calculatePortfolioHistory(transactions, historicalPrices, baseCu
         // Process all transactions that occurred at or before this timestamp
         while (txIndex < sortedTx.length) {
             const tx = sortedTx[txIndex];
-            if (tx.date > timestamp) break;
+            const txDateOnly = tx.date.split('T')[0];
+
+            // If tx is definitively in the future compared to this timestamp
+            if (txDateOnly > timestamp) break;
 
             const { type, baseAmount, baseCurrency: rawBase, quoteAmount, quoteCurrency: rawQuote, fee, feeCurrency: rawFee } = tx;
             const base = normalizeAsset(rawBase);
@@ -87,7 +98,7 @@ export function calculatePortfolioHistory(transactions, historicalPrices, baseCu
             } else {
                 const history = historicalPrices[priceSym];
                 if (history && history.length > 0) {
-                    const exactEntry = history.find(p => p.date === timestamp);
+                    const exactEntry = history.find(p => p.date === timestamp || p.date.startsWith(timestamp));
                     if (exactEntry) {
                         localPrice = parseFloat(exactEntry.price) || 0;
                         lastKnownPrices[priceSym] = localPrice;
@@ -107,7 +118,7 @@ export function calculatePortfolioHistory(transactions, historicalPrices, baseCu
                 const fxSym = `${quoteCurr}${baseCurrency}=X`;
                 const fxHistory = historicalPrices[fxSym] || historicalPrices[quoteCurr];
                 if (fxHistory) {
-                    const exactFx = fxHistory.find(p => p.date === timestamp);
+                    const exactFx = fxHistory.find(p => p.date === timestamp || p.date.startsWith(timestamp));
                     if (exactFx) {
                         fxRate = parseFloat(exactFx.price) || 1;
                         lastKnownPrices[fxSym] = fxRate;
