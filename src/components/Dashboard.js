@@ -487,6 +487,10 @@ export default function Dashboard() {
     };
 
     const handleSaveTransaction = async (tx) => {
+        // Clear history states to force a visual refresh
+        setRawHistory([]);
+        setHistoryLoading(true);
+
         // Invalidate asset cache to force chart recalculation with new data
         invalidateAssetCache(tx.baseCurrency);
         if (tx.quoteCurrency) invalidateAssetCache(tx.quoteCurrency);
@@ -514,11 +518,17 @@ export default function Dashboard() {
             updated = [newTx, ...transactions];
         }
         setTransactions(updated);
+        // Secondary trigger to be absolutely sure
+        setRefreshTrigger(prev => prev + 1);
     };
 
     const handleDeleteTransaction = async (id) => {
         const txToDelete = transactions.find(t => t.id === id);
         if (txToDelete) {
+            // Clear history states to force a visual refresh
+            setRawHistory([]);
+            setHistoryLoading(true);
+
             invalidateAssetCache(txToDelete.baseCurrency);
             if (txToDelete.quoteCurrency) invalidateAssetCache(txToDelete.quoteCurrency);
         }
@@ -526,6 +536,7 @@ export default function Dashboard() {
         await deleteTransaction(id);
         const updated = transactions.filter(t => t.id !== id);
         setTransactions(updated);
+        setRefreshTrigger(prev => prev + 1);
     };
 
     const handleImportCsv = async (event) => {
