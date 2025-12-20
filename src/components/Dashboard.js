@@ -330,14 +330,23 @@ export default function Dashboard() {
 
             // Pass 2: Fetch history for all base assets and discovered quote currencies
             // Using cached history with timeframe-aware TTLs (5min for 1D, 15min for 1W, 1hr for others)
-            // Upgrade bare currencies (AUD) to USD pairs (AUDUSD=X) for history fetching
+            // Only upgrade 3-letter symbols to USD pairs if they are currencies (based on pxMap quoteType)
             const upgradedBaseAssets = baseAssets.map(sym => {
                 const s = sym.toUpperCase();
                 // Skip already-formatted symbols
                 if (s.includes('=X') || s.includes('-') || s === 'USD') return sym;
-                // Upgrade bare 3-letter currencies to USD pairs
+
+                // For 3-letter symbols, check if it's a currency or a stock
                 if (s.length === 3 && /^[A-Z]{3}$/.test(s)) {
-                    return `${s}USD=X`;
+                    // If pxMap has this symbol with quoteType that's NOT currency, keep as stock
+                    const quote = pxMap[s];
+                    if (quote && quote.quoteType && quote.quoteType !== 'CURRENCY') {
+                        return sym; // It's a stock/ETF like TLT, keep as-is
+                    }
+                    // Otherwise, try the USD pair (for currencies like AUD)
+                    if (pxMap[`${s}USD=X`]) {
+                        return `${s}USD=X`;
+                    }
                 }
                 return sym;
             });
