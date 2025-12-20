@@ -171,7 +171,7 @@ export default function Dashboard() {
 
                 // Always ensure we have the pivot from USD to Base if Base is not USD
                 if (baseCurrency !== 'USD') {
-                    fetchList.push(`USD${baseCurrency}=X`);
+                    fetchList.push(`${baseCurrency}=X`);
                 }
 
                 const res = await fetch(`/api/quote?symbols=${[...new Set(fetchList)].join(',')}`);

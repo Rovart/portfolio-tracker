@@ -156,21 +156,22 @@ export default function TransactionModal({ mode, holding, transactions, onClose,
 
                     if (bareCurrCode) {
                         // BARE CURRENCY CASE:
-                        // For EUR (EURUSD=X) with baseCurrency USD: price IS the rate, fxRate = 1 for display
-                        // For EUR (EURUSD=X) with baseCurrency EUR: price = 1, fxRate = 1
+                        // Special handling for the asset price itself
                         if (bareCurrCode === baseCurrency) {
                             // Holding EUR, displaying in EUR → price is 1
                             fetchedPrice = 1;
-                            fetchedFxRate = 1;
                             actualFxRateValue = 1;
+                            fetchedFxRate = 1;
                         } else {
-                            // Holding EUR, displaying in USD → price = EURUSD rate, fxRate = 1 for display
-                            // But save the actual rate for avg price calculation fallback
-                            actualFxRateValue = fetchedPrice; // The price IS the FX rate
-                            fetchedFxRate = 1; // Don't double-convert for display!
+                            // Holding AUD, displaying in EUR:
+                            // We fetched XYZUSD=X, so fetchedPrice is the USD price.
+                            // We will let the Regular Asset Case below handle USD -> Base conversion.
+                            actualFxRateValue = fetchedPrice;
                         }
-                    } else {
-                        // REGULAR ASSET CASE: normal FX conversion
+                    }
+
+                    if (!bareCurrCode || bareCurrCode !== baseCurrency) {
+                        // REGULAR ASSET CASE (or Bare Currency that needs conversion from its quote to base)
                         if (fetchedCurrency === baseCurrency) {
                             fetchedFxRate = 1;
                             actualFxRateValue = 1;
@@ -194,7 +195,21 @@ export default function TransactionModal({ mode, holding, transactions, onClose,
                                 fetchedFxRate = fxQuote.price;
                                 actualFxRateValue = fxQuote.price;
                             } else {
-                                console.warn(`Could not get FX rate for ${expectedFxSymbol}, using 1`);
+                                // Try inversion fallback (e.g. if we need USDEUR but only have EURUSD)
+                                const invertedSymbol = `${baseCurrency}${fetchedCurrency}=X`;
+                                try {
+                                    const invRes = await fetch(`/api/quote?symbols=${invertedSymbol}`);
+                                    const invJson = await invRes.json();
+                                    const invQuote = invJson.data?.find(q => q.symbol === invertedSymbol);
+                                    if (invQuote && invQuote.price) {
+                                        fetchedFxRate = 1 / invQuote.price;
+                                        actualFxRateValue = 1 / invQuote.price;
+                                    } else {
+                                        console.warn(`Could not get FX rate for ${expectedFxSymbol} or ${invertedSymbol}`);
+                                    }
+                                } catch (e) {
+                                    console.error('Failed to fetch inverted FX rate:', e);
+                                }
                             }
                         }
                     }

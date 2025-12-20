@@ -162,16 +162,18 @@ export function calculateHoldings(transactions, priceMap, baseCurrency = 'USD') 
                     fxRate = parseFloat(directFx.price);
                 } else {
                     // 2. Pivot via USD (All prices get converted from USD, always)
-                    // (AUD -> USD) * (USD -> EUR)
-                    const toUsdRate = (quoteCurr === 'USD') ? 1 :
+                    // We calculate (Asset/USD) / (Base/USD)
+                    const assetInUsd = (quoteCurr === 'USD') ? 1 :
                         (parseFloat(priceMap[`${quoteCurr}USD=X`]?.price) ||
+                            parseFloat(priceMap[`${quoteCurr}=X`]?.price) ||
                             (1 / parseFloat(priceMap[`USD${quoteCurr}=X`]?.price)) || 1);
 
-                    const fromUsdRate = (baseCurrency === 'USD') ? 1 :
-                        (parseFloat(priceMap[`USD${baseCurrency}=X`]?.price) ||
-                            (1 / parseFloat(priceMap[`${baseCurrency}USD=X`]?.price)) || 1);
+                    const baseInUsd = (baseCurrency === 'USD') ? 1 :
+                        (parseFloat(priceMap[`${baseCurrency}USD=X`]?.price) ||
+                            parseFloat(priceMap[`${baseCurrency}=X`]?.price) ||
+                            (1 / parseFloat(priceMap[`USD${baseCurrency}=X`]?.price)) || 1);
 
-                    fxRate = toUsdRate * fromUsdRate;
+                    fxRate = assetInUsd / baseInUsd;
                 }
             }
 
@@ -193,14 +195,19 @@ export function calculateHoldings(transactions, priceMap, baseCurrency = 'USD') 
                     fxChangePercent = parseFloat(fxQuote.changePercent) || 0;
                 } else {
                     // 2. Pivot Change (Composite)
-                    const toUsdChange = (quoteCurr === 'USD') ? 0 :
-                        (parseFloat(priceMap[`${quoteCurr}USD=X`]?.changePercent) || 0);
-                    const fromUsdChange = (baseCurrency === 'USD') ? 0 :
-                        (parseFloat(priceMap[`USD${baseCurrency}=X`]?.changePercent) || 0);
+                    // We need the change in (AssetInUSD / BaseInUSD)
+                    const assetInUsdChange = (quoteCurr === 'USD') ? 0 :
+                        (parseFloat(priceMap[`${quoteCurr}USD=X`]?.changePercent) ||
+                            parseFloat(priceMap[`${quoteCurr}=X`]?.changePercent) || 0);
 
-                    // Combined change: (1+a)*(1+b)-1
-                    fxChangePercent = ((1 + toUsdChange / 100) * (1 + fromUsdChange / 100) - 1) * 100;
+                    const baseInUsdChange = (baseCurrency === 'USD') ? 0 :
+                        (parseFloat(priceMap[`${baseCurrency}USD=X`]?.changePercent) ||
+                            parseFloat(priceMap[`${baseCurrency}=X`]?.changePercent) || 0);
+
+                    // Combined FX change: ((1 + asset%) / (1 + base%)) - 1
+                    fxChangePercent = (((1 + assetInUsdChange / 100) / (1 + baseInUsdChange / 100)) - 1) * 100;
                 }
+
             }
 
             // Calculate total combined change percent (forex + asset)
@@ -248,7 +255,8 @@ export function calculateHoldings(transactions, priceMap, baseCurrency = 'USD') 
                 dailyPnl,
                 quoteCurrency: quoteCurr,
                 isFiat,
-                category
+                category,
+                originalType: qt || td // Return the found type metadata
             };
         })
         .sort((a, b) => {
