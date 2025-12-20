@@ -248,7 +248,17 @@ export default function TransactionModal({ mode, holding, transactions, onClose,
         ? transactions.filter(t => {
             const normalizedBase = normalizeAsset(t.baseCurrency);
             const normalizedTarget = normalizeAsset(selectedAsset.symbol);
-            return normalizedBase === normalizedTarget || normalizeAsset(t.quoteCurrency) === normalizedTarget;
+
+            // Case 1: This asset is the base (e.g. Bought BTC)
+            if (normalizedBase === normalizedTarget) return true;
+
+            // Case 2: This asset is the quote (e.g. Bought BTC with USD, looking at USD)
+            if (normalizeAsset(t.quoteCurrency) === normalizedTarget) {
+                // HIDE FROM HISTORY if specifically marked as not affecting balance
+                if (t.affectsFiatBalance === false) return false;
+                return true;
+            }
+            return false;
         })
             .map(t => {
                 const isReverse = normalizeAsset(t.quoteCurrency) === normalizeAsset(selectedAsset.symbol);
@@ -465,6 +475,11 @@ export default function TransactionModal({ mode, holding, transactions, onClose,
                                         fxRate={fxRate}
                                         parentLoading={loadingPrice}
                                         assetCurrency={selectedAsset.currency || priceData.currency}
+                                        // If it's a currency not equal to base, pass the constructed pair (e.g. AUDUSD=X)
+                                        // otherwise pass null to let AssetChart decide or use default logic
+                                        chartSymbol={(selectedAsset.currency && selectedAsset.currency !== baseCurrency)
+                                            ? `${selectedAsset.currency}${baseCurrency}=X`
+                                            : selectedAsset.symbol}
                                     />
                                 </div>
                             </div>

@@ -6,7 +6,7 @@ import { getCachedFxHistory, setCachedFxHistory } from '@/utils/fxCache';
 
 const RANGES = ['1D', '1W', '1M', '3M', '1Y', 'ALL'];
 
-export default function AssetChart({ symbol, baseCurrency = 'USD', fxRate = 1, parentLoading = false, assetCurrency }) {
+export default function AssetChart({ symbol, chartSymbol, baseCurrency = 'USD', fxRate = 1, parentLoading = false, assetCurrency }) {
     const [rawData, setRawData] = useState([]);
     const [fxHistory, setFxHistory] = useState({});
     const [loading, setLoading] = useState(true);
@@ -21,7 +21,8 @@ export default function AssetChart({ symbol, baseCurrency = 'USD', fxRate = 1, p
             setLoading(true);
             try {
                 // Fetch asset history
-                const pricePromise = fetch(`/api/history?symbol=${symbol}&range=${range}`)
+                const targetSym = chartSymbol || symbol;
+                const pricePromise = fetch(`/api/history?symbol=${targetSym}&range=${range}`)
                     .then(res => res.json());
 
                 // Fetch FX history using cache
@@ -49,8 +50,8 @@ export default function AssetChart({ symbol, baseCurrency = 'USD', fxRate = 1, p
                 setLoading(false);
             }
         }
-        if (symbol) load();
-    }, [symbol, range, needsFxConversion, assetCurrency, baseCurrency]);
+        if (symbol || chartSymbol) load();
+    }, [symbol, range, needsFxConversion, assetCurrency, baseCurrency, chartSymbol]);
 
     // Optimize data & Calculate Gradient Offset - apply FX conversion here
     const { chartData, offset, startPrice } = useMemo(() => {
