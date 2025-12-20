@@ -815,20 +815,22 @@ function TransactionForm({ holding, existingTx, transactions, onSave, onCancel, 
             //    - BUY: disable if cost > balance (don't default to negative), enable if cost <= balance
             //    - SELL/DEPOSIT/WITHDRAW: enable if balance > 0 (tracking this currency)
 
-            if (quoteBalance <= 0) {
-                setUseFiat(false);
-            } else {
-                if (type === 'BUY') {
+            if (type === 'BUY') {
+                // Must have balance to deduct from
+                if (quoteBalance <= 0) {
+                    setUseFiat(false);
+                } else {
                     const cost = (parseFloat(amount) || 0) * (parseFloat(price) || 0);
                     if (cost > quoteBalance) {
                         setUseFiat(false);
                     } else {
                         setUseFiat(true);
                     }
-                } else {
-                    // For SELL/others, if we have a balance/wallet for this, likely want to use it
-                    setUseFiat(true);
                 }
+            } else {
+                // SELL/DEPOSIT/WITHDRAW: Always default to true (adding to balance)
+                // Even if balance is 0, we are creating it now.
+                setUseFiat(true);
             }
         }
     }, [detectedQuote, quoteBalance, existingTx, amount, price, type, userModifiedUseFiat]);
