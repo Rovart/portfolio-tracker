@@ -22,14 +22,6 @@ export function normalizeAsset(asset) {
         }
     }
 
-    // Force known 3-char fiat codes to their FX pair format if they appear "bare"
-    // This helps Dashboard link 'AUD' directly to 'AUDUSD=X'
-    if (s.length === 3 && ['AUD', 'EUR', 'GBP', 'CAD', 'SGD', 'NZD', 'JPY', 'CHF'].includes(s)) {
-        return s;
-        // Actually, normalizeAsset should usually return the "base" symbol (AUD).
-        // The issue is in `calculateHoldings` where we decide what `priceSym` to use.
-        // Let's keep normalizeAsset pure (returning 'AUD') but ensure calculateHoldings upgrades it.
-    }
 
     return s;
 }
@@ -107,19 +99,14 @@ export function calculateHoldings(transactions, priceMap, baseCurrency = 'USD') 
         .filter(([_, amount]) => Math.abs(amount) > 0.00001)
         .map(([asset, amount]) => {
             let priceSym = priceSymbolMap[asset] || asset;
-            let quote = priceMap[priceSym];
 
-            // If we don't have a quote for the bare symbol (e.g. 'AUD')
-            // Try to find the constructed FX pair (e.g. 'AUDUSD=X') which likely exists in the map
-            if (!quote && asset.length === 3 && baseCurrency) {
-                const pair = `${asset}${baseCurrency}=X`;
-                if (priceMap[pair]) {
-                    priceSym = pair;
-                    quote = priceMap[pair];
-                }
+            // PRIORITY UPGRADE: If this is a currency (3 chars), always prefer the FX pair symbol (e.g. AUDUSD=X)
+            // even if the bare symbol has a quote, because only the pair symbol has historical data in Yahoo.
+            if (asset.length === 3 && baseCurrency && asset !== baseCurrency && !priceSym.includes('=X')) {
+                priceSym = `${asset}${baseCurrency}=X`;
             }
 
-            quote = quote || { price: 0, changePercent: 0 };
+            let quote = priceMap[priceSym] || { price: 0, changePercent: 0 };
             const changePercent = parseFloat(quote.changePercent) || 0;
 
             // Detect if this is a bare currency (e.g., EUR from EUR=X)
