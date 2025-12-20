@@ -692,14 +692,14 @@ function TransactionForm({ holding, existingTx, transactions, onSave, onCancel, 
             baseAmount: cleanAmount,
             baseCurrency: sym,
             quoteAmount: (type === 'BUY' || type === 'SELL') ? (cleanAmount * cleanPrice) : 0,
-            quoteCurrency: useFiat ? detectedQuote : null,
+            // ALWAYS store quoteCurrency for BUY/SELL - it's essential for FX conversion
+            // useFiat only controls whether we deduct from fiat balance, not the currency recording
+            quoteCurrency: (type === 'BUY' || type === 'SELL') ? detectedQuote : null,
             exchange: 'MANUAL',
-            originalType: holding.originalType || (detectedQuote === 'USD' ? 'CRYPTOCURRENCY' : 'MANUAL') // Heuristic or passed state
+            originalType: holding.originalType || (detectedQuote === 'USD' ? 'CRYPTOCURRENCY' : 'MANUAL'),
+            // Track if this transaction should affect fiat balance
+            affectsFiatBalance: useFiat
         };
-
-        if (!useFiat && (type === 'BUY' || type === 'SELL')) {
-            tx.quoteCurrency = null;
-        }
 
         onSave(tx);
     };
