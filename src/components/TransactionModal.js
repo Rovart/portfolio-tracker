@@ -510,8 +510,8 @@ export default function TransactionModal({ mode, holding, transactions, onClose,
                                         // Improved logic: Anchored to USD
                                         chartSymbol={(() => {
                                             const s = selectedAsset.symbol;
+                                            // Only treat as currency if explicitly marked - don't assume based on length
                                             const isBare = selectedAsset.isBareCurrencyOrigin ||
-                                                (s && s.length === 3 && /^[A-Z]{3}$/.test(s)) ||
                                                 selectedAsset.originalType === 'CURRENCY';
 
                                             if (isBare && !s.includes('=X') && !s.includes('-')) {
