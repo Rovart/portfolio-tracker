@@ -99,17 +99,32 @@ export function calculateHoldings(transactions, priceMap, baseCurrency = 'USD') 
             const quote = priceMap[priceSym] || { price: 0, changePercent: 0 };
             const changePercent = parseFloat(quote.changePercent) || 0;
 
-            // Priority: Transaction stored quote -> Price data from Yahoo -> Symbol parsing -> USD
-            let quoteCurr = (quoteMap[asset] || quote.currency || 'USD').toUpperCase();
+            // Detect if this is a bare currency (e.g., EUR from EUR=X)
+            // If the priceSymbol ends with =X and has no pair component, it's a bare currency
+            const isBareCurrency = priceSym && priceSym.endsWith('=X') && priceSym.replace('=X', '').length <= 4;
 
-            // If the asset IS its own quote currency (e.g. USD holding when quote is USD)
-            // then the local price is 1. We then multiply by the FX rate to base.
-            let localPrice = parseFloat(quote.price) || 0;
-            if (asset.toUpperCase() === quoteCurr) {
-                localPrice = 1;
+            // Priority: Transaction stored quote -> Price data from Yahoo -> For bare currencies use asset itself -> USD
+            let quoteCurr;
+            if (quoteMap[asset]) {
+                quoteCurr = quoteMap[asset].toUpperCase();
+            } else if (isBareCurrency) {
+                // For bare currencies like EUR=X, the quoteCurrency IS the asset itself
+                quoteCurr = asset.toUpperCase();
+            } else if (quote.currency) {
+                quoteCurr = quote.currency.toUpperCase();
+            } else {
+                quoteCurr = 'USD';
             }
 
-            // FX Rate: How many baseCurrency (USD) is 1 quoteCurrency?
+            // If the asset IS its own quote currency (e.g. EUR holding from EUR=X, or USD)
+            // then the local price is 1. We then multiply by the FX rate to base.
+            let localPrice = parseFloat(quote.price) || 0;
+            if (asset.toUpperCase() === quoteCurr || isBareCurrency) {
+                localPrice = 1;
+                quoteCurr = asset.toUpperCase(); // Ensure it's set for FX lookup
+            }
+
+            // FX Rate: How many baseCurrency is 1 quoteCurrency?
             let fxRate = 1;
             if (quoteCurr !== baseCurrency) {
                 // EXPLICIT PRIORITY: CURUSD=X is the most reliable format for USD-per-Base

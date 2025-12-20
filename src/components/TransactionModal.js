@@ -572,6 +572,22 @@ function TransactionForm({ holding, existingTx, transactions, onSave, onCancel, 
     // Standardize symbol access
     const sym = holding.symbol || holding.asset;
 
+    // Detect if this is a bare currency (e.g., EUR=X - not a pair like EURUSD=X)
+    // Bare currencies can only have DEPOSIT/WITHDRAW, not BUY/SELL
+    const isBareCurrency = useMemo(() => {
+        if (!sym) return false;
+        const upper = sym.toUpperCase();
+        // EUR=X format: ends with =X and the base part is 3-4 characters (currency code)
+        if (upper.endsWith('=X')) {
+            const base = upper.replace('=X', '');
+            return base.length <= 4 && !base.includes('USD'); // EURUSD=X is not bare
+        }
+        return false;
+    }, [sym]);
+
+    // Available transaction types - bare currencies are limited
+    const availableTypes = isBareCurrency ? ['DEPOSIT', 'WITHDRAW'] : ['BUY', 'SELL', 'DEPOSIT', 'WITHDRAW'];
+
     // Show portfolio selector if in 'All' view with multiple portfolios
     const showPortfolioSelector = currentPortfolioId === 'all' && portfolios.length > 1;
     const [selectedPortfolioId, setSelectedPortfolioId] = useState(
@@ -601,7 +617,11 @@ function TransactionForm({ holding, existingTx, transactions, onSave, onCancel, 
         return 'USD';
     }, [sym, holding.currency, fetchedCurrency]);
 
-    const [type, setType] = useState(existingTx?.type || 'BUY');
+    // Default type: DEPOSIT for bare currencies, else existing or BUY
+    const [type, setType] = useState(() => {
+        if (existingTx?.type) return existingTx.type;
+        return isBareCurrency ? 'DEPOSIT' : 'BUY';
+    });
     const [amount, setAmount] = useState(existingTx?.baseAmount || '');
     const [price, setPrice] = useState(existingTx ? (existingTx.quoteAmount / (existingTx.baseAmount || 1)) : '');
     const [date, setDate] = useState(existingTx?.date ? new Date(existingTx.date).toISOString().split('T')[0] : new Date().toISOString().split('T')[0]);
@@ -763,7 +783,7 @@ function TransactionForm({ holding, existingTx, transactions, onSave, onCancel, 
 
             {/* Type Selector */}
             <div className="flex gap-2 p-1 rounded-full" style={{ background: '#171717' }}>
-                {['BUY', 'SELL', 'DEPOSIT', 'WITHDRAW'].map(t => {
+                {availableTypes.map(t => {
                     const isActive = type === t;
                     return (
                         <button
