@@ -22,6 +22,15 @@ export function normalizeAsset(asset) {
         }
     }
 
+    // Force known 3-char fiat codes to their FX pair format if they appear "bare"
+    // This helps Dashboard link 'AUD' directly to 'AUDUSD=X'
+    if (s.length === 3 && ['AUD', 'EUR', 'GBP', 'CAD', 'SGD', 'NZD', 'JPY', 'CHF'].includes(s)) {
+        return s;
+        // Actually, normalizeAsset should usually return the "base" symbol (AUD).
+        // The issue is in `calculateHoldings` where we decide what `priceSym` to use.
+        // Let's keep normalizeAsset pure (returning 'AUD') but ensure calculateHoldings upgrades it.
+    }
+
     return s;
 }
 
@@ -115,7 +124,11 @@ export function calculateHoldings(transactions, priceMap, baseCurrency = 'USD') 
 
             // Detect if this is a bare currency (e.g., EUR from EUR=X)
             // If the priceSymbol ends with =X and has no pair component, it's a bare currency
-            const isBareCurrency = priceSym && priceSym.endsWith('=X') && priceSym.replace('=X', '').length <= 4;
+            // Detect if this is a bare currency
+            // 1. Literal bare currency from Yahoo (EUR=X)
+            // 2. Upgraded FX pair where the asset matches the base of the pair (AUD -> AUDUSD=X)
+            const isBareCurrency = (priceSym && priceSym.endsWith('=X') && priceSym.replace('=X', '').length <= 4) ||
+                (asset.length === 3 && priceSym === `${asset}${baseCurrency}=X`);
 
             // Priority: Transaction stored quote -> Price data from Yahoo -> For bare currencies use asset itself -> USD
             let quoteCurr;
