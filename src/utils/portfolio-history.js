@@ -182,7 +182,7 @@ export function calculatePortfolioHistory(transactions, historicalPrices, baseCu
     }
 
     // STATISTICAL OUTLIER DETECTION using IQR (Interquartile Range)
-    // This catches both single-point spikes and sustained anomalies
+    // This catches data anomalies like API errors, but preserves normal market movements
     if (dailyData.length > 10) {
         const values = dailyData.map(d => d.value).sort((a, b) => a - b);
         const q1Index = Math.floor(values.length * 0.25);
@@ -191,9 +191,10 @@ export function calculatePortfolioHistory(transactions, historicalPrices, baseCu
         const q3 = values[q3Index];
         const iqr = q3 - q1;
 
-        // Tighter bounds: 1.5x IQR (more aggressive outlier detection)
-        const lowerBound = q1 - (1.5 * iqr);
-        const upperBound = q3 + (1.5 * iqr);
+        // Looser bounds: 3x IQR (less aggressive - preserves normal market fluctuations)
+        // 1.5x was too aggressive and caused "denting" on weekly charts
+        const lowerBound = q1 - (3 * iqr);
+        const upperBound = q3 + (3 * iqr);
 
         // Replace outliers with rolling median of 5 neighbors
         let smoothed = dailyData.map((point, i, arr) => {
