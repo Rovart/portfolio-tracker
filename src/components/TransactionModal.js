@@ -131,8 +131,9 @@ export default function TransactionModal({ mode, holding, transactions, onClose,
                         fetchedCurrency = (assetQuote.currency || quoteCurr).toUpperCase();
                     }
 
-                    // For bare currencies (EUR from EUR=X → EURUSD=X), override the currency
-                    // The asset we're holding IS the bare currency, not what Yahoo reports
+                    // For bare currencies (EUR from EUR=X → EURUSD=X), special handling:
+                    // The assetPrice from EURUSD=X IS already the EUR/USD conversion rate
+                    // So we should NOT multiply by fxRate again!
                     let bareCurrCode = null;
                     if (selectedAsset.isBareCurrencyOrigin && fetchSym.endsWith('=X')) {
                         const base = fetchSym.replace('=X', '');
@@ -143,37 +144,44 @@ export default function TransactionModal({ mode, holding, transactions, onClose,
                         }
                     }
 
-                    // Determine which currency we use for FX
-                    const currencyForFx = bareCurrCode || fetchedCurrency;
-
-                    // Now use the correct currency for FX determination
-                    if (currencyForFx === baseCurrency) {
-                        // Asset is already in base currency - no conversion needed
-                        fetchedFxRate = 1;
-                    } else {
-                        // Need FX conversion - fetch the rate
-                        const expectedFxSymbol = `${currencyForFx}${baseCurrency}=X`;
-
-                        // Check if we already have it in the initial fetch
-                        let fxQuote = json.data.find(q => q.symbol === expectedFxSymbol);
-
-                        // If not found, make a dedicated fetch
-                        if (!fxQuote) {
-                            try {
-                                const fxRes = await fetch(`/api/quote?symbols=${expectedFxSymbol}`);
-                                const fxJson = await fxRes.json();
-                                if (fxJson.data?.[0]) {
-                                    fxQuote = fxJson.data[0];
-                                }
-                            } catch (e) {
-                                console.error('Failed to fetch FX rate:', e);
-                            }
-                        }
-
-                        if (fxQuote && fxQuote.price) {
-                            fetchedFxRate = fxQuote.price;
+                    if (bareCurrCode) {
+                        // BARE CURRENCY CASE:
+                        // For EUR (EURUSD=X) with baseCurrency USD: price IS the rate, fxRate = 1
+                        // For EUR (EURUSD=X) with baseCurrency EUR: price = 1, fxRate = 1
+                        if (bareCurrCode === baseCurrency) {
+                            // Holding EUR, displaying in EUR → price is 1
+                            fetchedPrice = 1;
+                            fetchedFxRate = 1;
                         } else {
-                            console.warn(`Could not get FX rate for ${expectedFxSymbol}, using 1`);
+                            // Holding EUR, displaying in USD → price = EURUSD rate, fxRate = 1
+                            // fetchedPrice is already the rate from the quote
+                            fetchedFxRate = 1; // Don't double-convert!
+                        }
+                    } else {
+                        // REGULAR ASSET CASE: normal FX conversion
+                        if (fetchedCurrency === baseCurrency) {
+                            fetchedFxRate = 1;
+                        } else {
+                            const expectedFxSymbol = `${fetchedCurrency}${baseCurrency}=X`;
+                            let fxQuote = json.data.find(q => q.symbol === expectedFxSymbol);
+
+                            if (!fxQuote) {
+                                try {
+                                    const fxRes = await fetch(`/api/quote?symbols=${expectedFxSymbol}`);
+                                    const fxJson = await fxRes.json();
+                                    if (fxJson.data?.[0]) {
+                                        fxQuote = fxJson.data[0];
+                                    }
+                                } catch (e) {
+                                    console.error('Failed to fetch FX rate:', e);
+                                }
+                            }
+
+                            if (fxQuote && fxQuote.price) {
+                                fetchedFxRate = fxQuote.price;
+                            } else {
+                                console.warn(`Could not get FX rate for ${expectedFxSymbol}, using 1`);
+                            }
                         }
                     }
                 }
