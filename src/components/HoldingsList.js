@@ -1,7 +1,7 @@
 // Toggle this to switch between Symbol and Short Name
 const DISPLAY_NAME = false; // true = Name, false = Symbol
 
-export default function HoldingsList({ holdings, onSelect, loading, hideBalances, baseCurrency }) {
+export default function HoldingsList({ holdings, onSelect, onAddAsset, loading, hideBalances, baseCurrency }) {
     return (
         <div className="flex flex-col gap-1">
             <h2 className="text-xl">Holdings</h2>
@@ -49,9 +49,13 @@ export default function HoldingsList({ holdings, onSelect, loading, hideBalances
                 </div>
             ))}
             {holdings.length === 0 && !loading && (
-                <div className="card flex flex-col items-center justify-center py-10 bg-white-5 rounded-2xl border border-white-5 border-dashed gap-2 animate-enter">
+                <div
+                    className="card flex flex-col items-center justify-center py-10 bg-white-5 rounded-2xl border border-white-5 border-dashed gap-2 animate-enter hover:bg-white/10 hover:border-white/20 transition-all"
+                    style={{ cursor: 'pointer' }}
+                    onClick={onAddAsset}
+                >
                     <p className="text-sm font-medium text-white/80" style={{ margin: 0 }}>No assets yet.</p>
-                    <p className="text-[10px] uppercase tracking-widest font-bold text-muted" style={{ margin: 0 }}>Start adding assets</p>
+                    <p className="text-[10px] uppercase tracking-widest font-bold text-muted" style={{ margin: 0 }}>Tap to add your first asset</p>
                 </div>
             )}
         </div>

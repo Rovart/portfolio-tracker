@@ -784,6 +784,7 @@ export default function Dashboard() {
                                 holdings={holdings}
                                 loading={pricesLoading}
                                 onSelect={openManageModal}
+                                onAddAsset={openAddModal}
                                 hideBalances={hideBalances}
                                 baseCurrency={baseCurrency}
                             />

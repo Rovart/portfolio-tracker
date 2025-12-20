@@ -70,7 +70,7 @@ export default function AssetSearch({ onSelect, onCancel }) {
                             onClick={() => onSelect(item)}
                         >
                             <div className="flex flex-col min-w-0">
-                                <span className="font-bold text-xl group-hover:text-white transition-colors tracking-tight">{item.symbol}</span>
+                                <span className="font-bold text-xl group-hover:text-white transition-colors tracking-tight">{item.displaySymbol || item.symbol}</span>
                                 <span className="text-sm text-muted line-clamp-1">{item.shortname || item.longname}</span>
                             </div>
                             <div className="flex flex-col items-end gap-2 flex-shrink-0">

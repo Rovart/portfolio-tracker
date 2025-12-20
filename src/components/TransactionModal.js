@@ -439,8 +439,18 @@ export default function TransactionModal({ mode, holding, transactions, onClose,
                                                             ) : (
                                                                 (() => {
                                                                     const dateStr = tx.date.split('T')[0];
-                                                                    const hFx = (tx.quoteCurrency || 'USD') === baseCurrency ? 1 : (historicalFx[dateStr] || fxRate || 1);
-                                                                    const costBase = tx.quoteAmount * hFx;
+                                                                    // Use the ASSET's currency, not the tx quote currency
+                                                                    const assetCurrency = (selectedAsset.currency || 'USD').toUpperCase();
+                                                                    const txQuoteCurrency = (tx.quoteCurrency || 'USD').toUpperCase();
+
+                                                                    // FX for cost: convert tx quote currency to base currency
+                                                                    let costFx = 1;
+                                                                    if (txQuoteCurrency !== baseCurrency) {
+                                                                        costFx = historicalFx[dateStr] || fxRate || 1;
+                                                                    }
+                                                                    const costBase = tx.quoteAmount * costFx;
+
+                                                                    // Current value uses fxRate (asset to base)
                                                                     const currentValBase = tx.baseAmount * assetPrice * fxRate;
                                                                     const pnlBase = currentValBase - costBase;
                                                                     const pnlPercent = (pnlBase / costBase) * 100;
@@ -470,8 +480,13 @@ export default function TransactionModal({ mode, holding, transactions, onClose,
                                                                     <span className="text-xs text-muted">
                                                                         {(() => {
                                                                             const dateStr = tx.date.split('T')[0];
-                                                                            const hFx = (tx.quoteCurrency || 'USD') === baseCurrency ? 1 : (historicalFx[dateStr] || fxRate || 1);
-                                                                            return `${((tx.quoteAmount / tx.baseAmount) * hFx).toLocaleString(undefined, { maximumFractionDigits: 2 })} ${baseCurrency === 'USD' ? '$' : baseCurrency}`;
+                                                                            const txQuoteCurrency = (tx.quoteCurrency || 'USD').toUpperCase();
+                                                                            // FX for cost: convert tx quote currency to base currency
+                                                                            let costFx = 1;
+                                                                            if (txQuoteCurrency !== baseCurrency) {
+                                                                                costFx = historicalFx[dateStr] || fxRate || 1;
+                                                                            }
+                                                                            return `${((tx.quoteAmount / tx.baseAmount) * costFx).toLocaleString(undefined, { maximumFractionDigits: 2 })} ${baseCurrency === 'USD' ? '$' : baseCurrency}`;
                                                                         })()}
                                                                     </span>
                                                                 )}
