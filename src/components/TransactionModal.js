@@ -136,14 +136,11 @@ export default function TransactionModal({ mode, holding, transactions, onClose,
                     // The assetPrice from EURUSD=X IS already the EUR/USD conversion rate
                     // So we should NOT multiply by fxRate again!
                     let bareCurrCode = null;
-                    if (selectedAsset.isBareCurrencyOrigin && fetchSym.endsWith('=X')) {
-                        const base = fetchSym.replace('=X', '');
-                        if (base.length > 4) {
-                            bareCurrCode = base.substring(0, 3).toUpperCase();
-                        } else {
-                            bareCurrCode = base.toUpperCase();
-                        }
+                    if ((selectedAsset.isBareCurrencyOrigin && fetchSym.endsWith('=X')) || (fetchSym.endsWith(`${baseCurrency}=X`) && fetchSym.length === 3 + baseCurrency.length + 2)) {
+                        const base = fetchSym.replace(/=X$/, '').replace(new RegExp(`${baseCurrency}$`), '');
+                        bareCurrCode = base.toUpperCase();
                     }
+
 
                     // Track the actual FX rate for calculations (separate from display fxRate)
                     let actualFxRateValue = fetchedFxRate;
