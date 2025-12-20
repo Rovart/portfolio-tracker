@@ -14,57 +14,71 @@ export default function PullToRefresh({ onRefresh, children, disabled = false })
     const THRESHOLD = 80; // Distance needed to trigger refresh
     const MAX_PULL = 120; // Maximum visual pull distance
 
+    const getScrollTop = () => {
+        return Math.max(window.scrollY, document.documentElement.scrollTop, document.body.scrollTop);
+    };
+
     const handleTouchStart = useCallback((e) => {
-        // Don't allow pull if disabled
+        // Don't allow pull if disabled or already refreshing
         if (disabled || refreshing) return;
 
-        // Only allow pull if we're exactly at the top of the page
-        // Use a tiny buffer for potential sub-pixel issues but keep it very strict
-        const isAtTop = window.scrollY <= 0;
-        startedAtTop.current = isAtTop;
+        const scrollTop = getScrollTop();
 
-        if (isAtTop) {
-            startY.current = e.touches[0].clientY;
-            // Don't set pulling true yet, wait for move to confirm it's a pull DOWN
+        // Must be exactly at top (0 pixels scrolled)
+        if (scrollTop > 0) {
+            startedAtTop.current = false;
+            return;
         }
+
+        startedAtTop.current = true;
+        startY.current = e.touches[0].clientY;
     }, [disabled, refreshing]);
 
     const handleTouchMove = useCallback((e) => {
+        // Must have started at the very top
+        if (!startedAtTop.current || refreshing) return;
+
+        const scrollTop = getScrollTop();
         const y = e.touches[0].clientY;
         const delta = y - startY.current;
 
-        // If we didn't start at top, or we're refreshing, ignore
-        if (!startedAtTop.current || refreshing) return;
-
-        // If we're not pulling yet, check if this move qualifies as starting a pull
-        if (!pulling) {
-            // Only start pulling if move is positive (DOWN) and we are still at top
-            if (delta > 5 && window.scrollY <= 0) {
-                setPulling(true);
-            } else {
-                return;
-            }
-        }
-
-        // If user scrolled away from top, cancel the pull immediately
-        if (window.scrollY > 0) {
+        // If we're pulling and user scrolled away from top, cancel immediately
+        if (pulling && scrollTop > 0) {
             setPullDistance(0);
             setPulling(false);
             startedAtTop.current = false;
             return;
         }
 
-        // Apply resistance to make it feel more natural
+        // Not pulling yet - check if this should start a pull
+        if (!pulling) {
+            // Must still be at top, and must be a significant downward movement
+            if (scrollTop === 0 && delta > 15) {
+                setPulling(true);
+            }
+            // Don't interfere with normal scrolling
+            return;
+        }
+
+        // We're in a valid pull - check scroll position again
+        if (scrollTop > 0) {
+            setPullDistance(0);
+            setPulling(false);
+            startedAtTop.current = false;
+            return;
+        }
+
+        // Valid pull - update distance
         if (delta > 0) {
             const distance = Math.min(delta * 0.4, MAX_PULL);
             setPullDistance(distance);
 
-            // Prevent default scroll when pulling to avoid browser overscroll
-            if (distance > 5) {
-                if (e.cancelable) e.preventDefault();
+            // Prevent browser overscroll only when actively pulling
+            if (e.cancelable) {
+                e.preventDefault();
             }
         } else {
-            // User is scrolling up (pushing back), reduce distance or cancel
+            // User pushing back up, cancel pull
             setPullDistance(0);
             setPulling(false);
         }
