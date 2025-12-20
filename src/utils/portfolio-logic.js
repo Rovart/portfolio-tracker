@@ -97,8 +97,20 @@ export function calculateHoldings(transactions, priceMap, baseCurrency = 'USD') 
     return Object.entries(balances)
         .filter(([_, amount]) => Math.abs(amount) > 0.00001)
         .map(([asset, amount]) => {
-            const priceSym = priceSymbolMap[asset] || asset;
-            const quote = priceMap[priceSym] || { price: 0, changePercent: 0 };
+            let priceSym = priceSymbolMap[asset] || asset;
+            let quote = priceMap[priceSym];
+
+            // If we don't have a quote for the bare symbol (e.g. 'AUD')
+            // Try to find the constructed FX pair (e.g. 'AUDUSD=X') which likely exists in the map
+            if (!quote && asset.length === 3 && baseCurrency) {
+                const pair = `${asset}${baseCurrency}=X`;
+                if (priceMap[pair]) {
+                    priceSym = pair;
+                    quote = priceMap[pair];
+                }
+            }
+
+            quote = quote || { price: 0, changePercent: 0 };
             const changePercent = parseFloat(quote.changePercent) || 0;
 
             // Detect if this is a bare currency (e.g., EUR from EUR=X)
