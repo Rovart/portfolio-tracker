@@ -722,9 +722,6 @@ export default function SettingsModal({ onClose, onPortfolioChange, currentPortf
                         <div className="flex flex-col gap-4">
                             <p className="text-muted text-sm leading-relaxed">
                                 Receive daily updates about your portfolio performance.
-                                <span className="block mt-1 text-[10px] opacity-60">
-                                    Note: Notifications act as daily reminders. Live PnL values inside notifications are limited by system background constraints.
-                                </span>
                             </p>
 
                             <div
