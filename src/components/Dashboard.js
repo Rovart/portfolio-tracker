@@ -160,16 +160,16 @@ export default function Dashboard() {
 
             try {
                 // Pass 1: Fetch asset prices and discover currencies
-                // Upgrade bare currencies (e.g. AUD) to FX pairs (AUDUSD=X) for fetching if they differ from base
-                const upgradedBaseAssets = baseAssets.map(asset => {
+                // Identify potential bare currencies (e.g. AUD) and ensure we fetch their FX pairs
+                const fetchList = [...baseAssets];
+                baseAssets.forEach(asset => {
                     const s = asset.toUpperCase();
-                    if (s.length === 3 && ['AUD', 'EUR', 'GBP', 'CAD', 'SGD', 'NZD', 'JPY', 'CHF', 'HKD', 'CNY'].includes(s) && s !== baseCurrency) {
-                        return `${s}${baseCurrency}=X`;
+                    if (s.length === 3 && /^[A-Z]{3}$/.test(s) && s !== baseCurrency && !s.includes('=X') && !s.includes('-')) {
+                        fetchList.push(`${s}${baseCurrency}=X`);
                     }
-                    return asset;
                 });
 
-                const res = await fetch(`/api/quote?symbols=${upgradedBaseAssets.join(',')}`);
+                const res = await fetch(`/api/quote?symbols=${[...new Set(fetchList)].join(',')}`);
                 const result = await res.json();
 
                 if (!result.data) return;
@@ -185,16 +185,28 @@ export default function Dashboard() {
                         name: q.name,
                         quoteType: q.quoteType
                     };
+
+                    // Auto-link bare symbol (AUD) to currency pair (AUDUSD=X) if we found one
+                    if (q.quoteType === 'CURRENCY' && q.symbol.endsWith(`${baseCurrency}=X`)) {
+                        const bare = q.symbol.replace(`${baseCurrency}=X`, '');
+                        if (bare.length === 3) {
+                            // Only map if the bare symbol doesn't have a direct equity hit (e.g. avoid overwriting a stock)
+                            // Usually, if a user has 'AUD' and we find 'AUDUSD=X', they meant the currency.
+                            pxMap[bare] = pxMap[q.symbol];
+                        }
+                    }
+
                     if (q.currency && q.currency.toUpperCase() !== baseCurrency) {
                         discoveredCurrencies.add(q.currency.toUpperCase());
                     }
 
                     // Detect bare currencies (e.g., EUR=X) and add them to discovered currencies
-                    // for FX conversion. EUR=X means we have EUR, so we need EURUSD=X
-                    if (q.symbol && q.symbol.endsWith('=X')) {
-                        const base = q.symbol.replace('=X', '');
-                        // Bare currency if it's 3-4 chars and not a pair like EURUSD
-                        if (base.length <= 4 && base !== baseCurrency) {
+                    if (q.symbol && (q.symbol.endsWith('=X') || q.quoteType === 'CURRENCY')) {
+                        let base = q.symbol.replace('=X', '');
+                        if (base.endsWith(baseCurrency) && base.length > 3) {
+                            base = base.replace(baseCurrency, '');
+                        }
+                        if (base.length === 3 && base !== baseCurrency) {
                             discoveredCurrencies.add(base.toUpperCase());
                         }
                     }

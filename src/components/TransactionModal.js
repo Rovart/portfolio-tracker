@@ -110,9 +110,12 @@ export default function TransactionModal({ mode, holding, transactions, onClose,
                 fetchSym += '-USD';
             }
 
-            // Also upgrade bare fiat symbols (e.g. AUD -> AUDUSD=X)
-            const isBareFiatCode = (fetchSym.length === 3 && ['AUD', 'EUR', 'GBP', 'CAD', 'SGD', 'NZD', 'JPY', 'CHF', 'HKD', 'CNY'].includes(fetchSym.toUpperCase()));
-            if (isBareFiatCode && fetchSym.toUpperCase() !== baseCurrency) {
+            // Also upgrade bare fiat symbols (e.g. AUD -> AUDUSD=X) if it is a known currency type
+            // or follows the 3-letter pattern and we are in fiat-mode.
+            const isCurrencyType = selectedAsset.originalType === 'CURRENCY';
+            const looksLikeBareFiat = (fetchSym.length === 3 && /^[A-Z]{3}$/.test(fetchSym.toUpperCase()));
+
+            if ((isCurrencyType || looksLikeBareFiat) && fetchSym.toUpperCase() !== baseCurrency && !fetchSym.includes('=X')) {
                 fetchSym = `${fetchSym.toUpperCase()}${baseCurrency}=X`;
             }
 
