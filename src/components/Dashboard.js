@@ -350,7 +350,12 @@ export default function Dashboard() {
                 }
                 return sym;
             });
+            // Build FX symbols to fetch - include discovered currencies AND base currency for USD-to-base conversion
             const fxSymbols = [...discoveredCurrencies].map(c => c === 'USD' ? null : `${c}USD=X`).filter(Boolean);
+            // IMPORTANT: Always include baseCurrency's USD pair for portfolio history calculations
+            if (baseCurrency !== 'USD') {
+                fxSymbols.push(`${baseCurrency}USD=X`);
+            }
             const allSymbolsToFetch = [...new Set([...upgradedBaseAssets, ...fxSymbols])];
 
             await Promise.all(allSymbolsToFetch.map(async (fetchSym) => {
