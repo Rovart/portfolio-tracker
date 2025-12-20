@@ -116,27 +116,65 @@ export async function getCachedFxHistory(fromCurrency, toCurrency, range = 'ALL'
     }
 
     // Fetch fresh data
+    // Implement STRICT USD Pivot Logic:
+    // If not converting to/from USD, we MUST pivot via USD.
+    // e.g. EUR -> GBP becomes (EUR -> USD) * (USD -> GBP)
+
     try {
-        const symbol = `${from}${to}=X`;
-        const res = await fetch(`/api/history?symbol=${symbol}&range=${range}`);
-        const json = await res.json();
+        let finalData = {};
 
-        if (json.history && json.history.length > 0) {
-            const data = {};
-            json.history.forEach(d => {
-                data[d.date.split('T')[0]] = d.price;
+        // Case 1: Direct to/from USD
+        if (to === 'USD') {
+            // EUR -> USD (Fetch EURUSD=X)
+            const symbol = `${from}USD=X`;
+            const res = await fetch(`/api/history?symbol=${symbol}&range=${range}`);
+            const json = await res.json();
+            if (json.history) {
+                json.history.forEach(d => { finalData[d.date.split('T')[0]] = d.price; });
+            }
+        } else if (from === 'USD') {
+            // USD -> EUR (Fetch USDEUR=X, or 1/EURUSD=X)
+            // Ideally fetch USDEUR=X directly
+            const symbol = `USD${to}=X`;
+            const res = await fetch(`/api/history?symbol=${symbol}&range=${range}`);
+            const json = await res.json();
+            if (json.history) {
+                json.history.forEach(d => { finalData[d.date.split('T')[0]] = d.price; });
+            } else {
+                // Fallback: Fetch EURUSD=X and inverse
+                const invSymbol = `${to}USD=X`;
+                const invRes = await fetch(`/api/history?symbol=${invSymbol}&range=${range}`);
+                const invJson = await invRes.json();
+                if (invJson.history) {
+                    invJson.history.forEach(d => {
+                        if (d.price) finalData[d.date.split('T')[0]] = 1 / d.price;
+                    });
+                }
+            }
+        } else {
+            // Case 2: Cross Rate (EUR -> GBP)
+            // Pivot: (EUR -> USD) * (USD -> GBP)
+            const [toUsdMap, fromUsdMap] = await Promise.all([
+                getCachedFxHistory(from, 'USD', range),
+                getCachedFxHistory('USD', to, range)
+            ]);
+
+            // Combine histories
+            // Iterate over dates present in BOTH maps
+            Object.keys(toUsdMap).forEach(date => {
+                if (fromUsdMap[date]) {
+                    finalData[date] = toUsdMap[date] * fromUsdMap[date];
+                }
             });
-
-            // Update cache
-            fxCache.history[key] = {
-                data,
-                timestamp: Date.now()
-            };
-
-            return data;
         }
+
+        if (Object.keys(finalData).length > 0) {
+            fxCache.history[key] = { data: finalData, timestamp: Date.now() };
+            return finalData;
+        }
+
     } catch (e) {
-        console.error(`Failed to fetch FX history ${from}→${to}:`, e);
+        console.error(`Failed to fetch FX history via pivot ${from}→${to}:`, e);
     }
 
     return {};
