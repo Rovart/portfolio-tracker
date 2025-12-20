@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
-import { ArrowLeft, Plus, Trash2, Edit2, Check, X, Upload, Download, FolderOpen, ChevronDown, Star } from 'lucide-react';
+import { ArrowLeft, Plus, Trash2, Edit2, Check, X, Upload, Download, FolderOpen, ChevronDown, Star, Bell } from 'lucide-react';
 import ConfirmModal from './ConfirmModal';
 import {
     getAllPortfolios,
@@ -12,6 +12,7 @@ import {
     importTransactions,
     clearAllTransactions
 } from '@/utils/db';
+import { checkPermissions, requestPermissions, scheduleDailyNotifications, cancelAllNotifications, scheduleTestNotification } from '@/utils/notifications';
 
 export default function SettingsModal({ onClose, onPortfolioChange, currentPortfolioId }) {
     const [activeTab, setActiveTab] = useState('portfolios');
@@ -30,6 +31,54 @@ export default function SettingsModal({ onClose, onPortfolioChange, currentPortf
     // Delete confirmation state
     const [deleteConfirm, setDeleteConfirm] = useState(null); // { type: 'portfolio', id, name }
 
+    // Notification State
+    const [notificationsEnabled, setNotificationsEnabled] = useState(false);
+    const [notificationTime, setNotificationTime] = useState('09:00');
+
+    useEffect(() => {
+        const init = async () => {
+            const enabled = localStorage.getItem('notifications_enabled') === 'true';
+            const time = localStorage.getItem('notification_time') || '09:00';
+
+            if (enabled) {
+                const granted = await checkPermissions();
+                setNotificationsEnabled(granted);
+                if (!granted) {
+                    localStorage.setItem('notifications_enabled', 'false');
+                }
+            }
+            setNotificationTime(time);
+        };
+        init();
+    }, []);
+
+    const handleNotificationToggle = async (enabled) => {
+        console.log('Toggling notifications to:', enabled);
+        if (enabled) {
+            const granted = await requestPermissions();
+            console.log('Permission granted:', granted);
+            if (granted) {
+                setNotificationsEnabled(true);
+                localStorage.setItem('notifications_enabled', 'true');
+                await scheduleDailyNotifications(notificationTime, portfolios);
+            } else {
+                alert('Notification permissions are required. Please check your system/browser settings to allow notifications for this app.');
+                setNotificationsEnabled(false);
+            }
+        } else {
+            setNotificationsEnabled(false);
+            localStorage.setItem('notifications_enabled', 'false');
+            await cancelAllNotifications();
+        }
+    };
+
+    const handleTimeChange = async (newTime) => {
+        setNotificationTime(newTime);
+        localStorage.setItem('notification_time', newTime);
+        if (notificationsEnabled) {
+            await scheduleDailyNotifications(newTime, portfolios);
+        }
+    };
     useEffect(() => {
         loadPortfolios();
     }, []);
@@ -357,7 +406,8 @@ export default function SettingsModal({ onClose, onPortfolioChange, currentPortf
 
     const tabs = [
         { id: 'portfolios', label: 'Portfolios', icon: FolderOpen },
-        { id: 'export', label: 'Export/Import', icon: Download }
+        { id: 'export', label: 'Export/Import', icon: Download },
+        { id: 'notifications', label: 'Notifications', icon: Bell }
     ];
 
     return (
@@ -665,6 +715,67 @@ export default function SettingsModal({ onClose, onPortfolioChange, currentPortf
                                 onChange={handleImportCsv}
                                 style={{ display: 'none' }}
                             />
+                        </div>
+                    )}
+
+                    {activeTab === 'notifications' && (
+                        <div className="flex flex-col gap-4">
+                            <p className="text-muted text-sm leading-relaxed">
+                                Receive daily updates about your portfolio performance.
+                                <span className="block mt-1 text-[10px] opacity-60">
+                                    Note: Notifications act as daily reminders. Live PnL values inside notifications are limited by system background constraints.
+                                </span>
+                            </p>
+
+                            <div
+                                className="p-4 rounded-xl flex items-center justify-between cursor-pointer group hover:bg-white/[0.05] transition-all"
+                                style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)' }}
+                                onClick={() => handleNotificationToggle(!notificationsEnabled)}
+                            >
+                                <div className="flex flex-col gap-1">
+                                    <span className="text-white font-medium group-hover:text-green-400 transition-colors">Daily Notifications</span>
+                                    <span className="text-xs text-muted">Get a daily summary for each portfolio</span>
+                                </div>
+                                <div
+                                    className="relative w-12 h-6 rounded-full transition-colors duration-200"
+                                    style={{ backgroundColor: notificationsEnabled ? '#22c55e' : '#3f3f46' }}
+                                >
+                                    <div
+                                        className="absolute top-1 w-4 h-4 rounded-full bg-white transition-all duration-200 shadow-sm"
+                                        style={{
+                                            left: notificationsEnabled ? 'calc(100% - 20px)' : '4px'
+                                        }}
+                                    />
+                                </div>
+                            </div>
+
+                            {notificationsEnabled && (
+                                <>
+                                    <div className="p-4 rounded-xl flex items-center justify-between"
+                                        style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)' }}>
+                                        <span className="text-white font-medium">Notification Time</span>
+                                        <input
+                                            type="time"
+                                            value={notificationTime}
+                                            onChange={(e) => handleTimeChange(e.target.value)}
+                                            className="bg-transparent text-white border border-white/10 rounded-lg px-3 py-2 outline-none focus:border-white/30"
+                                            style={{ colorScheme: 'dark' }}
+                                        />
+                                    </div>
+
+                                    <button
+                                        onClick={async (e) => {
+                                            e.stopPropagation();
+                                            const success = await scheduleTestNotification();
+                                            if (success) alert('Test notification sent! It should appear in a few seconds.');
+                                            else alert('Failed to send test notification.');
+                                        }}
+                                        className="p-3 rounded-xl border border-white/10 bg-white/5 text-xs text-white/70 hover:text-white hover:bg-white/10 transition-all text-center"
+                                    >
+                                        Send Test Notification Now
+                                    </button>
+                                </>
+                            )}
                         </div>
                     )}
                 </div>
