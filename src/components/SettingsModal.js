@@ -734,16 +734,28 @@ export default function SettingsModal({ onClose, onPortfolioChange, currentPortf
                                     <span className="text-xs text-muted">Get a daily summary for each portfolio</span>
                                 </div>
                                 <div
-                                    className="relative w-12 h-6 rounded-full transition-all duration-200 shadow-inner"
                                     style={{
-                                        backgroundColor: notificationsEnabled ? '#22c55e' : 'rgba(255,255,255,0.06)',
-                                        border: `1px solid ${notificationsEnabled ? '#22c55e' : 'rgba(255,255,255,0.1)'}`
+                                        width: '44px',
+                                        height: '24px',
+                                        borderRadius: '12px',
+                                        backgroundColor: notificationsEnabled ? '#22c55e' : '#3f3f46',
+                                        position: 'relative',
+                                        transition: 'all 0.2s ease',
+                                        border: '1.5px solid rgba(255,255,255,0.1)',
+                                        flexShrink: 0
                                     }}
                                 >
                                     <div
-                                        className="absolute top-[3px] w-4 h-4 rounded-full bg-white transition-all duration-200 shadow-md"
                                         style={{
-                                            left: notificationsEnabled ? 'calc(100% - 19px)' : '3px'
+                                            position: 'absolute',
+                                            top: '2px',
+                                            left: notificationsEnabled ? '22px' : '2px',
+                                            width: '18px',
+                                            height: '18px',
+                                            borderRadius: '50%',
+                                            backgroundColor: '#fff',
+                                            transition: 'all 0.2s cubic-bezier(0.4, 0, 0.2, 1)',
+                                            boxShadow: '0 2px 4px rgba(0,0,0,0.2)'
                                         }}
                                     />
                                 </div>
