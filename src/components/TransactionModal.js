@@ -555,7 +555,7 @@ export default function TransactionModal({ mode, holding, transactions, onClose,
                                                                     loadingPrice || !assetPrice ? (
                                                                         <div className="h-3 w-8 bg-white-10 rounded animate-pulse ml-auto" style={{ marginLeft: '5px' }} />
                                                                     ) : (
-                                                                        <span className="text-xs text-[10px] text-muted">
+                                                                        <span className={`text-xs text-[10px] ${tx.affectsFiatBalance === false ? 'text-muted/50 decoration-line-through' : 'text-muted'}`} title={tx.affectsFiatBalance === false ? "Did not deduct from balance" : "Deducted from balance"}>
                                                                             | {hideBalances ? '••••••' : (() => {
                                                                                 const dateStr = tx.date.split('T')[0];
                                                                                 // Use asset's currency as fallback when tx has no quoteCurrency
