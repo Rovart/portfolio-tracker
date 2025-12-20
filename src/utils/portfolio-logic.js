@@ -103,12 +103,18 @@ export function calculateHoldings(transactions, priceMap, baseCurrency = 'USD') 
             let quote = priceMap[priceSym];
 
             // If we don't have a quote for the bare symbol (e.g. 'AUD')
-            // Try to find the constructed FX pair (e.g. 'AUDUSD=X') which likely exists in the map
-            if (!quote && asset.length === 3 && baseCurrency) {
-                const pair = `${asset}${baseCurrency}=X`;
-                if (priceMap[pair]) {
-                    priceSym = pair;
-                    quote = priceMap[pair];
+            // Try to find the constructed FX pair. 
+            // We favor the USD pair (AUDUSD=X) as it is our pricing anchor.
+            if (!quote && asset.length === 3) {
+                const usdPair = `${asset}USD=X`;
+                const basePair = baseCurrency ? `${asset}${baseCurrency}=X` : null;
+
+                if (priceMap[usdPair]) {
+                    priceSym = usdPair;
+                    quote = priceMap[usdPair];
+                } else if (basePair && priceMap[basePair]) {
+                    priceSym = basePair;
+                    quote = priceMap[basePair];
                 }
             }
 
@@ -121,7 +127,7 @@ export function calculateHoldings(transactions, priceMap, baseCurrency = 'USD') 
             // 1. Literal bare currency from Yahoo (EUR=X)
             // 2. Upgraded FX pair where the asset matches the base of the pair (AUD -> AUDUSD=X)
             const isBareCurrency = (priceSym && priceSym.endsWith('=X') && priceSym.replace('=X', '').length <= 4) ||
-                (asset.length === 3 && priceSym === `${asset}${baseCurrency}=X`);
+                (asset.length === 3 && (priceSym === `${asset}${baseCurrency}=X` || priceSym === `${asset}USD=X`));
 
             // Priority: Transaction stored quote -> Price data from Yahoo -> For bare currencies use asset itself -> USD
             let quoteCurr;
@@ -147,12 +153,26 @@ export function calculateHoldings(transactions, priceMap, baseCurrency = 'USD') 
             // FX Rate: How many baseCurrency is 1 quoteCurrency?
             let fxRate = 1;
             if (quoteCurr !== baseCurrency) {
-                // EXPLICIT PRIORITY: CURUSD=X is the most reliable format for USD-per-Base
-                const fxQuote = priceMap[`${quoteCurr}${baseCurrency}=X`] ||
-                    priceMap[quoteCurr] ||
-                    priceMap[`${quoteCurr}=X`] ||
-                    { price: 1 };
-                fxRate = parseFloat(fxQuote.price) || 1;
+                // 1. Try direct pair (e.g. AUDEUR=X)
+                const directFx = priceMap[`${quoteCurr}${baseCurrency}=X`] ||
+                    (quoteCurr === 'USD' ? null : priceMap[quoteCurr]) ||
+                    (quoteCurr === 'USD' ? null : priceMap[`${quoteCurr}=X`]);
+
+                if (directFx && directFx.price) {
+                    fxRate = parseFloat(directFx.price);
+                } else {
+                    // 2. Pivot via USD (All prices get converted from USD, always)
+                    // (AUD -> USD) * (USD -> EUR)
+                    const toUsdRate = (quoteCurr === 'USD') ? 1 :
+                        (parseFloat(priceMap[`${quoteCurr}USD=X`]?.price) ||
+                            (1 / parseFloat(priceMap[`USD${quoteCurr}=X`]?.price)) || 1);
+
+                    const fromUsdRate = (baseCurrency === 'USD') ? 1 :
+                        (parseFloat(priceMap[`USD${baseCurrency}=X`]?.price) ||
+                            (1 / parseFloat(priceMap[`${baseCurrency}USD=X`]?.price)) || 1);
+
+                    fxRate = toUsdRate * fromUsdRate;
+                }
             }
 
             const localValue = amount * localPrice;
@@ -164,11 +184,22 @@ export function calculateHoldings(transactions, priceMap, baseCurrency = 'USD') 
             // FX Performance Discovery
             let fxChangePercent = 0;
             if (quoteCurr !== baseCurrency) {
+                // 1. Try direct
                 const fxQuote = priceMap[`${quoteCurr}${baseCurrency}=X`] ||
-                    priceMap[quoteCurr] ||
-                    priceMap[`${quoteCurr}=X`];
-                if (fxQuote) {
+                    (quoteCurr === 'USD' ? null : priceMap[quoteCurr]) ||
+                    (quoteCurr === 'USD' ? null : priceMap[`${quoteCurr}=X`]);
+
+                if (fxQuote && fxQuote.changePercent !== undefined) {
                     fxChangePercent = parseFloat(fxQuote.changePercent) || 0;
+                } else {
+                    // 2. Pivot Change (Composite)
+                    const toUsdChange = (quoteCurr === 'USD') ? 0 :
+                        (parseFloat(priceMap[`${quoteCurr}USD=X`]?.changePercent) || 0);
+                    const fromUsdChange = (baseCurrency === 'USD') ? 0 :
+                        (parseFloat(priceMap[`USD${baseCurrency}=X`]?.changePercent) || 0);
+
+                    // Combined change: (1+a)*(1+b)-1
+                    fxChangePercent = ((1 + toUsdChange / 100) * (1 + fromUsdChange / 100) - 1) * 100;
                 }
             }
 
@@ -189,7 +220,8 @@ export function calculateHoldings(transactions, priceMap, baseCurrency = 'USD') 
             const qt = (quote.quoteType || '').toUpperCase();
             const td = (quote.typeDisp || '').toUpperCase();
 
-            const isFiat = asset.length <= 4 && (priceSym.endsWith('=X') || asset === quoteCurr || asset === baseCurrency || qt === 'CURRENCY' || td.includes('CURRENCY'));
+            // Use quote metadata to detect fiat currencies
+            const isFiat = asset.length <= 4 && (qt === 'CURRENCY' || td.includes('CURRENCY') || isBareCurrency || asset === baseCurrency || (priceSym && priceSym.endsWith('=X')));
 
             if (isFiat) {
                 category = 'Currencies';

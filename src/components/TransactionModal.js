@@ -112,11 +112,12 @@ export default function TransactionModal({ mode, holding, transactions, onClose,
 
             // Also upgrade bare fiat symbols (e.g. AUD -> AUDUSD=X) if it is a known currency type
             // or follows the 3-letter pattern and we are in fiat-mode.
+            // Rule: All bare currencies are anchored to USD for consistent pricing.
             const isCurrencyType = selectedAsset.originalType === 'CURRENCY';
             const looksLikeBareFiat = (fetchSym.length === 3 && /^[A-Z]{3}$/.test(fetchSym.toUpperCase()));
 
-            if ((isCurrencyType || looksLikeBareFiat) && fetchSym.toUpperCase() !== baseCurrency && !fetchSym.includes('=X')) {
-                fetchSym = `${fetchSym.toUpperCase()}${baseCurrency}=X`;
+            if ((isCurrencyType || looksLikeBareFiat) && fetchSym.toUpperCase() !== 'USD' && !fetchSym.includes('=X')) {
+                fetchSym = `${fetchSym.toUpperCase()}USD=X`;
             }
 
             let symbolsToFetch = [fetchSym];
@@ -140,13 +141,12 @@ export default function TransactionModal({ mode, holding, transactions, onClose,
                         fetchedChange = assetQuote.changePercent;
                         fetchedCurrency = (assetQuote.currency || quoteCurr).toUpperCase();
                     }
-
                     // For bare currencies (EUR from EUR=X → EURUSD=X), special handling:
                     // The assetPrice from EURUSD=X IS already the EUR/USD conversion rate
                     // So we should NOT multiply by fxRate again!
                     let bareCurrCode = null;
-                    if ((selectedAsset.isBareCurrencyOrigin && fetchSym.endsWith('=X')) || (fetchSym.endsWith(`${baseCurrency}=X`) && fetchSym.length === 3 + baseCurrency.length + 2)) {
-                        const base = fetchSym.replace(/=X$/, '').replace(new RegExp(`${baseCurrency}$`), '');
+                    if ((selectedAsset.isBareCurrencyOrigin && fetchSym.endsWith('=X')) || (fetchSym.endsWith('USD=X') && fetchSym.length === 8)) {
+                        const base = fetchSym.replace(/=X$/, '').replace(/USD$/, '');
                         bareCurrCode = base.toUpperCase();
                     }
 

@@ -160,14 +160,19 @@ export default function Dashboard() {
 
             try {
                 // Pass 1: Fetch asset prices and discover currencies
-                // Identify potential bare currencies (e.g. AUD) and ensure we fetch their FX pairs
+                // Rule: All bare currencies are anchored to USD for consistent pricing (AUD -> AUDUSD=X)
                 const fetchList = [...baseAssets];
                 baseAssets.forEach(asset => {
                     const s = asset.toUpperCase();
-                    if (s.length === 3 && /^[A-Z]{3}$/.test(s) && s !== baseCurrency && !s.includes('=X') && !s.includes('-')) {
-                        fetchList.push(`${s}${baseCurrency}=X`);
+                    if (s.length === 3 && /^[A-Z]{3}$/.test(s) && s !== 'USD' && !s.includes('=X') && !s.includes('-')) {
+                        fetchList.push(`${s}USD=X`);
                     }
                 });
+
+                // Always ensure we have the pivot from USD to Base if Base is not USD
+                if (baseCurrency !== 'USD') {
+                    fetchList.push(`USD${baseCurrency}=X`);
+                }
 
                 const res = await fetch(`/api/quote?symbols=${[...new Set(fetchList)].join(',')}`);
                 const result = await res.json();
@@ -186,13 +191,14 @@ export default function Dashboard() {
                         quoteType: q.quoteType
                     };
 
-                    // Auto-link bare symbol (AUD) to currency pair (AUDUSD=X) if we found one
-                    if (q.quoteType === 'CURRENCY' && q.symbol.endsWith(`${baseCurrency}=X`)) {
-                        const bare = q.symbol.replace(`${baseCurrency}=X`, '');
+                    // Auto-link bare symbol (AUD) to USD pair (AUDUSD=X)
+                    // We anchor everything to USD to avoid cross-rate inversion issues
+                    if (q.quoteType === 'CURRENCY' && q.symbol.endsWith('USD=X')) {
+                        const bare = q.symbol.replace('USD=X', '');
                         if (bare.length === 3) {
-                            // Only map if the bare symbol doesn't have a direct equity hit (e.g. avoid overwriting a stock)
-                            // Usually, if a user has 'AUD' and we find 'AUDUSD=X', they meant the currency.
                             pxMap[bare] = pxMap[q.symbol];
+                            // Explicitly mark that its local price is in USD
+                            pxMap[bare].currency = 'USD';
                         }
                     }
 
@@ -203,8 +209,9 @@ export default function Dashboard() {
                     // Detect bare currencies (e.g., EUR=X) and add them to discovered currencies
                     if (q.symbol && (q.symbol.endsWith('=X') || q.quoteType === 'CURRENCY')) {
                         let base = q.symbol.replace('=X', '');
-                        if (base.endsWith(baseCurrency) && base.length > 3) {
-                            base = base.replace(baseCurrency, '');
+                        // If it's a USD pair (AUDUSD), the base is AUD
+                        if (base.endsWith('USD') && base.length === 6) {
+                            base = base.substring(0, 3);
                         }
                         if (base.length === 3 && base !== baseCurrency) {
                             discoveredCurrencies.add(base.toUpperCase());
