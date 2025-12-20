@@ -159,10 +159,14 @@ export function calculateHoldings(transactions, priceMap, baseCurrency = 'USD') 
             // FX Rate: How many baseCurrency is 1 quoteCurrency?
             let fxRate = 1;
             if (quoteCurr !== baseCurrency) {
-                // 1. Try direct pair (e.g. AUDEUR=X)
-                const directFx = priceMap[`${quoteCurr}${baseCurrency}=X`] ||
-                    (quoteCurr === 'USD' ? null : priceMap[quoteCurr]) ||
-                    (quoteCurr === 'USD' ? null : priceMap[`${quoteCurr}=X`]);
+                // 1. Try direct pair (e.g. HKDEUR=X) - usually doesn't exist
+                let directFx = priceMap[`${quoteCurr}${baseCurrency}=X`];
+
+                // 2. Fallback to priceMap[quoteCurr] ONLY if base is USD
+                // (priceMap['HKD'] contains HKD/USD rate, not HKD/EUR!)
+                if (!directFx && baseCurrency === 'USD') {
+                    directFx = priceMap[quoteCurr] || priceMap[`${quoteCurr}=X`];
+                }
 
                 if (directFx && directFx.price) {
                     fxRate = parseFloat(directFx.price);
