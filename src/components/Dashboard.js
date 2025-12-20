@@ -616,40 +616,45 @@ export default function Dashboard() {
 
     return (
         <>
+            {/* Portfolio Selector - OUTSIDE PullToRefresh to allow horizontal scrolling */}
+            {portfolios.length > 1 && (
+                <div className="container" style={{ paddingBottom: 0 }}>
+                    <div className="w-full overflow-hidden mb-4">
+                        <div
+                            className="flex gap-2 pb-1 overflow-x-auto no-scrollbar"
+                            style={{
+                                WebkitOverflowScrolling: 'touch',
+                                overscrollBehaviorX: 'contain',
+                                touchAction: 'pan-x'
+                            }}
+                            onTouchStart={(e) => e.stopPropagation()}
+                            onTouchMove={(e) => e.stopPropagation()}
+                        >
+                            <button
+                                onClick={() => handlePortfolioChange('all')}
+                                className={`pill shrink-0 ${currentPortfolioId === 'all' ? 'active' : ''}`}
+                            >
+                                All
+                            </button>
+                            {portfolios.map(p => (
+                                <button
+                                    key={p.id}
+                                    onClick={() => handlePortfolioChange(p.id)}
+                                    className={`pill shrink-0 ${currentPortfolioId === p.id ? 'active' : ''}`}
+                                >
+                                    {p.name}
+                                </button>
+                            ))}
+                        </div>
+                    </div>
+                </div>
+            )}
+
             <PullToRefresh onRefresh={handleRefresh} disabled={holdings.length === 0}>
-                <div className="container animate-enter">
+                <div className="container animate-enter" style={portfolios.length > 1 ? { paddingTop: 0 } : {}}>
                     <div className="grid-desktop">
                         {/* Main Content: Charts & Performance */}
                         <div className="main-content">
-                            {/* Portfolio Selector - only show if more than 1 portfolio */}
-                            {portfolios.length > 1 && (
-                                <div className="w-full overflow-hidden mb-6">
-                                    <div
-                                        className="flex gap-2 pb-1 overflow-x-auto no-scrollbar"
-                                        style={{
-                                            WebkitOverflowScrolling: 'touch',
-                                            width: '100%',
-                                            maxWidth: '100%'
-                                        }}
-                                    >
-                                        <button
-                                            onClick={() => handlePortfolioChange('all')}
-                                            className={`pill shrink-0 ${currentPortfolioId === 'all' ? 'active' : ''}`}
-                                        >
-                                            All
-                                        </button>
-                                        {portfolios.map(p => (
-                                            <button
-                                                key={p.id}
-                                                onClick={() => handlePortfolioChange(p.id)}
-                                                className={`pill shrink-0 ${currentPortfolioId === p.id ? 'active' : ''}`}
-                                            >
-                                                {p.name}
-                                            </button>
-                                        ))}
-                                    </div>
-                                </div>
-                            )}
 
                             <header className="flex flex-col items-start px-1 pb-8 gap-4 w-full">
                                 <div className="flex items-center justify-between w-full gap-2">
