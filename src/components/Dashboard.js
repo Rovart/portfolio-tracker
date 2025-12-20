@@ -803,6 +803,8 @@ export default function Dashboard() {
                     transactions={transactions}
                     hideBalances={hideBalances}
                     baseCurrency={baseCurrency}
+                    portfolios={portfolios}
+                    currentPortfolioId={currentPortfolioId}
                     onClose={() => setIsModalOpen(false)}
                     onSave={handleSaveTransaction}
                     onDelete={handleDeleteTransaction}

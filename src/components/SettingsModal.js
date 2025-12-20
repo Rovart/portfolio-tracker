@@ -214,20 +214,17 @@ export default function SettingsModal({ onClose, onPortfolioChange, currentPortf
 
         // If importing from "All Portfolios" view, handle multi-portfolio import
         if (ioPortfolioId === 'all') {
-            if (uniquePortfolioNames.length > 0) {
-                // Group transactions by portfolio name and import each group
+            if (uniquePortfolioNames.length > 1) {
+                // Multiple portfolios in CSV - import each and stay on 'All'
                 for (const pName of uniquePortfolioNames) {
                     const groupTxs = transactions.filter(tx => tx.csvPortfolioName === pName);
-                    // Check if portfolio exists
                     let targetP = portfolios.find(p => p.name === pName);
                     let targetId;
                     if (targetP) {
                         targetId = targetP.id;
                     } else {
-                        // Create new portfolio - addPortfolio returns ID directly
                         targetId = await addPortfolio(pName);
                     }
-                    // Import this group
                     const txsToImport = groupTxs.map(tx => ({
                         ...tx,
                         portfolioId: targetId
@@ -236,6 +233,25 @@ export default function SettingsModal({ onClose, onPortfolioChange, currentPortf
                 }
                 await loadPortfolios();
                 onPortfolioChange('all');
+                onClose();
+                return;
+            } else if (uniquePortfolioNames.length === 1) {
+                // Single portfolio in CSV - import and switch to it
+                const pName = uniquePortfolioNames[0];
+                let targetP = portfolios.find(p => p.name === pName);
+                let targetId;
+                if (targetP) {
+                    targetId = targetP.id;
+                } else {
+                    targetId = await addPortfolio(pName);
+                }
+                const txsToImport = transactions.map(tx => ({
+                    ...tx,
+                    portfolioId: targetId
+                }));
+                await importTransactions(txsToImport, targetId);
+                await loadPortfolios();
+                onPortfolioChange(targetId);
                 onClose();
                 return;
             } else {

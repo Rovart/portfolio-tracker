@@ -8,7 +8,7 @@ import { normalizeAsset } from '@/utils/portfolio-logic';
 
 const DISPLAY_NAME = true; // true = Name, false = Symbol
 
-export default function TransactionModal({ mode, holding, transactions, onClose, onSave, onDelete, hideBalances, baseCurrency }) {
+export default function TransactionModal({ mode, holding, transactions, onClose, onSave, onDelete, hideBalances, baseCurrency, portfolios = [], currentPortfolioId = 'all' }) {
     const modalRef = useRef(null);
     const [currentView, setCurrentView] = useState(mode === 'ADD' ? 'SEARCH' : 'LIST');
     const [selectedAsset, setSelectedAsset] = useState(holding ? {
@@ -539,6 +539,8 @@ export default function TransactionModal({ mode, holding, transactions, onClose,
                                 existingTx={editingTx}
                                 transactions={transactions}
                                 fetchedCurrency={selectedAsset.currency}
+                                portfolios={portfolios}
+                                currentPortfolioId={currentPortfolioId}
                                 onSave={(tx) => { onSave(tx); setCurrentView('LIST'); setEditingTx(null); }}
                                 onCancel={toList}
                             />
@@ -554,9 +556,15 @@ function handleDelete(fn, id) {
     if (confirm('Delete this transaction? This cannot be undone.')) fn(id);
 }
 
-function TransactionForm({ holding, existingTx, transactions, onSave, onCancel, fetchedCurrency }) {
+function TransactionForm({ holding, existingTx, transactions, onSave, onCancel, fetchedCurrency, portfolios = [], currentPortfolioId = 'all' }) {
     // Standardize symbol access
     const sym = holding.symbol || holding.asset;
+
+    // Show portfolio selector if in 'All' view with multiple portfolios
+    const showPortfolioSelector = currentPortfolioId === 'all' && portfolios.length > 1;
+    const [selectedPortfolioId, setSelectedPortfolioId] = useState(
+        existingTx?.portfolioId || (portfolios.length > 0 ? portfolios[0].id : 1)
+    );
 
     // Detect quote currency from symbol (e.g., BTC-EUR -> EUR, SAP.DE -> EUR)
     const detectedQuote = useMemo(() => {
@@ -698,7 +706,9 @@ function TransactionForm({ holding, existingTx, transactions, onSave, onCancel, 
             exchange: 'MANUAL',
             originalType: holding.originalType || (detectedQuote === 'USD' ? 'CRYPTOCURRENCY' : 'MANUAL'),
             // Track if this transaction should affect fiat balance
-            affectsFiatBalance: useFiat
+            affectsFiatBalance: useFiat,
+            // Portfolio ID - use selected if in 'All' view, otherwise use current
+            portfolioId: showPortfolioSelector ? selectedPortfolioId : (existingTx?.portfolioId || (currentPortfolioId === 'all' ? 1 : currentPortfolioId))
         };
 
         onSave(tx);
@@ -708,6 +718,36 @@ function TransactionForm({ holding, existingTx, transactions, onSave, onCancel, 
 
     return (
         <form onSubmit={handleSubmit} className="flex flex-col gap-4">
+
+            {/* Portfolio Selector - only show when in 'All' view with multiple portfolios */}
+            {showPortfolioSelector && (
+                <div>
+                    <label style={labelStyle}>Add to Portfolio</label>
+                    <select
+                        value={selectedPortfolioId}
+                        onChange={(e) => setSelectedPortfolioId(parseInt(e.target.value))}
+                        style={{
+                            width: '100%',
+                            background: `#171717 url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='18' height='18' viewBox='0 0 24 24' fill='none' stroke='rgba(255,255,255,0.5)' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E") no-repeat right 14px center`,
+                            border: '1px solid rgba(255, 255, 255, 0.1)',
+                            borderRadius: '12px',
+                            padding: '14px 44px 14px 14px',
+                            color: 'white',
+                            fontSize: '14px',
+                            fontWeight: '500',
+                            cursor: 'pointer',
+                            outline: 'none',
+                            appearance: 'none',
+                            WebkitAppearance: 'none',
+                            MozAppearance: 'none'
+                        }}
+                    >
+                        {portfolios.map(p => (
+                            <option key={p.id} value={p.id} style={{ background: '#121212', color: 'white' }}>{p.name}</option>
+                        ))}
+                    </select>
+                </div>
+            )}
 
             {/* Type Selector */}
             <div className="flex gap-2 p-1 rounded-full" style={{ background: '#171717' }}>
