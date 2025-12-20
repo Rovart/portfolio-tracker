@@ -170,8 +170,9 @@ export default function Dashboard() {
                 });
 
                 // Always ensure we have the pivot from USD to Base if Base is not USD
+                // We need {Base}USD=X (e.g. EURUSD=X) to calculate USD/EUR = 1 / EURUSD
                 if (baseCurrency !== 'USD') {
-                    fetchList.push(`${baseCurrency}=X`);
+                    fetchList.push(`${baseCurrency}USD=X`);
                 }
 
                 const res = await fetch(`/api/quote?symbols=${[...new Set(fetchList)].join(',')}`);

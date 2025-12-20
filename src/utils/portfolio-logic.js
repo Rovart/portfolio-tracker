@@ -168,14 +168,38 @@ export function calculateHoldings(transactions, priceMap, baseCurrency = 'USD') 
                     fxRate = parseFloat(directFx.price);
                 } else {
                     // 2. Pivot via USD (All prices get converted from USD, always)
-                    // (AUD -> USD) * (USD -> EUR)
-                    const toUsdRate = (quoteCurr === 'USD') ? 1 :
-                        (parseFloat(priceMap[`${quoteCurr}USD=X`]?.price) ||
-                            (1 / parseFloat(priceMap[`${quoteCurr}=X`]?.price)) || 1);
+                    // Goal: Convert 1 quoteCurr -> X baseCurrency
+                    // Path: quoteCurr -> USD -> baseCurrency
 
-                    const fromUsdRate = (baseCurrency === 'USD') ? 1 :
-                        (parseFloat(priceMap[`${baseCurrency}=X`]?.price) ||
-                            (1 / parseFloat(priceMap[`${baseCurrency}USD=X`]?.price)) || 1);
+                    // Step 1: quoteCurr -> USD
+                    // If quoteCurr is USD, rate is 1
+                    // Otherwise, XXXUSD=X gives us "1 XXX = Y USD", so toUsdRate = Y
+                    let toUsdRate = 1;
+                    if (quoteCurr !== 'USD') {
+                        const pair = priceMap[`${quoteCurr}USD=X`];
+                        if (pair && pair.price) {
+                            toUsdRate = parseFloat(pair.price);
+                        }
+                    }
+
+                    // Step 2: USD -> baseCurrency
+                    // We want "1 USD = Z baseCurrency"
+                    // XXXUSD=X gives us "1 XXX = Y USD", so USD/XXX = 1/Y
+                    // Therefore, if base is EUR: EURUSD=X = 1.04, so USD/EUR = 1/1.04 = 0.96
+                    let fromUsdRate = 1;
+                    if (baseCurrency !== 'USD') {
+                        const pair = priceMap[`${baseCurrency}USD=X`];
+                        if (pair && pair.price) {
+                            // This is base/USD, we need USD/base = 1 / (base/USD)
+                            fromUsdRate = 1 / parseFloat(pair.price);
+                        } else {
+                            // Fallback: try EUR=X style (rare but possible)
+                            const altPair = priceMap[`${baseCurrency}=X`];
+                            if (altPair && altPair.price) {
+                                fromUsdRate = 1 / parseFloat(altPair.price);
+                            }
+                        }
+                    }
 
                     fxRate = toUsdRate * fromUsdRate;
                 }

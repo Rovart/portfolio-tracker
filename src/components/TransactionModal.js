@@ -158,16 +158,41 @@ export default function TransactionModal({ mode, holding, transactions, onClose,
                         // BARE CURRENCY CASE:
                         // For EUR (EURUSD=X) with baseCurrency USD: price IS the rate, fxRate = 1 for display
                         // For EUR (EURUSD=X) with baseCurrency EUR: price = 1, fxRate = 1
+                        // For AUD (AUDUSD=X) with baseCurrency EUR: price = AUDUSD, fxRate = USD/EUR = 1/EURUSD
                         if (bareCurrCode === baseCurrency) {
                             // Holding EUR, displaying in EUR → price is 1
                             fetchedPrice = 1;
                             fetchedFxRate = 1;
                             actualFxRateValue = 1;
-                        } else {
-                            // Holding EUR, displaying in USD → price = EURUSD rate, fxRate = 1 for display
-                            // But save the actual rate for avg price calculation fallback
+                        } else if (baseCurrency === 'USD') {
+                            // Holding EUR/AUD, displaying in USD → price = XXXUSD rate, fxRate = 1
                             actualFxRateValue = fetchedPrice; // The price IS the FX rate
                             fetchedFxRate = 1; // Don't double-convert for display!
+                        } else {
+                            // Holding AUD (AUDUSD=X price), displaying in EUR
+                            // We need: AUD/EUR = (AUD/USD) * (USD/EUR) = AUDUSD * (1/EURUSD)
+                            // fetchedPrice is already AUD/USD
+                            // We need to get USD/EUR = 1 / EURUSD
+                            try {
+                                const baseToUsdSymbol = `${baseCurrency}USD=X`;
+                                const fxRes = await fetch(`/api/quote?symbols=${baseToUsdSymbol}`);
+                                const fxJson = await fxRes.json();
+                                if (fxJson.data?.[0]?.price) {
+                                    // baseToUsd is EURUSD = 1.04, so USD/EUR = 1/1.04 = 0.96
+                                    const usdToBaseRate = 1 / fxJson.data[0].price;
+                                    actualFxRateValue = fetchedPrice * usdToBaseRate;
+                                    fetchedFxRate = usdToBaseRate; // For display of the conversion
+                                } else {
+                                    // Fallback: just use the USD price without conversion
+                                    actualFxRateValue = fetchedPrice;
+                                    fetchedFxRate = 1;
+                                    console.warn(`Could not fetch ${baseToUsdSymbol} for conversion`);
+                                }
+                            } catch (e) {
+                                console.error('Failed to fetch USD to base rate:', e);
+                                actualFxRateValue = fetchedPrice;
+                                fetchedFxRate = 1;
+                            }
                         }
                     } else {
                         // REGULAR ASSET CASE: normal FX conversion
