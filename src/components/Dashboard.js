@@ -160,14 +160,15 @@ export default function Dashboard() {
 
             try {
                 // Pass 1: Fetch asset prices and discover currencies
-                // Rule: All bare currencies are anchored to USD for consistent pricing (AUD -> AUDUSD=X)
-                // Replace bare 3-letter currencies with their USD pairs
-                const fetchList = baseAssets.map(asset => {
+                // For 3-letter symbols, fetch BOTH the original (might be stock like TLT) AND the USD pair (might be currency like AUD)
+                // The response quoteType will determine how to link them
+                const fetchList = [...baseAssets];
+                baseAssets.forEach(asset => {
                     const s = asset.toUpperCase();
-                    if (s.length === 3 && /^[A-Z]{3}$/.test(s) && s !== 'USD' && !s.includes('=X') && !s.includes('-')) {
-                        return `${s}USD=X`;
+                    // For 3-letter symbols that might be currencies, also fetch their USD pair
+                    if (s.length === 3 && /^[A-Z]{3}$/.test(s) && s !== 'USD') {
+                        fetchList.push(`${s}USD=X`);
                     }
-                    return asset;
                 });
 
                 // Always ensure we have the pivot from USD to Base if Base is not USD
@@ -194,12 +195,12 @@ export default function Dashboard() {
                     };
 
                     // Auto-link bare symbol (AUD) to USD pair (AUDUSD=X)
-                    // We anchor everything to USD to avoid cross-rate inversion issues
-                    // Trigger on: quoteType CURRENCY OR symbol pattern XXXUSD=X with 3-letter base
-                    if (q.symbol.endsWith('USD=X')) {
+                    // ONLY when the USD pair is actually a currency (quoteType === 'CURRENCY')
+                    // This prevents linking stock tickers like TLT to TLTUSD=X
+                    if (q.quoteType === 'CURRENCY' && q.symbol.endsWith('USD=X')) {
                         const bare = q.symbol.replace('USD=X', '');
-                        if (bare.length === 3) {
-                            // Create a new object to avoid reference issues
+                        if (bare.length === 3 && !pxMap[bare]) {
+                            // Only link if we don't already have a quote for the bare symbol
                             pxMap[bare] = { ...pxMap[q.symbol], currency: 'USD' };
                         }
                     }
