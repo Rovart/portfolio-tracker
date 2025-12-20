@@ -701,13 +701,16 @@ export default function SettingsModal({ onClose, onPortfolioChange, currentPortf
                                 width: '40px',
                                 height: '40px',
                                 borderRadius: '12px',
-                                background: 'linear-gradient(135deg, rgba(251, 191, 36, 0.2) 0%, rgba(245, 158, 11, 0.1) 100%)',
+                                background: 'rgba(251, 191, 36, 0.12)',
                                 display: 'flex',
                                 alignItems: 'center',
-                                justifyContent: 'center',
-                                fontSize: '18px'
+                                justifyContent: 'center'
                             }}>
-                                ⚠️
+                                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#fbbf24" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                    <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" />
+                                    <line x1="12" y1="9" x2="12" y2="13" />
+                                    <line x1="12" y1="17" x2="12.01" y2="17" />
+                                </svg>
                             </div>
                             <h3 style={{ margin: 0, fontSize: '1.25rem', fontWeight: '600', color: '#fff' }}>
                                 Portfolio Mismatch
@@ -738,7 +741,7 @@ export default function SettingsModal({ onClose, onPortfolioChange, currentPortf
                                 color: '#52525b'
                             }}>
                                 <div style={{ flex: 1, height: '1px', background: 'rgba(255,255,255,0.1)' }} />
-                                <span style={{ fontSize: '0.7rem' }}>↓ importing into ↓</span>
+                                <span style={{ fontSize: '0.7rem' }}>importing into</span>
                                 <div style={{ flex: 1, height: '1px', background: 'rgba(255,255,255,0.1)' }} />
                             </div>
 
@@ -746,7 +749,7 @@ export default function SettingsModal({ onClose, onPortfolioChange, currentPortf
                                 <span style={{ fontSize: '0.75rem', color: '#71717a', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
                                     Target Portfolio
                                 </span>
-                                <p style={{ margin: '4px 0 0 0', fontSize: '1rem', fontWeight: '600', color: '#22c55e' }}>
+                                <p style={{ margin: '4px 0 0 0', fontSize: '1rem', fontWeight: '600', color: '#fff' }}>
                                     {importConflict.targetPortfolioName}
                                 </p>
                             </div>
@@ -755,85 +758,61 @@ export default function SettingsModal({ onClose, onPortfolioChange, currentPortf
                         <p style={{
                             margin: '0 0 24px 0',
                             color: '#a1a1aa',
-                            fontSize: '0.875rem',
-                            display: 'flex',
-                            alignItems: 'center',
-                            gap: '6px'
+                            fontSize: '0.875rem'
                         }}>
-                            <span style={{
-                                display: 'inline-flex',
-                                alignItems: 'center',
-                                justifyContent: 'center',
-                                background: 'rgba(99, 102, 241, 0.15)',
-                                color: '#818cf8',
-                                fontSize: '0.75rem',
-                                fontWeight: '600',
-                                padding: '2px 8px',
-                                borderRadius: '6px'
-                            }}>
-                                {importConflict.transactions.length}
-                            </span>
-                            transaction{importConflict.transactions.length !== 1 ? 's' : ''} to import
+                            <span style={{ fontWeight: '600', color: '#fff' }}>{importConflict.transactions.length}</span> transaction{importConflict.transactions.length !== 1 ? 's' : ''} to import
                         </p>
 
                         {/* Actions */}
                         <div style={{ display: 'flex', gap: '12px' }}>
                             <button
                                 onClick={handleImportMerge}
-                                className="btn"
+                                className="btn hover-bg-surface"
                                 style={{
                                     flex: 1,
                                     padding: '14px 20px',
-                                    background: 'linear-gradient(135deg, rgba(34, 197, 94, 0.15) 0%, rgba(34, 197, 94, 0.08) 100%)',
-                                    color: '#22c55e',
-                                    border: '1px solid rgba(34, 197, 94, 0.25)',
+                                    background: 'rgba(255, 255, 255, 0.06)',
+                                    color: '#fff',
+                                    border: '1px solid rgba(255, 255, 255, 0.1)',
                                     borderRadius: '12px',
                                     cursor: 'pointer',
                                     fontWeight: '600',
-                                    fontSize: '0.9rem',
-                                    transition: 'all 0.2s ease'
+                                    fontSize: '0.9rem'
                                 }}
-                                onMouseOver={e => e.target.style.background = 'rgba(34, 197, 94, 0.25)'}
-                                onMouseOut={e => e.target.style.background = 'linear-gradient(135deg, rgba(34, 197, 94, 0.15) 0%, rgba(34, 197, 94, 0.08) 100%)'}
                             >
                                 Merge Here
                             </button>
                             <button
                                 onClick={handleImportCreateNew}
-                                className="btn"
+                                className="btn hover-bg-surface"
                                 style={{
                                     flex: 1,
                                     padding: '14px 20px',
-                                    background: 'linear-gradient(135deg, rgba(59, 130, 246, 0.15) 0%, rgba(59, 130, 246, 0.08) 100%)',
-                                    color: '#3b82f6',
-                                    border: '1px solid rgba(59, 130, 246, 0.25)',
+                                    background: 'rgba(255, 255, 255, 0.06)',
+                                    color: '#fff',
+                                    border: '1px solid rgba(255, 255, 255, 0.1)',
                                     borderRadius: '12px',
                                     cursor: 'pointer',
                                     fontWeight: '600',
-                                    fontSize: '0.9rem',
-                                    transition: 'all 0.2s ease'
+                                    fontSize: '0.9rem'
                                 }}
-                                onMouseOver={e => e.target.style.background = 'rgba(59, 130, 246, 0.25)'}
-                                onMouseOut={e => e.target.style.background = 'linear-gradient(135deg, rgba(59, 130, 246, 0.15) 0%, rgba(59, 130, 246, 0.08) 100%)'}
                             >
                                 Create New
                             </button>
                         </div>
                         <button
                             onClick={() => setImportConflict(null)}
+                            className="btn-ghost"
                             style={{
                                 width: '100%',
                                 marginTop: '12px',
                                 padding: '12px',
                                 backgroundColor: 'transparent',
-                                color: '#52525b',
+                                color: '#71717a',
                                 border: 'none',
                                 cursor: 'pointer',
-                                fontSize: '0.85rem',
-                                transition: 'color 0.2s ease'
+                                fontSize: '0.85rem'
                             }}
-                            onMouseOver={e => e.target.style.color = '#a1a1aa'}
-                            onMouseOut={e => e.target.style.color = '#52525b'}
                         >
                             Cancel
                         </button>
