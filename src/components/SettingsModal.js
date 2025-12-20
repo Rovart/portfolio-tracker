@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
-import { ArrowLeft, Plus, Trash2, Edit2, Check, X, Upload, Download, FolderOpen, ChevronDown } from 'lucide-react';
+import { ArrowLeft, Plus, Trash2, Edit2, Check, X, Upload, Download, FolderOpen, ChevronDown, Star } from 'lucide-react';
 import {
     getAllPortfolios,
     addPortfolio,
@@ -93,6 +93,21 @@ export default function SettingsModal({ onClose, onPortfolioChange, currentPortf
                 onPortfolioChange(remaining[0].id);
             }
         }
+    };
+
+    const handleSetDefault = async (id) => {
+        // Clear default from all portfolios, then set on selected (or toggle off)
+        const currentDefault = portfolios.find(p => p.isDefault);
+        for (const p of portfolios) {
+            if (p.isDefault) {
+                await updatePortfolio(p.id, { isDefault: false });
+            }
+        }
+        // Toggle: if clicking the current default, just clear it (All will be default)
+        if (currentDefault?.id !== id) {
+            await updatePortfolio(id, { isDefault: true });
+        }
+        loadPortfolios();
     };
 
     const handleExportCsv = async () => {
@@ -285,6 +300,8 @@ export default function SettingsModal({ onClose, onPortfolioChange, currentPortf
     const handleImportMerge = async () => {
         if (!importConflict) return;
         await doImport(importConflict.transactions, importConflict.targetPortfolioId);
+        // Switch to the merged portfolio
+        onPortfolioChange(importConflict.targetPortfolioId);
     };
 
     const handleImportCreateNew = async () => {
@@ -299,6 +316,8 @@ export default function SettingsModal({ onClose, onPortfolioChange, currentPortf
         await importTransactions(txsToImport, newPortfolioId);
         await loadPortfolios();
         setImportConflict(null);
+        // Switch to the newly created portfolio
+        onPortfolioChange(newPortfolioId);
         onClose();
     };
 
@@ -433,7 +452,22 @@ export default function SettingsModal({ onClose, onPortfolioChange, currentPortf
                                         ) : (
                                             <>
                                                 <span className="font-medium">{portfolio.name}</span>
-                                                <div className="flex items-center gap-2">
+                                                <div className="flex items-center gap-1">
+                                                    {/* Default star - only show when multiple portfolios */}
+                                                    {portfolios.length > 1 && (
+                                                        <button
+                                                            onClick={() => handleSetDefault(portfolio.id)}
+                                                            className="p-2 rounded-full hover:bg-yellow-500/20 transition-all"
+                                                            style={{ background: 'transparent', border: 'none', cursor: 'pointer' }}
+                                                            title={portfolio.isDefault ? 'Remove as default' : 'Set as default view'}
+                                                        >
+                                                            <Star
+                                                                size={16}
+                                                                className={portfolio.isDefault ? 'text-yellow-400' : 'text-white/40'}
+                                                                fill={portfolio.isDefault ? '#facc15' : 'none'}
+                                                            />
+                                                        </button>
+                                                    )}
                                                     <button
                                                         onClick={() => { setEditingId(portfolio.id); setEditingName(portfolio.name); }}
                                                         className="p-2 rounded-full hover:bg-white/10 text-white/60"

@@ -57,14 +57,23 @@ export default function Dashboard() {
                 const allPortfolios = await ensureDefaultPortfolio();
                 setPortfolios(allPortfolios);
 
-                // Load saved portfolio preference
-                const savedPortfolioId = await getSetting('current_portfolio', 'all');
-                setCurrentPortfolioId(savedPortfolioId);
+                // Determine initial portfolio:
+                // 1. Check for a portfolio marked as default (isDefault: true)
+                // 2. Fall back to saved preference
+                // 3. Fall back to 'all'
+                const defaultPortfolio = allPortfolios.find(p => p.isDefault);
+                let initialPortfolioId;
+                if (defaultPortfolio) {
+                    initialPortfolioId = defaultPortfolio.id;
+                } else {
+                    initialPortfolioId = await getSetting('current_portfolio', 'all');
+                }
+                setCurrentPortfolioId(initialPortfolioId);
 
                 // Load transactions for current portfolio
-                const savedTransactions = savedPortfolioId === 'all'
+                const savedTransactions = initialPortfolioId === 'all'
                     ? await getAllTransactions()
-                    : await getTransactionsByPortfolio(savedPortfolioId);
+                    : await getTransactionsByPortfolio(initialPortfolioId);
                 setTransactions(savedTransactions || []);
 
                 const savedPrivacy = await getSetting('hide_balances', false);
