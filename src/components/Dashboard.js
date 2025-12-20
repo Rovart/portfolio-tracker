@@ -10,7 +10,7 @@ import SettingsModal from './SettingsModal';
 import PullToRefresh from './PullToRefresh';
 import { calculateHoldings } from '@/utils/portfolio-logic';
 import { calculatePortfolioHistory } from '@/utils/portfolio-history';
-import { getCachedAssetHistory, setCachedAssetHistory, getCachedFxHistory } from '@/utils/fxCache';
+import { getCachedAssetHistory, setCachedAssetHistory, getCachedFxHistory, invalidateAssetCache, clearFxCache } from '@/utils/fxCache';
 import {
     getAllTransactions,
     getTransactionsByPortfolio,
@@ -487,9 +487,20 @@ export default function Dashboard() {
     };
 
     const handleSaveTransaction = async (tx) => {
+        // Invalidate asset cache to force chart recalculation with new data
+        invalidateAssetCache(tx.baseCurrency);
+        if (tx.quoteCurrency) invalidateAssetCache(tx.quoteCurrency);
+
         const exists = transactions.find(t => t.id === tx.id);
         let updated;
         if (exists) {
+            // Also invalidate previous symbols if they were changed
+            if (exists.baseCurrency !== tx.baseCurrency) {
+                invalidateAssetCache(exists.baseCurrency);
+            }
+            if (exists.quoteCurrency && exists.quoteCurrency !== tx.quoteCurrency) {
+                invalidateAssetCache(exists.quoteCurrency);
+            }
             await updateTransaction(tx.id, tx);
             updated = transactions.map(t => t.id === tx.id ? tx : t);
         } else {
@@ -506,6 +517,12 @@ export default function Dashboard() {
     };
 
     const handleDeleteTransaction = async (id) => {
+        const txToDelete = transactions.find(t => t.id === id);
+        if (txToDelete) {
+            invalidateAssetCache(txToDelete.baseCurrency);
+            if (txToDelete.quoteCurrency) invalidateAssetCache(txToDelete.quoteCurrency);
+        }
+
         await deleteTransaction(id);
         const updated = transactions.filter(t => t.id !== id);
         setTransactions(updated);
@@ -547,6 +564,7 @@ export default function Dashboard() {
 
                 await clearAllTransactions();
                 await importTransactions(parsed);
+                clearFxCache(); // Reset all caches since we have entirely new data
                 const updated = await getAllTransactions();
                 setTransactions(updated);
                 alert(`Imported ${parsed.length} transactions`);

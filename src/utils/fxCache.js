@@ -224,6 +224,37 @@ export function setCachedAssetHistory(symbol, range, data) {
 }
 
 /**
+ * Invalidate cache for a specific asset (call when adding/editing transactions)
+ * @param {string} symbol - Asset symbol to invalidate
+ */
+export function invalidateAssetCache(symbol) {
+    if (!symbol) return;
+
+    const upper = symbol.toUpperCase();
+
+    // Remove all timeframe entries for this asset
+    Object.keys(fxCache.assetHistory).forEach(key => {
+        if (key.startsWith(upper + '-')) {
+            delete fxCache.assetHistory[key];
+        }
+    });
+
+    // Also check for bare currency variants (EUR from EURUSD=X)
+    if (upper.endsWith('=X')) {
+        const base = upper.replace('=X', '');
+        // For EURUSD=X, also invalidate EUR entries
+        if (base.length > 4) {
+            const bareCurr = base.substring(0, 3);
+            Object.keys(fxCache.assetHistory).forEach(key => {
+                if (key.startsWith(bareCurr + '-')) {
+                    delete fxCache.assetHistory[key];
+                }
+            });
+        }
+    }
+}
+
+/**
  * Get cache stats for debugging
  */
 export function getCacheStats() {

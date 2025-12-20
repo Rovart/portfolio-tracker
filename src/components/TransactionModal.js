@@ -704,21 +704,39 @@ function TransactionForm({ holding, existingTx, transactions, onSave, onCancel, 
     const quoteBalance = useMemo(() => {
         if (!transactions || !detectedQuote) return 0;
         const q = detectedQuote.toUpperCase();
-        return transactions
-            .filter(t => {
-                const b = (t.baseCurrency || '').toUpperCase();
-                // Match "EUR", "EUR=X", "EURUSD=X" or "EUR-USD"
-                return b === q || b === `${q}=X` || b === `${q}USD=X` || b === `${q}-USD` || b === `USD-${q}`;
-            })
-            .reduce((acc, t) => {
+
+        return transactions.reduce((acc, t) => {
+            const base = (t.baseCurrency || '').toUpperCase();
+            const quote = (t.quoteCurrency || '').toUpperCase();
+
+            // 1. Direct impact (this currency is the base of the transaction)
+            if (base === q || base === `${q}=X` || base === `${q}USD=X` || base === `${q}-USD` || base === `USD-${q}`) {
                 const bAmt = parseFloat(t.baseAmount) || 0;
                 if (['BUY', 'DEPOSIT'].includes(t.type)) return acc + bAmt;
                 if (['SELL', 'WITHDRAW'].includes(t.type)) return acc - bAmt;
-                return acc;
-            }, 0);
+            }
+
+            // 2. Indirect impact (this currency is the quote of another transaction)
+            // ONLY if affectsFiatBalance is not false
+            if (quote === q && t.affectsFiatBalance !== false) {
+                const qAmt = parseFloat(t.quoteAmount) || 0;
+                if (t.type === 'BUY') return acc - qAmt;
+                if (t.type === 'SELL') return acc + qAmt;
+            }
+
+            return acc;
+        }, 0);
     }, [transactions, detectedQuote]);
 
-    const [useFiat, setUseFiat] = useState(existingTx ? !!existingTx.quoteCurrency : quoteBalance > 0);
+    const [useFiat, setUseFiat] = useState(() => {
+        if (existingTx) {
+            // For existing tx, respect affectsFiatBalance if it exists, 
+            // otherwise default to true if it has a quoteCurrency
+            if (existingTx.affectsFiatBalance !== undefined) return !!existingTx.affectsFiatBalance;
+            return !!existingTx.quoteCurrency;
+        }
+        return quoteBalance > 0;
+    });
 
     // Sync useFiat when quote currency changes (for new transactions)
     useEffect(() => {
@@ -809,17 +827,18 @@ function TransactionForm({ holding, existingTx, transactions, onSave, onCancel, 
         if ((type === 'BUY' || type === 'SELL') && (!price || isNaN(cleanPrice))) return;
 
         const tx = {
+            // Merge with existing transaction to preserve fields like 'notes'
+            ...(existingTx || {}),
             id: existingTx?.id || Math.random().toString(36).substr(2, 9),
             date: new Date(date).toISOString(),
             type,
             baseAmount: cleanAmount,
             baseCurrency: sym,
             quoteAmount: (type === 'BUY' || type === 'SELL') ? (cleanAmount * cleanPrice) : 0,
-            // ALWAYS store quoteCurrency for BUY/SELL - it's essential for FX conversion
-            // useFiat only controls whether we deduct from fiat balance, not the currency recording
-            quoteCurrency: (type === 'BUY' || type === 'SELL') ? detectedQuote : null,
-            exchange: 'MANUAL',
-            originalType: holding.originalType || (detectedQuote === 'USD' ? 'CRYPTOCURRENCY' : 'MANUAL'),
+            // Use existing quote currency if editing, otherwise detected
+            quoteCurrency: (type === 'BUY' || type === 'SELL') ? (existingTx?.quoteCurrency || detectedQuote) : null,
+            exchange: existingTx?.exchange || 'MANUAL',
+            originalType: holding.originalType || existingTx?.originalType || (detectedQuote === 'USD' ? 'CRYPTOCURRENCY' : 'MANUAL'),
             // Track if this transaction should affect fiat balance
             affectsFiatBalance: useFiat,
             // Portfolio ID - use selected if in 'All' view, otherwise use current
