@@ -259,23 +259,25 @@ export default function SettingsModal({ onClose, onPortfolioChange, currentPortf
                                                     type="text"
                                                     value={editingName}
                                                     onChange={e => setEditingName(e.target.value)}
-                                                    className="flex-1 bg-white/10 border border-white/20 rounded-lg px-3 py-2 text-white"
+                                                    className="flex-1 bg-white/5 border border-white/10 rounded-xl px-4 py-2 text-white focus:outline-none focus:border-white/30 transition-all font-medium"
                                                     autoFocus
                                                 />
-                                                <button
-                                                    onClick={() => handleUpdatePortfolio(portfolio.id)}
-                                                    className="p-2 rounded-full bg-green-500/20 text-green-400"
-                                                    style={{ border: 'none', cursor: 'pointer' }}
-                                                >
-                                                    <Check size={18} />
-                                                </button>
-                                                <button
-                                                    onClick={() => { setEditingId(null); setEditingName(''); }}
-                                                    className="p-2 rounded-full bg-white/10 text-white/60"
-                                                    style={{ border: 'none', cursor: 'pointer' }}
-                                                >
-                                                    <X size={18} />
-                                                </button>
+                                                <div className="flex items-center gap-1.5 pl-1">
+                                                    <button
+                                                        onClick={() => handleUpdatePortfolio(portfolio.id)}
+                                                        className="p-2 rounded-xl transition-all"
+                                                        style={{ background: 'rgba(34, 197, 94, 0.15)', border: '1px solid rgba(34, 197, 94, 0.2)', color: '#4ade80', cursor: 'pointer' }}
+                                                    >
+                                                        <Check size={18} strokeWidth={2.5} />
+                                                    </button>
+                                                    <button
+                                                        onClick={() => { setEditingId(null); setEditingName(''); }}
+                                                        className="p-2 rounded-xl transition-all"
+                                                        style={{ background: 'rgba(255, 255, 255, 0.05)', border: '1px solid rgba(255, 255, 255, 0.1)', color: 'rgba(255, 255, 255, 0.6)', cursor: 'pointer' }}
+                                                    >
+                                                        <X size={18} strokeWidth={2.5} />
+                                                    </button>
+                                                </div>
                                             </div>
                                         ) : (
                                             <>
@@ -306,29 +308,31 @@ export default function SettingsModal({ onClose, onPortfolioChange, currentPortf
 
                             {/* Add New Portfolio */}
                             {showAddForm ? (
-                                <div className="flex items-center gap-2 p-4 rounded-xl" style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)' }}>
+                                <div className="flex items-center gap-2 p-3 rounded-xl" style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)' }}>
                                     <input
                                         type="text"
                                         value={newPortfolioName}
                                         onChange={e => setNewPortfolioName(e.target.value)}
                                         placeholder="Portfolio name..."
-                                        className="flex-1 bg-white/10 border border-white/20 rounded-lg px-3 py-2 text-white"
+                                        className="flex-1 bg-white/5 border border-white/10 rounded-xl px-4 py-2 text-white focus:outline-none focus:border-white/30 transition-all font-medium"
                                         autoFocus
                                     />
-                                    <button
-                                        onClick={handleAddPortfolio}
-                                        className="p-2 rounded-full bg-green-500/20 text-green-400"
-                                        style={{ border: 'none', cursor: 'pointer' }}
-                                    >
-                                        <Check size={18} />
-                                    </button>
-                                    <button
-                                        onClick={() => { setShowAddForm(false); setNewPortfolioName(''); }}
-                                        className="p-2 rounded-full bg-white/10 text-white/60"
-                                        style={{ border: 'none', cursor: 'pointer' }}
-                                    >
-                                        <X size={18} />
-                                    </button>
+                                    <div className="flex items-center gap-1.5 px-1">
+                                        <button
+                                            onClick={handleAddPortfolio}
+                                            className="p-2 rounded-xl transition-all"
+                                            style={{ background: 'rgba(34, 197, 94, 0.15)', border: '1px solid rgba(34, 197, 94, 0.2)', color: '#4ade80', cursor: 'pointer' }}
+                                        >
+                                            <Check size={18} strokeWidth={2.5} />
+                                        </button>
+                                        <button
+                                            onClick={() => { setShowAddForm(false); setNewPortfolioName(''); }}
+                                            className="p-2 rounded-xl transition-all"
+                                            style={{ background: 'rgba(255, 255, 255, 0.05)', border: '1px solid rgba(255, 255, 255, 0.1)', color: 'rgba(255, 255, 255, 0.6)', cursor: 'pointer' }}
+                                        >
+                                            <X size={18} strokeWidth={2.5} />
+                                        </button>
+                                    </div>
                                 </div>
                             ) : (
                                 <button
