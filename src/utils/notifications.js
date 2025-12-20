@@ -52,6 +52,9 @@ export async function scheduleDailyNotifications(timeStr, portfolios) {
 
         const [hours, minutes] = timeStr.split(':').map(Number);
 
+        // DEPRECATED: Multi-notification logic (One per portfolio)
+        // Kept for future use if live updates are implemented
+        /*
         const notifications = portfolios
             .filter(p => p.id && p.id !== 'all')
             .map((p, index) => ({
@@ -65,10 +68,23 @@ export async function scheduleDailyNotifications(timeStr, portfolios) {
                 },
                 extra: { portfolioId: p.id }
             }));
+        */
+
+        // NEW: Single consolidated notification
+        const notifications = [{
+            id: 1,
+            title: 'Your Daily Portfolio Summary 📈',
+            body: 'Tap to see how your portfolios are performing today!',
+            schedule: {
+                on: { hour: hours, minute: minutes },
+                allowWhileIdle: true,
+                every: 'day'
+            }
+        }];
 
         if (notifications.length > 0) {
             await LocalNotifications.schedule({ notifications });
-            console.log(`Scheduled ${notifications.length} daily notifications for ${timeStr}`);
+            console.log(`Scheduled daily notification for ${timeStr}`);
         }
 
         return true;
