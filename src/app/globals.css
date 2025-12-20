@@ -99,6 +99,31 @@ a {
   }
 }
 
+/* Pill buttons - used for portfolio selector, timeframe buttons, etc. */
+.pill {
+  padding: 8px 16px;
+  border-radius: 9999px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  white-space: nowrap;
+  background: rgba(255, 255, 255, 0.05);
+  color: rgba(255, 255, 255, 0.6);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.pill:hover {
+  background: rgba(255, 255, 255, 0.1);
+  color: rgba(255, 255, 255, 0.8);
+}
+
+.pill.active {
+  background: white;
+  color: black;
+  border-color: white;
+}
+
 .text-muted {
   color: var(--text-muted);
 }

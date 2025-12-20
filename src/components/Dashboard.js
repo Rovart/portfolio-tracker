@@ -615,38 +615,30 @@ export default function Dashboard() {
         <>
             <PullToRefresh onRefresh={handleRefresh} disabled={holdings.length === 0}>
                 <div className="container animate-enter">
-                    {/* Portfolio Selector - only show if more than 1 portfolio */}
-                    {portfolios.length > 1 && (
-                        <div className="flex gap-2 mb-4 overflow-x-auto pb-2 -mx-2 px-2" style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}>
-                            <button
-                                onClick={() => handlePortfolioChange('all')}
-                                className={`px-4 py-2 rounded-full font-medium text-sm whitespace-nowrap transition-all ${currentPortfolioId === 'all'
-                                    ? 'bg-white text-black'
-                                    : 'bg-white/5 text-white/60 hover:bg-white/10'
-                                    }`}
-                                style={{ border: 'none', cursor: 'pointer' }}
-                            >
-                                All Portfolios
-                            </button>
-                            {portfolios.map(p => (
-                                <button
-                                    key={p.id}
-                                    onClick={() => handlePortfolioChange(p.id)}
-                                    className={`px-4 py-2 rounded-full font-medium text-sm whitespace-nowrap transition-all ${currentPortfolioId === p.id
-                                        ? 'bg-white text-black'
-                                        : 'bg-white/5 text-white/60 hover:bg-white/10'
-                                        }`}
-                                    style={{ border: 'none', cursor: 'pointer' }}
-                                >
-                                    {p.name}
-                                </button>
-                            ))}
-                        </div>
-                    )}
-
                     <div className="grid-desktop">
                         {/* Main Content: Charts & Performance */}
                         <div className="main-content">
+                            {/* Portfolio Selector - only show if more than 1 portfolio */}
+                            {portfolios.length > 1 && (
+                                <div className="flex gap-2 mb-6 overflow-x-auto" style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}>
+                                    <button
+                                        onClick={() => handlePortfolioChange('all')}
+                                        className={`pill ${currentPortfolioId === 'all' ? 'active' : ''}`}
+                                    >
+                                        All
+                                    </button>
+                                    {portfolios.map(p => (
+                                        <button
+                                            key={p.id}
+                                            onClick={() => handlePortfolioChange(p.id)}
+                                            className={`pill ${currentPortfolioId === p.id ? 'active' : ''}`}
+                                        >
+                                            {p.name}
+                                        </button>
+                                    ))}
+                                </div>
+                            )}
+
                             <header className="flex flex-col items-start px-1 pb-8 gap-4 w-full">
                                 <div className="flex items-center justify-between w-full gap-2">
                                     <div className="flex items-center gap-2 min-w-0">
@@ -830,12 +822,12 @@ export default function Dashboard() {
                     onClick={openAddModal}
                     className="btn fixed hover-scale active-scale shadow-lg"
                     style={{
-                        bottom: '32px',
-                        right: '32px',
-                        width: '64px',
-                        height: '64px',
+                        bottom: '24px',
+                        right: '24px',
+                        width: '56px',
+                        height: '56px',
                         borderRadius: '50%',
-                        fontSize: '32px',
+                        fontSize: '24px',
                         lineHeight: '1',
                         display: 'flex',
                         alignItems: 'center',
@@ -843,10 +835,10 @@ export default function Dashboard() {
                         background: 'white',
                         color: 'black',
                         zIndex: 10,
-                        boxShadow: '0 12px 40px rgba(0,0,0,0.5)'
+                        boxShadow: '0 8px 32px rgba(0,0,0,0.4)'
                     }}
                 >
-                    <Search size={32} />
+                    <Search size={24} />
                 </button>
             )}
         </>

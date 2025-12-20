@@ -228,13 +228,9 @@ export default function SettingsModal({ onClose, onPortfolioChange, currentPortf
                     <button
                         key={tab.id}
                         onClick={() => setActiveTab(tab.id)}
-                        className={`flex items-center gap-2 px-4 py-2 rounded-full font-medium text-sm whitespace-nowrap transition-all ${activeTab === tab.id
-                                ? 'bg-white text-black'
-                                : 'bg-white/5 text-white/60 hover:bg-white/10'
-                            }`}
-                        style={{ border: 'none', cursor: 'pointer' }}
+                        className={`pill flex items-center gap-2 ${activeTab === tab.id ? 'active' : ''}`}
                     >
-                        <tab.icon size={16} />
+                        <tab.icon size={14} />
                         {tab.label}
                     </button>
                 ))}
@@ -242,152 +238,155 @@ export default function SettingsModal({ onClose, onPortfolioChange, currentPortf
 
             {/* Content */}
             <div className="flex-1 overflow-y-auto p-4 sm:p-6">
-                {activeTab === 'portfolios' && (
-                    <div className="flex flex-col gap-4">
-                        <p className="text-muted text-sm">
-                            Manage your portfolios. Each portfolio tracks assets independently.
-                        </p>
+                <div style={{ maxWidth: '600px', margin: '0 auto' }}>
+                    {activeTab === 'portfolios' && (
+                        <div className="flex flex-col gap-4">
+                            <p className="text-muted text-sm">
+                                Manage your portfolios. Each portfolio tracks assets independently.
+                            </p>
 
-                        {/* Portfolio List */}
-                        <div className="flex flex-col gap-3">
-                            {portfolios.map(portfolio => (
-                                <div
-                                    key={portfolio.id}
-                                    className="flex items-center justify-between p-4 rounded-2xl bg-white/5 border border-white/10"
-                                >
-                                    {editingId === portfolio.id ? (
-                                        <div className="flex items-center gap-2 flex-1">
-                                            <input
-                                                type="text"
-                                                value={editingName}
-                                                onChange={e => setEditingName(e.target.value)}
-                                                className="flex-1 bg-white/10 border border-white/20 rounded-lg px-3 py-2 text-white"
-                                                autoFocus
-                                            />
-                                            <button
-                                                onClick={() => handleUpdatePortfolio(portfolio.id)}
-                                                className="p-2 rounded-full bg-green-500/20 text-green-400"
-                                                style={{ border: 'none', cursor: 'pointer' }}
-                                            >
-                                                <Check size={18} />
-                                            </button>
-                                            <button
-                                                onClick={() => { setEditingId(null); setEditingName(''); }}
-                                                className="p-2 rounded-full bg-white/10 text-white/60"
-                                                style={{ border: 'none', cursor: 'pointer' }}
-                                            >
-                                                <X size={18} />
-                                            </button>
-                                        </div>
-                                    ) : (
-                                        <>
-                                            <span className="font-medium">{portfolio.name}</span>
-                                            <div className="flex items-center gap-2">
+                            {/* Portfolio List */}
+                            <div className="flex flex-col gap-3">
+                                {portfolios.map(portfolio => (
+                                    <div
+                                        key={portfolio.id}
+                                        className="flex items-center justify-between p-4 rounded-xl"
+                                        style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)' }}
+                                    >
+                                        {editingId === portfolio.id ? (
+                                            <div className="flex items-center gap-2 flex-1">
+                                                <input
+                                                    type="text"
+                                                    value={editingName}
+                                                    onChange={e => setEditingName(e.target.value)}
+                                                    className="flex-1 bg-white/10 border border-white/20 rounded-lg px-3 py-2 text-white"
+                                                    autoFocus
+                                                />
                                                 <button
-                                                    onClick={() => { setEditingId(portfolio.id); setEditingName(portfolio.name); }}
-                                                    className="p-2 rounded-full hover:bg-white/10 text-white/60"
-                                                    style={{ background: 'transparent', border: 'none', cursor: 'pointer' }}
+                                                    onClick={() => handleUpdatePortfolio(portfolio.id)}
+                                                    className="p-2 rounded-full bg-green-500/20 text-green-400"
+                                                    style={{ border: 'none', cursor: 'pointer' }}
                                                 >
-                                                    <Edit2 size={16} />
+                                                    <Check size={18} />
                                                 </button>
-                                                {portfolios.length > 1 && (
+                                                <button
+                                                    onClick={() => { setEditingId(null); setEditingName(''); }}
+                                                    className="p-2 rounded-full bg-white/10 text-white/60"
+                                                    style={{ border: 'none', cursor: 'pointer' }}
+                                                >
+                                                    <X size={18} />
+                                                </button>
+                                            </div>
+                                        ) : (
+                                            <>
+                                                <span className="font-medium">{portfolio.name}</span>
+                                                <div className="flex items-center gap-2">
                                                     <button
-                                                        onClick={() => handleDeletePortfolio(portfolio.id)}
-                                                        className="p-2 rounded-full hover:bg-red-500/20 text-red-400"
+                                                        onClick={() => { setEditingId(portfolio.id); setEditingName(portfolio.name); }}
+                                                        className="p-2 rounded-full hover:bg-white/10 text-white/60"
                                                         style={{ background: 'transparent', border: 'none', cursor: 'pointer' }}
                                                     >
-                                                        <Trash2 size={16} />
+                                                        <Edit2 size={16} />
                                                     </button>
-                                                )}
-                                            </div>
-                                        </>
-                                    )}
+                                                    {portfolios.length > 1 && (
+                                                        <button
+                                                            onClick={() => handleDeletePortfolio(portfolio.id)}
+                                                            className="p-2 rounded-full hover:bg-red-500/20 text-red-400"
+                                                            style={{ background: 'transparent', border: 'none', cursor: 'pointer' }}
+                                                        >
+                                                            <Trash2 size={16} />
+                                                        </button>
+                                                    )}
+                                                </div>
+                                            </>
+                                        )}
+                                    </div>
+                                ))}
+                            </div>
+
+                            {/* Add New Portfolio */}
+                            {showAddForm ? (
+                                <div className="flex items-center gap-2 p-4 rounded-xl" style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)' }}>
+                                    <input
+                                        type="text"
+                                        value={newPortfolioName}
+                                        onChange={e => setNewPortfolioName(e.target.value)}
+                                        placeholder="Portfolio name..."
+                                        className="flex-1 bg-white/10 border border-white/20 rounded-lg px-3 py-2 text-white"
+                                        autoFocus
+                                    />
+                                    <button
+                                        onClick={handleAddPortfolio}
+                                        className="p-2 rounded-full bg-green-500/20 text-green-400"
+                                        style={{ border: 'none', cursor: 'pointer' }}
+                                    >
+                                        <Check size={18} />
+                                    </button>
+                                    <button
+                                        onClick={() => { setShowAddForm(false); setNewPortfolioName(''); }}
+                                        className="p-2 rounded-full bg-white/10 text-white/60"
+                                        style={{ border: 'none', cursor: 'pointer' }}
+                                    >
+                                        <X size={18} />
+                                    </button>
                                 </div>
-                            ))}
+                            ) : (
+                                <button
+                                    onClick={() => setShowAddForm(true)}
+                                    className="flex items-center justify-center gap-2 p-4 rounded-xl text-muted hover:text-white transition-all"
+                                    style={{ cursor: 'pointer', background: 'transparent', border: '1px dashed rgba(255,255,255,0.15)' }}
+                                >
+                                    <Plus size={20} />
+                                    <span>Add Portfolio</span>
+                                </button>
+                            )}
                         </div>
+                    )}
 
-                        {/* Add New Portfolio */}
-                        {showAddForm ? (
-                            <div className="flex items-center gap-2 p-4 rounded-2xl bg-white/5 border border-white/10">
-                                <input
-                                    type="text"
-                                    value={newPortfolioName}
-                                    onChange={e => setNewPortfolioName(e.target.value)}
-                                    placeholder="Portfolio name..."
-                                    className="flex-1 bg-white/10 border border-white/20 rounded-lg px-3 py-2 text-white"
-                                    autoFocus
-                                />
-                                <button
-                                    onClick={handleAddPortfolio}
-                                    className="p-2 rounded-full bg-green-500/20 text-green-400"
-                                    style={{ border: 'none', cursor: 'pointer' }}
-                                >
-                                    <Check size={18} />
-                                </button>
-                                <button
-                                    onClick={() => { setShowAddForm(false); setNewPortfolioName(''); }}
-                                    className="p-2 rounded-full bg-white/10 text-white/60"
-                                    style={{ border: 'none', cursor: 'pointer' }}
-                                >
-                                    <X size={18} />
-                                </button>
-                            </div>
-                        ) : (
+                    {activeTab === 'export' && (
+                        <div className="flex flex-col gap-4">
+                            <p className="text-muted text-sm">
+                                Export your transactions to CSV or import from a CSV file.
+                            </p>
+
                             <button
-                                onClick={() => setShowAddForm(true)}
-                                className="flex items-center justify-center gap-2 p-4 rounded-2xl bg-white/5 border border-dashed border-white/20 text-white/60 hover:bg-white/10 hover:text-white transition-all"
-                                style={{ cursor: 'pointer' }}
+                                onClick={handleExportCsv}
+                                className="flex items-center gap-3 p-4 rounded-xl hover:bg-white/5 transition-all"
+                                style={{ cursor: 'pointer', textAlign: 'left', border: '1px solid rgba(255,255,255,0.08)', background: 'rgba(255,255,255,0.03)' }}
                             >
-                                <Plus size={20} />
-                                <span>Add Portfolio</span>
+                                <div className="p-3 rounded-full bg-blue-500/20">
+                                    <Download size={20} className="text-blue-400" />
+                                </div>
+                                <div>
+                                    <div className="font-medium">Export CSV</div>
+                                    <div className="text-sm text-muted">Download all transactions as CSV</div>
+                                </div>
                             </button>
-                        )}
-                    </div>
-                )}
 
-                {activeTab === 'export' && (
-                    <div className="flex flex-col gap-4">
-                        <p className="text-muted text-sm">
-                            Export your transactions to CSV or import from a CSV file.
-                        </p>
+                            <button
+                                onClick={() => fileInputRef.current?.click()}
+                                className="flex items-center gap-3 p-4 rounded-xl hover:bg-white/5 transition-all"
+                                style={{ cursor: 'pointer', textAlign: 'left', border: '1px solid rgba(255,255,255,0.08)', background: 'rgba(255,255,255,0.03)' }}
+                            >
+                                <div className="p-3 rounded-full bg-green-500/20">
+                                    <Upload size={20} className="text-green-400" />
+                                </div>
+                                <div>
+                                    <div className="font-medium">Import CSV</div>
+                                    <div className="text-sm text-muted">Import transactions from CSV file</div>
+                                </div>
+                            </button>
 
-                        <button
-                            onClick={handleExportCsv}
-                            className="flex items-center gap-3 p-4 rounded-2xl bg-white/5 border border-white/10 hover:bg-white/10 transition-all"
-                            style={{ cursor: 'pointer', textAlign: 'left' }}
-                        >
-                            <div className="p-3 rounded-full bg-blue-500/20">
-                                <Download size={20} className="text-blue-400" />
-                            </div>
-                            <div>
-                                <div className="font-medium">Export CSV</div>
-                                <div className="text-sm text-muted">Download all transactions as CSV</div>
-                            </div>
-                        </button>
-
-                        <button
-                            onClick={() => fileInputRef.current?.click()}
-                            className="flex items-center gap-3 p-4 rounded-2xl bg-white/5 border border-white/10 hover:bg-white/10 transition-all"
-                            style={{ cursor: 'pointer', textAlign: 'left' }}
-                        >
-                            <div className="p-3 rounded-full bg-green-500/20">
-                                <Upload size={20} className="text-green-400" />
-                            </div>
-                            <div>
-                                <div className="font-medium">Import CSV</div>
-                                <div className="text-sm text-muted">Import transactions from CSV file</div>
-                            </div>
-                        </button>
-
-                        <input
-                            ref={fileInputRef}
-                            type="file"
-                            accept=".csv"
-                            onChange={handleImportCsv}
-                            style={{ display: 'none' }}
-                        />
-                    </div>
-                )}
+                            <input
+                                ref={fileInputRef}
+                                type="file"
+                                accept=".csv"
+                                onChange={handleImportCsv}
+                                style={{ display: 'none' }}
+                            />
+                        </div>
+                    )}
+                </div>
             </div>
         </div>
     );
