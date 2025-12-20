@@ -27,7 +27,8 @@ export default function TransactionModal({ mode, holding, transactions, onClose,
     const [priceData, setPriceData] = useState({
         price: null, // Don't use cached price - wait for fresh fetch with FX
         changePercent: null,
-        fxRate: 1,
+        fxRate: 1,          // For display (may be 1 for bare currencies to avoid double conversion)
+        actualFxRate: 1,    // True FX rate for calculations (used as fallback in avg price)
         historicalFx: {},
         isLoading: true // Always start loading
     });
@@ -144,23 +145,29 @@ export default function TransactionModal({ mode, holding, transactions, onClose,
                         }
                     }
 
+                    // Track the actual FX rate for calculations (separate from display fxRate)
+                    let actualFxRateValue = fetchedFxRate;
+
                     if (bareCurrCode) {
                         // BARE CURRENCY CASE:
-                        // For EUR (EURUSD=X) with baseCurrency USD: price IS the rate, fxRate = 1
+                        // For EUR (EURUSD=X) with baseCurrency USD: price IS the rate, fxRate = 1 for display
                         // For EUR (EURUSD=X) with baseCurrency EUR: price = 1, fxRate = 1
                         if (bareCurrCode === baseCurrency) {
                             // Holding EUR, displaying in EUR → price is 1
                             fetchedPrice = 1;
                             fetchedFxRate = 1;
+                            actualFxRateValue = 1;
                         } else {
-                            // Holding EUR, displaying in USD → price = EURUSD rate, fxRate = 1
-                            // fetchedPrice is already the rate from the quote
-                            fetchedFxRate = 1; // Don't double-convert!
+                            // Holding EUR, displaying in USD → price = EURUSD rate, fxRate = 1 for display
+                            // But save the actual rate for avg price calculation fallback
+                            actualFxRateValue = fetchedPrice; // The price IS the FX rate
+                            fetchedFxRate = 1; // Don't double-convert for display!
                         }
                     } else {
                         // REGULAR ASSET CASE: normal FX conversion
                         if (fetchedCurrency === baseCurrency) {
                             fetchedFxRate = 1;
+                            actualFxRateValue = 1;
                         } else {
                             const expectedFxSymbol = `${fetchedCurrency}${baseCurrency}=X`;
                             let fxQuote = json.data.find(q => q.symbol === expectedFxSymbol);
@@ -179,11 +186,15 @@ export default function TransactionModal({ mode, holding, transactions, onClose,
 
                             if (fxQuote && fxQuote.price) {
                                 fetchedFxRate = fxQuote.price;
+                                actualFxRateValue = fxQuote.price;
                             } else {
                                 console.warn(`Could not get FX rate for ${expectedFxSymbol}, using 1`);
                             }
                         }
                     }
+
+                    // Store actualFxRate for later use
+                    var fetchedActualFxRate = actualFxRateValue;
                 }
 
                 // Fetch historical FX if needed
@@ -215,6 +226,7 @@ export default function TransactionModal({ mode, holding, transactions, onClose,
                     price: fetchedPrice,
                     changePercent: fetchedChange,
                     fxRate: fetchedFxRate,
+                    actualFxRate: fetchedActualFxRate || fetchedFxRate,
                     historicalFx: fetchedHMap,
                     isLoading: false
                 });
@@ -230,7 +242,7 @@ export default function TransactionModal({ mode, holding, transactions, onClose,
     }, [selectedAsset?.symbol, baseCurrency]);
 
     // Destructure for easy access throughout component
-    const { price: assetPrice, changePercent, fxRate, historicalFx, isLoading: loadingPrice } = priceData;
+    const { price: assetPrice, changePercent, fxRate, actualFxRate, historicalFx, isLoading: loadingPrice } = priceData;
 
     const assetTransactions = selectedAsset
         ? transactions.filter(t => {
@@ -287,8 +299,9 @@ export default function TransactionModal({ mode, holding, transactions, onClose,
                 // Get FX rate to convert from txQuoteCurrency to baseCurrency
                 let hFx = 1;
                 if (txQuoteCurr !== baseCurrency) {
-                    // Need FX conversion - use historical if available, otherwise current fxRate
-                    hFx = historicalFx[dateStr] || fxRate || 1;
+                    // Need FX conversion - use historical if available, otherwise actualFxRate (not fxRate!)
+                    // actualFxRate is the true FX rate, fxRate may be 1 for bare currencies to avoid double conversion
+                    hFx = historicalFx[dateStr] || actualFxRate || 1;
                 }
 
                 if (['BUY', 'DEPOSIT'].includes(t.type)) {
@@ -310,7 +323,7 @@ export default function TransactionModal({ mode, holding, transactions, onClose,
 
         const avgBase = buyAmount > 0 ? (totalCostBase / buyAmount) : 0;
         return { currentBalance: totalAmount, averagePurchasePrice: avgBase };
-    }, [transactions, selectedAsset?.symbol, selectedAsset?.currency, selectedAsset?.isBareCurrencyOrigin, historicalFx, fxRate, baseCurrency]);
+    }, [transactions, selectedAsset?.symbol, selectedAsset?.currency, selectedAsset?.isBareCurrencyOrigin, historicalFx, actualFxRate, baseCurrency]);
 
     const handleAssetSelect = (asset) => {
         // Calculate current balance for the selected asset from transaction history
