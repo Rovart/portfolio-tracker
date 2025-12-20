@@ -70,11 +70,13 @@ export function calculateHoldings(transactions, priceMap, baseCurrency = 'USD') 
         if (type === 'BUY') {
             balances[base] += bAmt;
             cashFlow[base] += qAmt;
-            if (quote) balances[quote] -= qAmt;
+            // Only affect quote balance if affectsFiatBalance is true (checkbox was checked)
+            if (quote && tx.affectsFiatBalance !== false) balances[quote] -= qAmt;
         } else if (type === 'SELL') {
             balances[base] -= bAmt;
             cashFlow[base] -= qAmt;
-            if (quote) balances[quote] += qAmt;
+            // Only affect quote balance if affectsFiatBalance is true (checkbox was checked)
+            if (quote && tx.affectsFiatBalance !== false) balances[quote] += qAmt;
         } else if (type === 'DEPOSIT') {
             balances[base] += bAmt;
         } else if (type === 'WITHDRAW') {

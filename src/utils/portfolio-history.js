@@ -52,10 +52,12 @@ export function calculatePortfolioHistory(transactions, historicalPrices, baseCu
 
             if (type === 'BUY') {
                 currentBalances[base] += bAmt;
-                if (quote) currentBalances[quote] -= qAmt;
+                // Only affect quote balance if affectsFiatBalance is true
+                if (quote && tx.affectsFiatBalance !== false) currentBalances[quote] -= qAmt;
             } else if (type === 'SELL') {
                 currentBalances[base] -= bAmt;
-                if (quote) currentBalances[quote] += qAmt;
+                // Only affect quote balance if affectsFiatBalance is true
+                if (quote && tx.affectsFiatBalance !== false) currentBalances[quote] += qAmt;
             } else if (type === 'DEPOSIT') {
                 currentBalances[base] += bAmt;
             } else if (type === 'WITHDRAW') {
