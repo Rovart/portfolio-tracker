@@ -325,13 +325,25 @@ export default function Dashboard() {
 
             // Pass 2: Fetch history for all base assets and discovered quote currencies
             // Using cached history with timeframe-aware TTLs (5min for 1D, 15min for 1W, 1hr for others)
-            const allSymbolsToFetch = [...new Set([...baseAssets, ...[...discoveredCurrencies].map(c => `${c}${baseCurrency}=X`)])];
+            // Upgrade bare currencies (AUD) to USD pairs (AUDUSD=X) for history fetching
+            const upgradedBaseAssets = baseAssets.map(sym => {
+                const s = sym.toUpperCase();
+                // Skip already-formatted symbols
+                if (s.includes('=X') || s.includes('-') || s === 'USD') return sym;
+                // Upgrade bare 3-letter currencies to USD pairs
+                if (s.length === 3 && /^[A-Z]{3}$/.test(s)) {
+                    return `${s}USD=X`;
+                }
+                return sym;
+            });
+            const fxSymbols = [...discoveredCurrencies].map(c => c === 'USD' ? null : `${c}USD=X`).filter(Boolean);
+            const allSymbolsToFetch = [...new Set([...upgradedBaseAssets, ...fxSymbols])];
 
             await Promise.all(allSymbolsToFetch.map(async (fetchSym) => {
                 if (fetchSym === 'USD' || !fetchSym) return;
                 try {
-                    // Check if this is an FX symbol
-                    const fxRegex = new RegExp(`^([A-Z]{3})${baseCurrency}(=X)$`, 'i');
+                    // Check if this is an FX symbol (now checking for USD pairs)
+                    const fxRegex = /^([A-Z]{3})USD(=X)$/i;
                     const isFxSymbol = fxRegex.test(fetchSym);
 
                     let historyData = [];
