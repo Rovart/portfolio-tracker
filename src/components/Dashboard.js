@@ -618,28 +618,18 @@ export default function Dashboard() {
         <>
             {/* Portfolio Selector - OUTSIDE PullToRefresh to allow horizontal scrolling */}
             {portfolios.length > 1 && (
-                <div
-                    style={{
-                        padding: '16px',
-                        paddingTop: 'calc(16px + env(safe-area-inset-top, 0px))',
-                        paddingBottom: '8px',
-                        maxWidth: '600px',
-                        margin: '0 auto',
-                        width: '100%',
-                        boxSizing: 'border-box'
-                    }}
-                >
+                <div className="container" style={{ paddingBottom: '8px' }}>
                     <div
+                        className="no-scrollbar"
                         style={{
                             display: 'flex',
                             gap: '8px',
                             overflowX: 'scroll',
                             overflowY: 'hidden',
                             WebkitOverflowScrolling: 'touch',
-                            scrollbarWidth: 'none',
-                            msOverflowStyle: 'none',
                             touchAction: 'pan-x',
-                            paddingBottom: '4px'
+                            paddingBottom: '4px',
+                            width: '100%'
                         }}
                         onTouchStart={(e) => e.stopPropagation()}
                         onTouchMove={(e) => e.stopPropagation()}
