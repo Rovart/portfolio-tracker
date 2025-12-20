@@ -220,34 +220,37 @@ export default function Dashboard() {
                     }
                 });
 
-                // Pass 2: Fetch any missing exchange rates
-                const fxToFetch = [...discoveredCurrencies].filter(c => c !== baseCurrency);
+                // Pass 2: Fetch any missing exchange rates (always in USD pairs)
+                // We need {Currency}USD=X so that portfolio-logic can pivot correctly
+                const fxToFetch = [...discoveredCurrencies].filter(c => c !== 'USD' && c !== baseCurrency);
                 if (fxToFetch.length > 0) {
-                    const fxSymbols = fxToFetch.map(c => `${c}${baseCurrency}=X`);
+                    const fxSymbols = fxToFetch.map(c => `${c}USD=X`);
                     const fxRes = await fetch(`/api/quote?symbols=${fxSymbols.join(',')}`);
                     const fxResult = await fxRes.json();
 
                     if (fxResult.data) {
                         fxResult.data.forEach(q => {
-                            const regex = new RegExp(`^([A-Z]{3})${baseCurrency}(=X)$`, 'i');
-                            const fxMatch = q.symbol.match(regex);
-                            if (fxMatch) {
-                                const currencyCode = fxMatch[1].toUpperCase();
-                                pxMap[currencyCode] = { price: q.price, changePercent: q.changePercent };
-                                pxMap[q.symbol] = { price: q.price, changePercent: q.changePercent };
+                            // Store the full symbol
+                            pxMap[q.symbol] = { price: q.price, changePercent: q.changePercent, currency: 'USD', quoteType: 'CURRENCY' };
+
+                            // Also store by bare currency
+                            const bare = q.symbol.replace('USD=X', '');
+                            if (bare.length === 3) {
+                                pxMap[bare] = { price: q.price, changePercent: q.changePercent, currency: 'USD', quoteType: 'CURRENCY' };
                             }
                         });
                     }
                 }
 
-                // If base is not USD, we should also try to ensure we have USD converter if needed
-                if (baseCurrency !== 'USD' && !pxMap['USD']) {
-                    const usdRes = await fetch(`/api/quote?symbols=USD${baseCurrency}=X`);
+                // Ensure we have the base currency to USD rate for pivot calculations
+                // portfolio-logic expects {baseCurrency}USD=X to exist
+                if (baseCurrency !== 'USD' && !pxMap[`${baseCurrency}USD=X`]) {
+                    const usdRes = await fetch(`/api/quote?symbols=${baseCurrency}USD=X`);
                     const usdResult = await usdRes.json();
                     if (usdResult.data && usdResult.data[0]) {
                         const q = usdResult.data[0];
-                        pxMap['USD'] = { price: q.price, changePercent: q.changePercent };
-                        pxMap[`USD${baseCurrency}=X`] = { price: q.price, changePercent: q.changePercent };
+                        pxMap[`${baseCurrency}USD=X`] = { price: q.price, changePercent: q.changePercent, currency: 'USD', quoteType: 'CURRENCY' };
+                        pxMap[baseCurrency] = { price: q.price, changePercent: q.changePercent, currency: 'USD', quoteType: 'CURRENCY' };
                     }
                 }
 
