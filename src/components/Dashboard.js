@@ -160,7 +160,16 @@ export default function Dashboard() {
 
             try {
                 // Pass 1: Fetch asset prices and discover currencies
-                const res = await fetch(`/api/quote?symbols=${baseAssets.join(',')}`);
+                // Upgrade bare currencies (e.g. AUD) to FX pairs (AUDUSD=X) for fetching if they differ from base
+                const upgradedBaseAssets = baseAssets.map(asset => {
+                    const s = asset.toUpperCase();
+                    if (s.length === 3 && ['AUD', 'EUR', 'GBP', 'CAD', 'SGD', 'NZD', 'JPY', 'CHF', 'HKD', 'CNY'].includes(s) && s !== baseCurrency) {
+                        return `${s}${baseCurrency}=X`;
+                    }
+                    return asset;
+                });
+
+                const res = await fetch(`/api/quote?symbols=${upgradedBaseAssets.join(',')}`);
                 const result = await res.json();
 
                 if (!result.data) return;

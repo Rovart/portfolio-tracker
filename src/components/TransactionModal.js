@@ -110,13 +110,10 @@ export default function TransactionModal({ mode, holding, transactions, onClose,
                 fetchSym += '-USD';
             }
 
-            // FIAT UPGRADE: If it's a bare currency (AUD) or bare Yahoo code (AUD=X), 
-            // force the pair (AUDUSD=X) for fetching historical data
-            const isBareFiat = (fetchSym.length === 3 && fetchSym === quoteCurr) ||
-                (fetchSym.endsWith('=X') && fetchSym.replace('=X', '').length <= 4);
-
-            if (isBareFiat && quoteCurr !== baseCurrency) {
-                fetchSym = `${quoteCurr}${baseCurrency}=X`;
+            // Also upgrade bare fiat symbols (e.g. AUD -> AUDUSD=X)
+            const isBareFiatCode = (fetchSym.length === 3 && ['AUD', 'EUR', 'GBP', 'CAD', 'SGD', 'NZD', 'JPY', 'CHF', 'HKD', 'CNY'].includes(fetchSym.toUpperCase()));
+            if (isBareFiatCode && fetchSym.toUpperCase() !== baseCurrency) {
+                fetchSym = `${fetchSym.toUpperCase()}${baseCurrency}=X`;
             }
 
             let symbolsToFetch = [fetchSym];
