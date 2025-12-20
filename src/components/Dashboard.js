@@ -178,6 +178,16 @@ export default function Dashboard() {
                     if (q.currency && q.currency.toUpperCase() !== baseCurrency) {
                         discoveredCurrencies.add(q.currency.toUpperCase());
                     }
+
+                    // Detect bare currencies (e.g., EUR=X) and add them to discovered currencies
+                    // for FX conversion. EUR=X means we have EUR, so we need EURUSD=X
+                    if (q.symbol && q.symbol.endsWith('=X')) {
+                        const base = q.symbol.replace('=X', '');
+                        // Bare currency if it's 3-4 chars and not a pair like EURUSD
+                        if (base.length <= 4 && base !== baseCurrency) {
+                            discoveredCurrencies.add(base.toUpperCase());
+                        }
+                    }
                 });
 
                 // Pass 2: Fetch any missing exchange rates
@@ -264,6 +274,13 @@ export default function Dashboard() {
                     result.data.forEach(q => {
                         if (q.currency && q.currency.toUpperCase() !== baseCurrency) {
                             discoveredCurrencies.add(q.currency.toUpperCase());
+                        }
+                        // Detect bare currencies (e.g., EUR=X) and add for FX conversion
+                        if (q.symbol && q.symbol.endsWith('=X')) {
+                            const base = q.symbol.replace('=X', '');
+                            if (base.length <= 4 && base !== baseCurrency) {
+                                discoveredCurrencies.add(base.toUpperCase());
+                            }
                         }
                     });
                 }
