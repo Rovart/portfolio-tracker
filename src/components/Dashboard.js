@@ -59,15 +59,9 @@ export default function Dashboard() {
 
                 // Determine initial portfolio:
                 // 1. Check for a portfolio marked as default (isDefault: true)
-                // 2. Fall back to saved preference
-                // 3. Fall back to 'all'
-                const defaultPortfolio = allPortfolios.find(p => p.isDefault);
-                let initialPortfolioId;
-                if (defaultPortfolio) {
-                    initialPortfolioId = defaultPortfolio.id;
-                } else {
-                    initialPortfolioId = await getSetting('current_portfolio', 'all');
-                }
+                // 2. If no favorite, always default to 'all'
+                const favPortfolio = allPortfolios.find(p => p.isDefault);
+                const initialPortfolioId = favPortfolio ? favPortfolio.id : 'all';
                 setCurrentPortfolioId(initialPortfolioId);
 
                 // Load transactions for current portfolio

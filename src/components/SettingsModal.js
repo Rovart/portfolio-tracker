@@ -86,12 +86,9 @@ export default function SettingsModal({ onClose, onPortfolioChange, currentPortf
         if (!confirm('Delete this portfolio and all its transactions?')) return;
         await deletePortfolio(id);
         loadPortfolios();
-        // If we deleted the current portfolio, switch to first available
+        // If we deleted the current portfolio, switch back to 'all'
         if (currentPortfolioId === id) {
-            const remaining = portfolios.filter(p => p.id !== id);
-            if (remaining.length > 0) {
-                onPortfolioChange(remaining[0].id);
-            }
+            onPortfolioChange('all');
         }
     };
 
@@ -300,8 +297,10 @@ export default function SettingsModal({ onClose, onPortfolioChange, currentPortf
     const handleImportMerge = async () => {
         if (!importConflict) return;
         await doImport(importConflict.transactions, importConflict.targetPortfolioId);
-        // Switch to the merged portfolio
-        onPortfolioChange(importConflict.targetPortfolioId);
+        // Switch to the merged portfolio ONLY if we weren't in 'All'
+        if (currentPortfolioId !== 'all') {
+            onPortfolioChange(importConflict.targetPortfolioId);
+        }
     };
 
     const handleImportCreateNew = async () => {
@@ -566,8 +565,8 @@ export default function SettingsModal({ onClose, onPortfolioChange, currentPortf
                         <div className="flex flex-col gap-4">
                             <div className="flex flex-col gap-2">
                                 <label className="text-muted text-xs font-semibold uppercase tracking-wider">Target Portfolio</label>
-                                {portfolios.length === 1 ? (
-                                    // Single portfolio - show as static text
+                                {portfolios.length === 1 && ioPortfolioId !== 'all' ? (
+                                    // Single portfolio and NOT in 'all' view - show as static text
                                     <div
                                         style={{
                                             width: '100%',
@@ -583,7 +582,7 @@ export default function SettingsModal({ onClose, onPortfolioChange, currentPortf
                                         {portfolios[0].name}
                                     </div>
                                 ) : (
-                                    // Multiple portfolios - show dropdown
+                                    // Multiple portfolios OR we are currently in 'all' view
                                     <select
                                         value={ioPortfolioId}
                                         onChange={(e) => setIoPortfolioId(e.target.value === 'all' ? 'all' : parseInt(e.target.value))}
