@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useMemo } from 'react';
 import { AreaChart, Area, XAxis, Tooltip, ResponsiveContainer, YAxis } from 'recharts';
-import { getCachedFxHistory, setCachedFxHistory } from '@/utils/fxCache';
+import { getCachedFxHistory, getCachedAssetHistory } from '@/utils/fxCache';
 
 const RANGES = ['1D', '1W', '1M', '3M', '1Y', 'ALL'];
 
@@ -15,15 +15,14 @@ export default function AssetChart({ symbol, chartSymbol, baseCurrency = 'USD', 
     // Determine if we need FX conversion
     const needsFxConversion = assetCurrency && assetCurrency !== baseCurrency;
 
-    // Fetch raw prices and FX history in parallel (FX uses cache)
+    // Fetch raw prices and FX history in parallel (both use cache)
     useEffect(() => {
         async function load() {
             setLoading(true);
             try {
-                // Fetch asset history
+                // Fetch asset history using cache
                 const targetSym = chartSymbol || symbol;
-                const pricePromise = fetch(`/api/history?symbol=${targetSym}&range=${range}`)
-                    .then(res => res.json());
+                const pricePromise = getCachedAssetHistory(targetSym, range);
 
                 // Fetch FX history using cache
                 let fxPromise = Promise.resolve({});
@@ -31,10 +30,11 @@ export default function AssetChart({ symbol, chartSymbol, baseCurrency = 'USD', 
                     fxPromise = getCachedFxHistory(assetCurrency, baseCurrency, range);
                 }
 
-                const [priceJson, fxData] = await Promise.all([pricePromise, fxPromise]);
+                const [priceData, fxData] = await Promise.all([pricePromise, fxPromise]);
 
-                if (priceJson.history && priceJson.history.length > 0) {
-                    setRawData(priceJson.history.map(p => ({
+                // getCachedAssetHistory returns array directly: [{date, price}]
+                if (priceData && priceData.length > 0) {
+                    setRawData(priceData.map(p => ({
                         date: p.date,
                         rawPrice: p.price
                     })));

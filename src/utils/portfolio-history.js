@@ -112,20 +112,43 @@ export function calculatePortfolioHistory(transactions, historicalPrices, baseCu
             // Skip this asset if we have no price (don't use 0, just skip contribution)
             if (localPrice === 0 && asset !== quoteCurr) continue;
 
-            // 2. Get FX rate
+            // 2. Get FX rate using USD-pivot strategy (same as portfolio-logic)
             let fxRate = 1;
             if (quoteCurr !== baseCurrency) {
-                const fxSym = `${quoteCurr}${baseCurrency}=X`;
-                const fxHistory = historicalPrices[fxSym] || historicalPrices[quoteCurr];
-                if (fxHistory) {
-                    const exactFx = fxHistory.find(p => p.date === timestamp || p.date.startsWith(timestamp));
-                    if (exactFx) {
-                        fxRate = parseFloat(exactFx.price) || 1;
-                        lastKnownPrices[fxSym] = fxRate;
-                    } else {
-                        fxRate = lastKnownPrices[fxSym] || 1;
+                // Pivot: quoteCurr -> USD -> baseCurrency
+                // Step 1: quoteCurr -> USD (e.g., HKDUSD=X)
+                let toUsdRate = 1;
+                if (quoteCurr !== 'USD') {
+                    const toUsdSym = `${quoteCurr}USD=X`;
+                    const toUsdHistory = historicalPrices[toUsdSym];
+                    if (toUsdHistory) {
+                        const exactEntry = toUsdHistory.find(p => p.date === timestamp || p.date.startsWith(timestamp));
+                        if (exactEntry) {
+                            toUsdRate = parseFloat(exactEntry.price) || 1;
+                            lastKnownPrices[toUsdSym] = toUsdRate;
+                        } else {
+                            toUsdRate = lastKnownPrices[toUsdSym] || 1;
+                        }
                     }
                 }
+
+                // Step 2: USD -> baseCurrency (1 / EURUSD=X)
+                let fromUsdRate = 1;
+                if (baseCurrency !== 'USD') {
+                    const baseUsdSym = `${baseCurrency}USD=X`;
+                    const baseUsdHistory = historicalPrices[baseUsdSym];
+                    if (baseUsdHistory) {
+                        const exactEntry = baseUsdHistory.find(p => p.date === timestamp || p.date.startsWith(timestamp));
+                        if (exactEntry && exactEntry.price) {
+                            fromUsdRate = 1 / parseFloat(exactEntry.price);
+                            lastKnownPrices[baseUsdSym + '-inv'] = fromUsdRate;
+                        } else {
+                            fromUsdRate = lastKnownPrices[baseUsdSym + '-inv'] || 1;
+                        }
+                    }
+                }
+
+                fxRate = toUsdRate * fromUsdRate;
             }
 
             totalValue += (amount * localPrice * fxRate);
