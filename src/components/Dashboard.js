@@ -487,24 +487,12 @@ export default function Dashboard() {
     };
 
     const handleSaveTransaction = async (tx) => {
-        // Clear history states to force a visual refresh
-        setRawHistory([]);
-        setHistoryLoading(true);
-
-        // Invalidate asset cache to force chart recalculation with new data
-        invalidateAssetCache(tx.baseCurrency);
-        if (tx.quoteCurrency) invalidateAssetCache(tx.quoteCurrency);
+        // We do NOT invalidate asset cache here. The price history of the asset hasn't changed,
+        // only our holdings. The portfolio history effect will run automatically when 'transactions' updates.
 
         const exists = transactions.find(t => t.id === tx.id);
         let updated;
         if (exists) {
-            // Also invalidate previous symbols if they were changed
-            if (exists.baseCurrency !== tx.baseCurrency) {
-                invalidateAssetCache(exists.baseCurrency);
-            }
-            if (exists.quoteCurrency && exists.quoteCurrency !== tx.quoteCurrency) {
-                invalidateAssetCache(exists.quoteCurrency);
-            }
             await updateTransaction(tx.id, tx);
             updated = transactions.map(t => t.id === tx.id ? tx : t);
         } else {
@@ -518,21 +506,11 @@ export default function Dashboard() {
             updated = [newTx, ...transactions];
         }
         setTransactions(updated);
-        // Secondary trigger to be absolutely sure
+        // Trigger generic refresh to ensure all effects run
         setRefreshTrigger(prev => prev + 1);
     };
 
     const handleDeleteTransaction = async (id) => {
-        const txToDelete = transactions.find(t => t.id === id);
-        if (txToDelete) {
-            // Clear history states to force a visual refresh
-            setRawHistory([]);
-            setHistoryLoading(true);
-
-            invalidateAssetCache(txToDelete.baseCurrency);
-            if (txToDelete.quoteCurrency) invalidateAssetCache(txToDelete.quoteCurrency);
-        }
-
         await deleteTransaction(id);
         const updated = transactions.filter(t => t.id !== id);
         setTransactions(updated);
