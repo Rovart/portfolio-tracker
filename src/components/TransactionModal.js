@@ -548,6 +548,11 @@ export default function TransactionModal({ mode, holding, transactions, onClose,
                                                             {tx.isReverse ? `${tx.type === 'BUY' ? 'Purchased' : 'Sold'} ${tx.baseCurrency} | ` : ''}
                                                             {new Date(tx.date).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' })}
                                                         </span>
+                                                        {tx.notes && (
+                                                            <span className="text-xs text-muted" style={{ fontStyle: 'italic', marginTop: '2px', opacity: 0.7 }}>
+                                                                {tx.notes}
+                                                            </span>
+                                                        )}
                                                     </div>
                                                 </div>
 
@@ -759,6 +764,7 @@ function TransactionForm({ holding, existingTx, transactions, onSave, onCancel, 
     const [amount, setAmount] = useState(existingTx?.baseAmount || '');
     const [price, setPrice] = useState(existingTx ? (existingTx.quoteAmount / (existingTx.baseAmount || 1)) : '');
     const [date, setDate] = useState(existingTx?.date ? new Date(existingTx.date).toISOString().split('T')[0] : new Date().toISOString().split('T')[0]);
+    const [notes, setNotes] = useState(existingTx?.notes || '');
 
     // Calculate quote balance to determine default toggle state
     const quoteBalance = useMemo(() => {
@@ -902,7 +908,9 @@ function TransactionForm({ holding, existingTx, transactions, onSave, onCancel, 
             // Track if this transaction should affect fiat balance
             affectsFiatBalance: useFiat,
             // Portfolio ID - use selected if in 'All' view, otherwise use current
-            portfolioId: showPortfolioSelector ? selectedPortfolioId : (existingTx?.portfolioId || (currentPortfolioId === 'all' ? 1 : currentPortfolioId))
+            portfolioId: showPortfolioSelector ? selectedPortfolioId : (existingTx?.portfolioId || (currentPortfolioId === 'all' ? 1 : currentPortfolioId)),
+            // Notes
+            notes: notes.trim() || null
         };
 
         onSave(tx);
@@ -1073,6 +1081,18 @@ function TransactionForm({ holding, existingTx, transactions, onSave, onCancel, 
                     className="input-reset"
                     value={date}
                     onChange={e => setDate(e.target.value)}
+                />
+            </div>
+
+            <div>
+                <label style={labelStyle}>Notes (optional)</label>
+                <textarea
+                    className="input-reset"
+                    placeholder="Add notes about this transaction..."
+                    value={notes}
+                    onChange={e => setNotes(e.target.value)}
+                    rows={2}
+                    style={{ resize: 'vertical', minHeight: '60px' }}
                 />
             </div>
 
