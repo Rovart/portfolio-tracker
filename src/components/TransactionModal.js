@@ -131,13 +131,28 @@ export default function TransactionModal({ mode, holding, transactions, onClose,
                         fetchedCurrency = (assetQuote.currency || quoteCurr).toUpperCase();
                     }
 
-                    // Now use the ACTUAL fetched currency for FX determination
-                    if (fetchedCurrency === baseCurrency) {
+                    // For bare currencies (EUR from EUR=X → EURUSD=X), override the currency
+                    // The asset we're holding IS the bare currency, not what Yahoo reports
+                    let bareCurrCode = null;
+                    if (selectedAsset.isBareCurrencyOrigin && fetchSym.endsWith('=X')) {
+                        const base = fetchSym.replace('=X', '');
+                        if (base.length > 4) {
+                            bareCurrCode = base.substring(0, 3).toUpperCase();
+                        } else {
+                            bareCurrCode = base.toUpperCase();
+                        }
+                    }
+
+                    // Determine which currency we use for FX
+                    const currencyForFx = bareCurrCode || fetchedCurrency;
+
+                    // Now use the correct currency for FX determination
+                    if (currencyForFx === baseCurrency) {
                         // Asset is already in base currency - no conversion needed
                         fetchedFxRate = 1;
                     } else {
                         // Need FX conversion - fetch the rate
-                        const expectedFxSymbol = `${fetchedCurrency}${baseCurrency}=X`;
+                        const expectedFxSymbol = `${currencyForFx}${baseCurrency}=X`;
 
                         // Check if we already have it in the initial fetch
                         let fxQuote = json.data.find(q => q.symbol === expectedFxSymbol);
@@ -163,17 +178,20 @@ export default function TransactionModal({ mode, holding, transactions, onClose,
                     }
                 }
 
-                // Fetch historical FX if needed (using actual fetched currency)
+                // Fetch historical FX if needed
+                // For bare currencies, use the bare currency code, not the Yahoo-reported currency
                 let fetchedHMap = {};
-                if (fetchedCurrency && fetchedCurrency !== baseCurrency) {
+                let currencyForHistory = fetchedCurrency;
+                if (selectedAsset.isBareCurrencyOrigin && fetchSym.endsWith('=X')) {
+                    const base = fetchSym.replace('=X', '');
+                    currencyForHistory = base.length > 4 ? base.substring(0, 3).toUpperCase() : base.toUpperCase();
+                }
+
+                if (currencyForHistory && currencyForHistory !== baseCurrency) {
                     try {
-                        const hRes = await fetch(`/api/history?symbol=${fetchedCurrency}${baseCurrency}=X&range=ALL`);
-                        const hJson = await hRes.json();
-                        if (hJson.history && hJson.history.length > 0) {
-                            hJson.history.forEach(d => {
-                                fetchedHMap[d.date.split('T')[0]] = d.price;
-                            });
-                        }
+                        // Use FX cache for historical data
+                        const { getCachedFxHistory } = await import('@/utils/fxCache');
+                        fetchedHMap = await getCachedFxHistory(currencyForHistory, baseCurrency, 'ALL');
                     } catch (e) {
                         console.error('Failed to fetch historical FX:', e);
                     }
@@ -227,6 +245,20 @@ export default function TransactionModal({ mode, holding, transactions, onClose,
 
         const normalizedSymbol = normalizeAsset(selectedAsset.symbol);
 
+        // Detect if this is a bare currency (EURUSD=X for EUR holdings)
+        const sym = selectedAsset.symbol || '';
+        const isBareOrigin = selectedAsset.isBareCurrencyOrigin;
+        let bareCurrCode = null;
+        if (isBareOrigin && sym.endsWith('=X')) {
+            // Extract EUR from EURUSD=X
+            const base = sym.replace('=X', '');
+            if (base.length > 4) {
+                bareCurrCode = base.substring(0, 3).toUpperCase();
+            } else {
+                bareCurrCode = base.toUpperCase();
+            }
+        }
+
         transactions
             .filter(t => normalizeAsset(t.baseCurrency) === normalizedSymbol)
             .forEach(t => {
@@ -234,9 +266,15 @@ export default function TransactionModal({ mode, holding, transactions, onClose,
                 const qAmt = parseFloat(t.quoteAmount) || 0;
                 const dateStr = t.date.split('T')[0];
 
-                // Use the transaction's quote currency, or fall back to asset's currency (not USD)
-                // If no quoteCurrency on transaction, assume you paid in the same currency the asset trades in
-                const txQuoteCurr = (t.quoteCurrency || selectedAsset.currency || 'USD').toUpperCase();
+                // For bare currencies (deposits), the asset currency is the bare currency code (e.g., EUR)
+                // For regular assets, use the transaction's quote currency or asset's currency
+                let txQuoteCurr;
+                if (isBareOrigin && bareCurrCode && t.type === 'DEPOSIT') {
+                    // For bare currency deposits, the deposited amount IS the currency itself
+                    txQuoteCurr = bareCurrCode;
+                } else {
+                    txQuoteCurr = (t.quoteCurrency || selectedAsset.currency || 'USD').toUpperCase();
+                }
 
                 // Get FX rate to convert from txQuoteCurrency to baseCurrency
                 let hFx = 1;
@@ -264,7 +302,7 @@ export default function TransactionModal({ mode, holding, transactions, onClose,
 
         const avgBase = buyAmount > 0 ? (totalCostBase / buyAmount) : 0;
         return { currentBalance: totalAmount, averagePurchasePrice: avgBase };
-    }, [transactions, selectedAsset?.symbol, selectedAsset?.currency, historicalFx, fxRate, baseCurrency]);
+    }, [transactions, selectedAsset?.symbol, selectedAsset?.currency, selectedAsset?.isBareCurrencyOrigin, historicalFx, fxRate, baseCurrency]);
 
     const handleAssetSelect = (asset) => {
         // Calculate current balance for the selected asset from transaction history

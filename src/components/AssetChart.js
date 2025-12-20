@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useMemo } from 'react';
 import { AreaChart, Area, XAxis, Tooltip, ResponsiveContainer, YAxis } from 'recharts';
+import { getCachedFxHistory, setCachedFxHistory } from '@/utils/fxCache';
 
 const RANGES = ['1D', '1W', '1M', '3M', '1Y', 'ALL'];
 
@@ -13,9 +14,8 @@ export default function AssetChart({ symbol, baseCurrency = 'USD', fxRate = 1, p
 
     // Determine if we need FX conversion
     const needsFxConversion = assetCurrency && assetCurrency !== baseCurrency;
-    const fxSymbol = needsFxConversion ? `${assetCurrency}${baseCurrency}=X` : null;
 
-    // Fetch raw prices and FX history in parallel
+    // Fetch raw prices and FX history in parallel (FX uses cache)
     useEffect(() => {
         async function load() {
             setLoading(true);
@@ -24,14 +24,13 @@ export default function AssetChart({ symbol, baseCurrency = 'USD', fxRate = 1, p
                 const pricePromise = fetch(`/api/history?symbol=${symbol}&range=${range}`)
                     .then(res => res.json());
 
-                // Fetch FX history if needed
-                let fxPromise = Promise.resolve({ history: [] });
-                if (fxSymbol) {
-                    fxPromise = fetch(`/api/history?symbol=${fxSymbol}&range=${range}`)
-                        .then(res => res.json());
+                // Fetch FX history using cache
+                let fxPromise = Promise.resolve({});
+                if (needsFxConversion && assetCurrency) {
+                    fxPromise = getCachedFxHistory(assetCurrency, baseCurrency, range);
                 }
 
-                const [priceJson, fxJson] = await Promise.all([pricePromise, fxPromise]);
+                const [priceJson, fxData] = await Promise.all([pricePromise, fxPromise]);
 
                 if (priceJson.history && priceJson.history.length > 0) {
                     setRawData(priceJson.history.map(p => ({
@@ -42,18 +41,8 @@ export default function AssetChart({ symbol, baseCurrency = 'USD', fxRate = 1, p
                     setRawData([]);
                 }
 
-                // Build FX history map (date -> rate)
-                if (fxJson.history && fxJson.history.length > 0) {
-                    const fxMap = {};
-                    fxJson.history.forEach(p => {
-                        // Use date only (not full timestamp) for matching
-                        const dateKey = p.date.split('T')[0];
-                        fxMap[dateKey] = p.price;
-                    });
-                    setFxHistory(fxMap);
-                } else {
-                    setFxHistory({});
-                }
+                // Set FX history from cache
+                setFxHistory(fxData || {});
             } catch (e) {
                 console.error(e);
             } finally {
@@ -61,7 +50,7 @@ export default function AssetChart({ symbol, baseCurrency = 'USD', fxRate = 1, p
             }
         }
         if (symbol) load();
-    }, [symbol, range, fxSymbol]);
+    }, [symbol, range, needsFxConversion, assetCurrency, baseCurrency]);
 
     // Optimize data & Calculate Gradient Offset - apply FX conversion here
     const { chartData, offset, startPrice } = useMemo(() => {
