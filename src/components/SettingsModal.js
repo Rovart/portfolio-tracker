@@ -230,9 +230,13 @@ export default function SettingsModal({ onClose, onPortfolioChange, currentPortf
     };
 
     const doImport = async (transactions, portfolioId) => {
-        transactions.forEach(tx => tx.portfolioId = portfolioId);
-        await importTransactions(transactions, portfolioId);
-        alert(`Imported ${transactions.length} transactions`);
+        // Create new transaction objects with the correct portfolioId
+        // This ensures we don't mutate the original and correctly assign the ID
+        const txsToImport = transactions.map(tx => ({
+            ...tx,
+            portfolioId: portfolioId  // Force the new portfolio ID
+        }));
+        await importTransactions(txsToImport, portfolioId);
         setImportConflict(null);
         onClose();
     };
@@ -246,8 +250,15 @@ export default function SettingsModal({ onClose, onPortfolioChange, currentPortf
         if (!importConflict) return;
         // Create new portfolio with CSV name
         const newPortfolio = await addPortfolio(importConflict.csvPortfolioName);
-        await doImport(importConflict.transactions, newPortfolio.id);
+        // Import into the NEW portfolio ID (not the CSV's old ID)
+        const txsToImport = importConflict.transactions.map(tx => ({
+            ...tx,
+            portfolioId: newPortfolio.id  // Use new portfolio ID
+        }));
+        await importTransactions(txsToImport, newPortfolio.id);
         await loadPortfolios();
+        setImportConflict(null);
+        onClose();
     };
 
     const tabs = [
