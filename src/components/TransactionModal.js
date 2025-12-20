@@ -3,6 +3,7 @@
 import { useState, useEffect, useMemo, useRef } from 'react';
 import AssetSearch from './AssetSearch';
 import AssetChart from './AssetChart';
+import ConfirmModal from './ConfirmModal';
 import { Trash2, Edit2, X, Plus, ChevronLeft, ArrowLeft } from 'lucide-react';
 import { normalizeAsset } from '@/utils/portfolio-logic';
 
@@ -19,6 +20,7 @@ export default function TransactionModal({ mode, holding, transactions, onClose,
         name: holding.name
     } : null);
     const [editingTx, setEditingTx] = useState(null);
+    const [deleteConfirm, setDeleteConfirm] = useState(null); // { id, type, date }
 
     // Consolidated price data - updated atomically to guarantee single render
     // Always start loading to prevent showing cached USD price before FX conversion
@@ -517,7 +519,7 @@ export default function TransactionModal({ mode, holding, transactions, onClose,
                                                                 <button onClick={() => handleEdit(tx)} className="p-1 text-muted hover:text-white hover-bg-surface rounded-full transition-all" style={{ background: 'transparent', border: 'none', cursor: 'pointer' }}>
                                                                     <Edit2 size={16} />
                                                                 </button>
-                                                                <button onClick={() => handleDelete(onDelete, tx.id)} className="p-1 text-danger hover-bg-surface rounded-full transition-all" style={{ background: 'transparent', border: 'none', cursor: 'pointer' }}>
+                                                                <button onClick={() => setDeleteConfirm({ id: tx.id, type: tx.type, date: tx.date })} className="p-1 text-danger hover-bg-surface rounded-full transition-all" style={{ background: 'transparent', border: 'none', cursor: 'pointer' }}>
                                                                     <Trash2 size={16} />
                                                                 </button>
                                                             </>
@@ -548,12 +550,22 @@ export default function TransactionModal({ mode, holding, transactions, onClose,
                     )}
                 </div>
             </div>
+
+            {/* Delete Confirmation Modal */}
+            <ConfirmModal
+                isOpen={deleteConfirm !== null}
+                onClose={() => setDeleteConfirm(null)}
+                onConfirm={() => {
+                    if (deleteConfirm) onDelete(deleteConfirm.id);
+                }}
+                title="Delete Transaction"
+                message={`Delete this ${deleteConfirm?.type || 'transaction'} from ${deleteConfirm?.date ? new Date(deleteConfirm.date).toLocaleDateString() : 'this date'}? This cannot be undone.`}
+                confirmText="Delete"
+                cancelText="Cancel"
+                confirmStyle="danger"
+            />
         </div >
     );
-}
-
-function handleDelete(fn, id) {
-    if (confirm('Delete this transaction? This cannot be undone.')) fn(id);
 }
 
 function TransactionForm({ holding, existingTx, transactions, onSave, onCancel, fetchedCurrency, portfolios = [], currentPortfolioId = 'all' }) {

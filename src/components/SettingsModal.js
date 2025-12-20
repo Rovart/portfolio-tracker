@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef } from 'react';
 import { ArrowLeft, Plus, Trash2, Edit2, Check, X, Upload, Download, FolderOpen, ChevronDown, Star } from 'lucide-react';
+import ConfirmModal from './ConfirmModal';
 import {
     getAllPortfolios,
     addPortfolio,
@@ -25,7 +26,9 @@ export default function SettingsModal({ onClose, onPortfolioChange, currentPortf
 
     // Import conflict dialog state
     const [importConflict, setImportConflict] = useState(null);
-    // { csvPortfolioName, targetPortfolioName, transactions, onMerge, onCreateNew }
+
+    // Delete confirmation state
+    const [deleteConfirm, setDeleteConfirm] = useState(null); // { type: 'portfolio', id, name }
 
     useEffect(() => {
         loadPortfolios();
@@ -78,12 +81,17 @@ export default function SettingsModal({ onClose, onPortfolioChange, currentPortf
         loadPortfolios();
     };
 
-    const handleDeletePortfolio = async (id) => {
+    const handleDeletePortfolio = (id) => {
         if (portfolios.length <= 1) {
-            alert('You must have at least one portfolio');
+            // Show modal for error case
+            setDeleteConfirm({ type: 'error', message: 'You must have at least one portfolio' });
             return;
         }
-        if (!confirm('Delete this portfolio and all its transactions?')) return;
+        const portfolio = portfolios.find(p => p.id === id);
+        setDeleteConfirm({ type: 'portfolio', id, name: portfolio?.name || 'Portfolio' });
+    };
+
+    const confirmDeletePortfolio = async (id) => {
         await deletePortfolio(id);
         await loadPortfolios();
         // If we deleted the portfolio we are looking at in the dashboard, switch to 'all'
@@ -760,6 +768,24 @@ export default function SettingsModal({ onClose, onPortfolioChange, currentPortf
                     </div>
                 </div>
             )}
+
+            {/* Delete Confirmation Modal */}
+            <ConfirmModal
+                isOpen={deleteConfirm !== null}
+                onClose={() => setDeleteConfirm(null)}
+                onConfirm={() => {
+                    if (deleteConfirm?.type === 'portfolio') {
+                        confirmDeletePortfolio(deleteConfirm.id);
+                    }
+                }}
+                title={deleteConfirm?.type === 'error' ? 'Notice' : 'Delete Portfolio'}
+                message={deleteConfirm?.type === 'error'
+                    ? deleteConfirm.message
+                    : `Are you sure you want to delete "${deleteConfirm?.name}"? This will permanently remove the portfolio and all its transactions.`}
+                confirmText={deleteConfirm?.type === 'error' ? 'OK' : 'Delete'}
+                cancelText={deleteConfirm?.type === 'error' ? '' : 'Cancel'}
+                confirmStyle={deleteConfirm?.type === 'error' ? 'primary' : 'danger'}
+            />
         </div>
     );
 }

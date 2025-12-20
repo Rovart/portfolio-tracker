@@ -623,10 +623,18 @@ export default function Dashboard() {
                         <div className="main-content">
                             {/* Portfolio Selector - only show if more than 1 portfolio */}
                             {portfolios.length > 1 && (
-                                <div className="flex gap-2 mb-6 overflow-x-auto" style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}>
+                                <div
+                                    className="flex gap-2 mb-6 overflow-x-auto pb-1"
+                                    style={{
+                                        scrollbarWidth: 'none',
+                                        msOverflowStyle: 'none',
+                                        WebkitOverflowScrolling: 'touch'
+                                    }}
+                                >
                                     <button
                                         onClick={() => handlePortfolioChange('all')}
                                         className={`pill ${currentPortfolioId === 'all' ? 'active' : ''}`}
+                                        style={{ flexShrink: 0 }}
                                     >
                                         All
                                     </button>
@@ -635,6 +643,7 @@ export default function Dashboard() {
                                             key={p.id}
                                             onClick={() => handlePortfolioChange(p.id)}
                                             className={`pill ${currentPortfolioId === p.id ? 'active' : ''}`}
+                                            style={{ flexShrink: 0 }}
                                         >
                                             {p.name}
                                         </button>
