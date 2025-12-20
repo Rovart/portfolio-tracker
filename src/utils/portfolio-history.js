@@ -121,13 +121,20 @@ export function calculatePortfolioHistory(transactions, historicalPrices, baseCu
                 if (quoteCurr !== 'USD') {
                     const toUsdSym = `${quoteCurr}USD=X`;
                     const toUsdHistory = historicalPrices[toUsdSym];
-                    if (toUsdHistory) {
+                    if (toUsdHistory && toUsdHistory.length > 0) {
                         const exactEntry = toUsdHistory.find(p => p.date === timestamp || p.date.startsWith(timestamp));
-                        if (exactEntry) {
-                            toUsdRate = parseFloat(exactEntry.price) || 1;
+                        if (exactEntry && exactEntry.price) {
+                            toUsdRate = parseFloat(exactEntry.price);
                             lastKnownPrices[toUsdSym] = toUsdRate;
+                        } else if (lastKnownPrices[toUsdSym]) {
+                            toUsdRate = lastKnownPrices[toUsdSym];
                         } else {
-                            toUsdRate = lastKnownPrices[toUsdSym] || 1;
+                            // Fallback: use the last available entry in history
+                            const lastEntry = toUsdHistory[toUsdHistory.length - 1];
+                            if (lastEntry && lastEntry.price) {
+                                toUsdRate = parseFloat(lastEntry.price);
+                                lastKnownPrices[toUsdSym] = toUsdRate;
+                            }
                         }
                     }
                 }
@@ -137,13 +144,20 @@ export function calculatePortfolioHistory(transactions, historicalPrices, baseCu
                 if (baseCurrency !== 'USD') {
                     const baseUsdSym = `${baseCurrency}USD=X`;
                     const baseUsdHistory = historicalPrices[baseUsdSym];
-                    if (baseUsdHistory) {
+                    if (baseUsdHistory && baseUsdHistory.length > 0) {
                         const exactEntry = baseUsdHistory.find(p => p.date === timestamp || p.date.startsWith(timestamp));
                         if (exactEntry && exactEntry.price) {
                             fromUsdRate = 1 / parseFloat(exactEntry.price);
                             lastKnownPrices[baseUsdSym + '-inv'] = fromUsdRate;
+                        } else if (lastKnownPrices[baseUsdSym + '-inv']) {
+                            fromUsdRate = lastKnownPrices[baseUsdSym + '-inv'];
                         } else {
-                            fromUsdRate = lastKnownPrices[baseUsdSym + '-inv'] || 1;
+                            // Fallback: use the last available entry in history
+                            const lastEntry = baseUsdHistory[baseUsdHistory.length - 1];
+                            if (lastEntry && lastEntry.price) {
+                                fromUsdRate = 1 / parseFloat(lastEntry.price);
+                                lastKnownPrices[baseUsdSym + '-inv'] = fromUsdRate;
+                            }
                         }
                     }
                 }
