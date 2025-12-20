@@ -802,12 +802,36 @@ function TransactionForm({ holding, existingTx, transactions, onSave, onCancel, 
         return quoteBalance > 0;
     });
 
-    // Sync useFiat when quote currency changes (for new transactions)
+    // Track if user has manually toggled the fiat switch
+    // If they have, we don't auto-update it
+    const [userModifiedUseFiat, setUserModifiedUseFiat] = useState(false);
+
+    // Sync useFiat with balance and cost (for new transactions)
     useEffect(() => {
-        if (!existingTx) {
-            setUseFiat(quoteBalance > 0);
+        if (!existingTx && !userModifiedUseFiat) {
+            // Logic: 
+            // 1. If no balance, default off
+            // 2. If balance exists:
+            //    - BUY: disable if cost > balance (don't default to negative), enable if cost <= balance
+            //    - SELL/DEPOSIT/WITHDRAW: enable if balance > 0 (tracking this currency)
+
+            if (quoteBalance <= 0) {
+                setUseFiat(false);
+            } else {
+                if (type === 'BUY') {
+                    const cost = (parseFloat(amount) || 0) * (parseFloat(price) || 0);
+                    if (cost > quoteBalance) {
+                        setUseFiat(false);
+                    } else {
+                        setUseFiat(true);
+                    }
+                } else {
+                    // For SELL/others, if we have a balance/wallet for this, likely want to use it
+                    setUseFiat(true);
+                }
+            }
         }
-    }, [detectedQuote, quoteBalance, existingTx]);
+    }, [detectedQuote, quoteBalance, existingTx, amount, price, type, userModifiedUseFiat]);
 
     const [fetchingPrice, setFetchingPrice] = useState(false);
     const [isManualPrice, setIsManualPrice] = useState(false);
@@ -1050,7 +1074,10 @@ function TransactionForm({ holding, existingTx, transactions, onSave, onCancel, 
                     <div
                         className="flex items-center justify-between p-4 rounded-2xl hover-bg-surface transition-all"
                         style={{ border: '1px solid #262626', background: '#171717', cursor: 'pointer' }}
-                        onClick={() => setUseFiat(!useFiat)}
+                        onClick={() => {
+                            setUseFiat(!useFiat);
+                            setUserModifiedUseFiat(true);
+                        }}
                     >
                         <span className="text-sm font-medium text-white select-none">
                             {type === 'BUY' ? `Deduct from ${detectedQuote} balance` : `Add to ${detectedQuote} balance`}
