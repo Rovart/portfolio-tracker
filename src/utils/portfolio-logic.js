@@ -282,7 +282,10 @@ export function calculateHoldings(transactions, priceMap, baseCurrency = 'USD') 
                 dailyPnl,
                 quoteCurrency: quoteCurr,
                 isFiat,
-                category
+                category,
+                // For TransactionModal to detect bare currencies
+                isBareCurrencyOrigin: isBareCurrency,
+                originalType: qt || (isFiat ? 'CURRENCY' : undefined)
             };
         })
         .sort((a, b) => {

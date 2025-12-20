@@ -17,7 +17,8 @@ export default function TransactionModal({ mode, holding, transactions, onClose,
         amount: holding.amount,
         originalType: holding.originalType,
         currency: holding.currency,
-        name: holding.name
+        name: holding.name,
+        isBareCurrencyOrigin: holding.isBareCurrencyOrigin || false
     } : null);
     const [editingTx, setEditingTx] = useState(null);
     const [deleteConfirm, setDeleteConfirm] = useState(null); // { id, type, date }

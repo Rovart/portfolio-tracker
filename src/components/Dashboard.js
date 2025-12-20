@@ -701,7 +701,9 @@ export default function Dashboard() {
             symbol: holding.originalAsset, // Pass the actual market symbol
             price: holding.localPrice,
             amount: holding.amount,
-            originalType: holding.originalType
+            originalType: holding.originalType,
+            isBareCurrencyOrigin: holding.isBareCurrencyOrigin || false,
+            currency: holding.quoteCurrency
         });
         setModalMode('MANAGE');
         setIsModalOpen(true);
