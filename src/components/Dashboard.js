@@ -448,11 +448,12 @@ export default function Dashboard() {
 
                     historyMap[fetchSym] = historyData;
 
-                    // Map back from 'EURUSD=X' to 'EUR' for the logic
-                    const regex = new RegExp(`^([A-Z]{3})${baseCurrency}(=X)$`, 'i');
-                    const fxMatch = fetchSym.match(regex);
+                    // Map back from 'XXXUSD=X' to 'XXX' for portfolio-history lookup
+                    // (We now fetch all FX against USD, not baseCurrency)
+                    const fxMatch = fetchSym.match(/^([A-Z]{3})USD(=X)$/i);
                     if (fxMatch) {
-                        historyMap[fxMatch[1].toUpperCase()] = historyData;
+                        // Store under both the symbol and the bare currency
+                        historyMap[`${fxMatch[1].toUpperCase()}USD=X`] = historyData;
                     }
                 } catch (e) { console.error(e); }
             }));

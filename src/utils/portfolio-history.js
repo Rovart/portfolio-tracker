@@ -4,13 +4,14 @@ export function calculatePortfolioHistory(transactions, historicalPrices, baseCu
     if (!transactions || transactions.length === 0) return [];
 
     // 1. Identify all unique timestamps across all history entries
-    // Also include the dates of all transactions to ensure they show up on the chart immediately
+    // Preserve full timestamps (including time) for intraday granularity (1D/1W charts)
     const historicalEntries = Object.values(historicalPrices).flat();
-    const transactionDates = transactions.map(t => t.date.split('T')[0]);
-    const nowStr = new Date().toISOString().split('T')[0];
+    const transactionDates = transactions.map(t => t.date.split('T')[0]); // Transactions are date-only
+    const nowStr = new Date().toISOString();
 
+    // Use full timestamps from history, but dedupe by the full string
     const sortedTimestamps = [...new Set([
-        ...historicalEntries.map(h => h.date.split('T')[0]),
+        ...historicalEntries.map(h => h.date),
         ...transactionDates,
         nowStr
     ])].sort();
@@ -98,7 +99,10 @@ export function calculatePortfolioHistory(transactions, historicalPrices, baseCu
             } else {
                 const history = historicalPrices[priceSym];
                 if (history && history.length > 0) {
-                    const exactEntry = history.find(p => p.date === timestamp || p.date.startsWith(timestamp));
+                    const dateOnly = timestamp.split('T')[0];
+                    // Try exact match first, then date-only match
+                    const exactEntry = history.find(p => p.date === timestamp) ||
+                        history.find(p => p.date.startsWith(dateOnly));
                     if (exactEntry) {
                         localPrice = parseFloat(exactEntry.price) || 0;
                         lastKnownPrices[priceSym] = localPrice;
@@ -114,6 +118,8 @@ export function calculatePortfolioHistory(transactions, historicalPrices, baseCu
 
             // 2. Get FX rate using USD-pivot strategy (same as portfolio-logic)
             let fxRate = 1;
+            const dateOnly = timestamp.split('T')[0];
+
             if (quoteCurr !== baseCurrency) {
                 // Pivot: quoteCurr -> USD -> baseCurrency
                 // Step 1: quoteCurr -> USD (e.g., HKDUSD=X)
@@ -122,7 +128,8 @@ export function calculatePortfolioHistory(transactions, historicalPrices, baseCu
                     const toUsdSym = `${quoteCurr}USD=X`;
                     const toUsdHistory = historicalPrices[toUsdSym];
                     if (toUsdHistory && toUsdHistory.length > 0) {
-                        const exactEntry = toUsdHistory.find(p => p.date === timestamp || p.date.startsWith(timestamp));
+                        const exactEntry = toUsdHistory.find(p => p.date === timestamp) ||
+                            toUsdHistory.find(p => p.date.startsWith(dateOnly));
                         if (exactEntry && exactEntry.price) {
                             toUsdRate = parseFloat(exactEntry.price);
                             lastKnownPrices[toUsdSym] = toUsdRate;
@@ -145,7 +152,8 @@ export function calculatePortfolioHistory(transactions, historicalPrices, baseCu
                     const baseUsdSym = `${baseCurrency}USD=X`;
                     const baseUsdHistory = historicalPrices[baseUsdSym];
                     if (baseUsdHistory && baseUsdHistory.length > 0) {
-                        const exactEntry = baseUsdHistory.find(p => p.date === timestamp || p.date.startsWith(timestamp));
+                        const exactEntry = baseUsdHistory.find(p => p.date === timestamp) ||
+                            baseUsdHistory.find(p => p.date.startsWith(dateOnly));
                         if (exactEntry && exactEntry.price) {
                             fromUsdRate = 1 / parseFloat(exactEntry.price);
                             lastKnownPrices[baseUsdSym + '-inv'] = fromUsdRate;
