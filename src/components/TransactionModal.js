@@ -543,6 +543,7 @@ export default function TransactionModal({ mode, holding, transactions, onClose,
                                 fetchedCurrency={selectedAsset.currency}
                                 portfolios={portfolios}
                                 currentPortfolioId={currentPortfolioId}
+                                baseCurrency={baseCurrency}
                                 onSave={(tx) => { onSave(tx); setCurrentView('LIST'); setEditingTx(null); }}
                                 onCancel={toList}
                             />
@@ -568,7 +569,7 @@ export default function TransactionModal({ mode, holding, transactions, onClose,
     );
 }
 
-function TransactionForm({ holding, existingTx, transactions, onSave, onCancel, fetchedCurrency, portfolios = [], currentPortfolioId = 'all' }) {
+function TransactionForm({ holding, existingTx, transactions, onSave, onCancel, fetchedCurrency, portfolios = [], currentPortfolioId = 'all', baseCurrency = 'USD' }) {
     // Standardize symbol access
     const sym = holding.symbol || holding.asset;
 
@@ -584,6 +585,12 @@ function TransactionForm({ holding, existingTx, transactions, onSave, onCancel, 
         }
         return false;
     }, [sym]);
+
+    // Get the currency code from bare currency symbol (EUR from EUR=X)
+    const bareCurrencyCode = useMemo(() => {
+        if (!isBareCurrency || !sym) return null;
+        return sym.toUpperCase().replace('=X', '');
+    }, [isBareCurrency, sym]);
 
     // Available transaction types - bare currencies are limited
     const availableTypes = isBareCurrency ? ['DEPOSIT', 'WITHDRAW'] : ['BUY', 'SELL', 'DEPOSIT', 'WITHDRAW'];
@@ -662,14 +669,35 @@ function TransactionForm({ holding, existingTx, transactions, onSave, onCancel, 
             async function fetchPrice() {
                 setFetchingPrice(true);
                 try {
-                    let fetchSym = sym;
-                    if (holding.originalType === 'CRYPTOCURRENCY' && !fetchSym.includes('-')) {
-                        fetchSym += '-USD';
-                    }
-                    const res = await fetch(`/api/quote?symbols=${fetchSym}`);
-                    const json = await res.json();
-                    if (json.data && json.data[0]) {
-                        setPrice(json.data[0].price);
+                    // Handle bare currencies (EUR=X) specially
+                    if (isBareCurrency && bareCurrencyCode) {
+                        // If baseCurrency is the same as the bare currency, price is 1
+                        if (bareCurrencyCode === baseCurrency) {
+                            setPrice(1);
+                            setFetchingPrice(false);
+                            return;
+                        }
+                        // Otherwise, fetch the FX rate (e.g., EURUSD=X for EUR to USD)
+                        const fxSym = `${bareCurrencyCode}${baseCurrency}=X`;
+                        const res = await fetch(`/api/quote?symbols=${fxSym}`);
+                        const json = await res.json();
+                        if (json.data && json.data[0]) {
+                            setPrice(json.data[0].price);
+                        } else {
+                            // Fallback: price is 1 if we can't get FX rate
+                            setPrice(1);
+                        }
+                    } else {
+                        // Normal asset price fetch
+                        let fetchSym = sym;
+                        if (holding.originalType === 'CRYPTOCURRENCY' && !fetchSym.includes('-')) {
+                            fetchSym += '-USD';
+                        }
+                        const res = await fetch(`/api/quote?symbols=${fetchSym}`);
+                        const json = await res.json();
+                        if (json.data && json.data[0]) {
+                            setPrice(json.data[0].price);
+                        }
                     }
                 } catch (e) { console.error(e); }
                 finally { setFetchingPrice(false); }
@@ -678,7 +706,7 @@ function TransactionForm({ holding, existingTx, transactions, onSave, onCancel, 
         } else if (existingTx && existingTx.quoteAmount && existingTx.baseAmount) {
             setPrice(existingTx.quoteAmount / existingTx.baseAmount);
         }
-    }, [sym, existingTx]);
+    }, [sym, existingTx, isBareCurrency, bareCurrencyCode, baseCurrency]);
 
     // Historical price fetch when date changes - ONLY if NOT editing and NOT manually set
     useEffect(() => {
