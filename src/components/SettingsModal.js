@@ -203,17 +203,20 @@ export default function SettingsModal({ onClose, onPortfolioChange, currentPortf
                 for (const pName of uniquePortfolioNames) {
                     const groupTxs = transactions.filter(tx => tx.csvPortfolioName === pName);
                     // Check if portfolio exists
-                    let targetPortfolio = portfolios.find(p => p.name === pName);
-                    if (!targetPortfolio) {
-                        // Create new portfolio
-                        targetPortfolio = await addPortfolio(pName);
+                    let targetP = portfolios.find(p => p.name === pName);
+                    let targetId;
+                    if (targetP) {
+                        targetId = targetP.id;
+                    } else {
+                        // Create new portfolio - addPortfolio returns ID directly
+                        targetId = await addPortfolio(pName);
                     }
                     // Import this group
                     const txsToImport = groupTxs.map(tx => ({
                         ...tx,
-                        portfolioId: targetPortfolio.id
+                        portfolioId: targetId
                     }));
-                    await importTransactions(txsToImport, targetPortfolio.id);
+                    await importTransactions(txsToImport, targetId);
                 }
                 await loadPortfolios();
                 onClose();
@@ -230,7 +233,28 @@ export default function SettingsModal({ onClose, onPortfolioChange, currentPortf
         const targetPortfolio = portfolios.find(p => p.id === targetPortfolioId);
         const targetPortfolioName = targetPortfolio?.name || 'Default';
 
-        // Check if CSV portfolio name differs from target
+        // If CSV has multiple portfolios but user selected a specific target, 
+        // fallback to multi-portfolio import logic
+        if (uniquePortfolioNames.length > 1) {
+            for (const pName of uniquePortfolioNames) {
+                const groupTxs = transactions.filter(tx => tx.csvPortfolioName === pName);
+                let targetP = portfolios.find(p => p.name === pName);
+                if (!targetP) {
+                    const newId = await addPortfolio(pName);
+                    targetP = { id: newId, name: pName };
+                }
+                const txsToImport = groupTxs.map(tx => ({
+                    ...tx,
+                    portfolioId: targetP.id
+                }));
+                await importTransactions(txsToImport, targetP.id);
+            }
+            await loadPortfolios();
+            onClose();
+            return;
+        }
+
+        // Check if CSV portfolio name differs from target (single portfolio case)
         if (csvPortfolioName && csvPortfolioName !== targetPortfolioName) {
             // Show conflict dialog
             setImportConflict({
@@ -265,14 +289,14 @@ export default function SettingsModal({ onClose, onPortfolioChange, currentPortf
 
     const handleImportCreateNew = async () => {
         if (!importConflict) return;
-        // Create new portfolio with CSV name
-        const newPortfolio = await addPortfolio(importConflict.csvPortfolioName);
+        // Create new portfolio with CSV name - addPortfolio returns the ID directly
+        const newPortfolioId = await addPortfolio(importConflict.csvPortfolioName);
         // Import into the NEW portfolio ID (not the CSV's old ID)
         const txsToImport = importConflict.transactions.map(tx => ({
             ...tx,
-            portfolioId: newPortfolio.id  // Use new portfolio ID
+            portfolioId: newPortfolioId  // Use new portfolio ID
         }));
-        await importTransactions(txsToImport, newPortfolio.id);
+        await importTransactions(txsToImport, newPortfolioId);
         await loadPortfolios();
         setImportConflict(null);
         onClose();
