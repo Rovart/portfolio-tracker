@@ -483,15 +483,20 @@ export default function TransactionModal({ mode, holding, transactions, onClose,
                                         assetCurrency={selectedAsset.currency || priceData.currency}
                                         // If it's a currency not equal to base, pass the constructed pair (e.g. AUDUSD=X)
                                         // otherwise pass null to let AssetChart decide or use default logic
-                                        // Improved logic: If it's a bare currency (AUD) or currency asset, force the pair (AUDUSD=X)
+                                        // Improved logic: Anchored to USD
                                         chartSymbol={(() => {
-                                            const isBare = selectedAsset.isBareCurrencyOrigin || (selectedAsset.symbol && selectedAsset.symbol.length === 3 && selectedAsset.currency === selectedAsset.symbol);
-                                            if (isBare && selectedAsset.currency !== baseCurrency) {
-                                                return `${selectedAsset.currency}${baseCurrency}=X`;
+                                            const s = selectedAsset.symbol;
+                                            const isBare = selectedAsset.isBareCurrencyOrigin ||
+                                                (s && s.length === 3 && /^[A-Z]{3}$/.test(s)) ||
+                                                selectedAsset.originalType === 'CURRENCY';
+
+                                            if (isBare && !s.includes('=X') && !s.includes('-')) {
+                                                // Always use USD pair (AUD -> AUDUSD=X)
+                                                // If the asset is 'USD', it's special (handled by AssetChart or no chart)
+                                                if (s === 'USD') return s;
+                                                return `${s}USD=X`;
                                             }
-                                            return (selectedAsset.currency && selectedAsset.currency !== baseCurrency && !selectedAsset.symbol.includes('-') && !selectedAsset.symbol.includes('=X'))
-                                                ? `${selectedAsset.currency}${baseCurrency}=X`
-                                                : selectedAsset.symbol;
+                                            return s;
                                         })()}
                                     />
                                 </div>
