@@ -63,22 +63,41 @@ export default function AssetSearch({ onSelect, onCancel }) {
                 )}
 
                 <div className="flex flex-col gap-3 pb-20">
-                    {results.map((item) => (
-                        <div
-                            key={item.symbol}
-                            className="bg-[#171717] border border-white/5 flex items-center justify-between p-5 rounded-3xl hover:bg-white/5 active:scale-[0.98] cursor-pointer transition-all group overflow-hidden relative"
-                            onClick={() => onSelect(item)}
-                        >
-                            <div className="flex flex-col min-w-0">
-                                <span className="font-bold text-xl group-hover:text-white transition-colors tracking-tight">{item.displaySymbol || item.symbol}</span>
-                                <span className="text-sm text-muted line-clamp-1">{item.shortname || item.longname}</span>
+                    {results.map((item) => {
+                        // Handle click - convert bare currencies (EUR=X) to XXXUSD=X format
+                        const handleClick = () => {
+                            const transformedItem = { ...item };
+
+                            // Detect bare currency (e.g., EUR=X where base is 3-4 chars)
+                            if (item.symbol && item.symbol.endsWith('=X')) {
+                                const base = item.symbol.replace('=X', '');
+                                if (base.length <= 4 && base !== 'USD') {
+                                    // Convert EUR=X to EURUSD=X for consistent FX handling
+                                    transformedItem.symbol = `${base}USD=X`;
+                                    transformedItem.displaySymbol = item.symbol; // Keep original for display
+                                }
+                            }
+
+                            onSelect(transformedItem);
+                        };
+
+                        return (
+                            <div
+                                key={item.symbol}
+                                className="bg-[#171717] border border-white/5 flex items-center justify-between p-5 rounded-3xl hover:bg-white/5 active:scale-[0.98] cursor-pointer transition-all group overflow-hidden relative"
+                                onClick={handleClick}
+                            >
+                                <div className="flex flex-col min-w-0">
+                                    <span className="font-bold text-xl group-hover:text-white transition-colors tracking-tight">{item.displaySymbol || item.symbol}</span>
+                                    <span className="text-sm text-muted line-clamp-1">{item.shortname || item.longname}</span>
+                                </div>
+                                <div className="flex flex-col items-end gap-2 flex-shrink-0">
+                                    <span className="text-[10px] font-bold px-2.5 py-1 bg-white/10 rounded-full text-white uppercase tracking-wider">{item.type || 'ASSET'}</span>
+                                    <span className="text-xs text-muted font-medium opacity-60 uppercase">{item.exchange}</span>
+                                </div>
                             </div>
-                            <div className="flex flex-col items-end gap-2 flex-shrink-0">
-                                <span className="text-[10px] font-bold px-2.5 py-1 bg-white/10 rounded-full text-white uppercase tracking-wider">{item.type || 'ASSET'}</span>
-                                <span className="text-xs text-muted font-medium opacity-60 uppercase">{item.exchange}</span>
-                            </div>
-                        </div>
-                    ))}
+                        );
+                    })}
                 </div>
             </div>
         </div >

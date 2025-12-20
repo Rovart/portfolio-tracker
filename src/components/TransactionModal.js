@@ -248,7 +248,13 @@ export default function TransactionModal({ mode, holding, transactions, onClose,
                 if (['BUY', 'DEPOSIT'].includes(t.type)) {
                     totalAmount += bAmt;
                     if (t.type === 'BUY') {
+                        // For BUY: cost is the quote amount paid
                         totalCostBase += qAmt * hFx;
+                        buyAmount += bAmt;
+                    } else if (t.type === 'DEPOSIT') {
+                        // For DEPOSIT: cost is the deposited amount at historical FX rate
+                        // This gives a meaningful "average deposit value" for currencies
+                        totalCostBase += bAmt * hFx;
                         buyAmount += bAmt;
                     }
                 } else if (['SELL', 'WITHDRAW'].includes(t.type)) {
@@ -573,15 +579,16 @@ function TransactionForm({ holding, existingTx, transactions, onSave, onCancel, 
     // Standardize symbol access
     const sym = holding.symbol || holding.asset;
 
-    // Detect if this is a bare currency (e.g., EUR=X - not a pair like EURUSD=X)
+    // Detect if this is a bare currency (e.g., EUR=X, USD=X - not a pair like EURUSD=X)
     // Bare currencies can only have DEPOSIT/WITHDRAW, not BUY/SELL
     const isBareCurrency = useMemo(() => {
         if (!sym) return false;
         const upper = sym.toUpperCase();
-        // EUR=X format: ends with =X and the base part is 3-4 characters (currency code)
+        // EUR=X, USD=X format: ends with =X and the base part is 3-4 characters (currency code)
         if (upper.endsWith('=X')) {
             const base = upper.replace('=X', '');
-            return base.length <= 4 && !base.includes('USD'); // EURUSD=X is not bare
+            // It's bare if it's a short currency code (not a pair like EURUSD=X)
+            return base.length <= 4;
         }
         return false;
     }, [sym]);
