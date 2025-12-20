@@ -731,7 +731,7 @@ export default function SettingsModal({ onClose, onPortfolioChange, currentPortf
                             >
                                 <div className="flex flex-col gap-1">
                                     <span className="text-white font-medium group-hover:text-green-400 transition-colors">Daily Notifications</span>
-                                    <span className="text-xs text-muted">Get a daily summary for each portfolio</span>
+                                    <span className="text-xs text-muted">Get a daily reminder to check your portfolio performance</span>
                                 </div>
                                 <div style={{
                                     width: '48px', height: '24px', borderRadius: '999px', padding: '2px',
@@ -761,18 +761,6 @@ export default function SettingsModal({ onClose, onPortfolioChange, currentPortf
                                             style={{ colorScheme: 'dark' }}
                                         />
                                     </div>
-
-                                    <button
-                                        onClick={async (e) => {
-                                            e.stopPropagation();
-                                            const success = await scheduleTestNotification();
-                                            if (success) alert('Test notification sent! It should appear in a few seconds.');
-                                            else alert('Failed to send test notification.');
-                                        }}
-                                        className="p-3 rounded-xl border border-white/10 bg-white/5 text-xs text-white/70 hover:text-white hover:bg-white/10 transition-all text-center"
-                                    >
-                                        Send Test Notification Now
-                                    </button>
                                 </>
                             )}
                         </div>
