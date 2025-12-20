@@ -161,12 +161,13 @@ export default function Dashboard() {
             try {
                 // Pass 1: Fetch asset prices and discover currencies
                 // Rule: All bare currencies are anchored to USD for consistent pricing (AUD -> AUDUSD=X)
-                const fetchList = [...baseAssets];
-                baseAssets.forEach(asset => {
+                // Replace bare 3-letter currencies with their USD pairs
+                const fetchList = baseAssets.map(asset => {
                     const s = asset.toUpperCase();
                     if (s.length === 3 && /^[A-Z]{3}$/.test(s) && s !== 'USD' && !s.includes('=X') && !s.includes('-')) {
-                        fetchList.push(`${s}USD=X`);
+                        return `${s}USD=X`;
                     }
+                    return asset;
                 });
 
                 // Always ensure we have the pivot from USD to Base if Base is not USD
