@@ -20,6 +20,7 @@ export default function SettingsModal({ onClose, onPortfolioChange, currentPortf
     const [newPortfolioName, setNewPortfolioName] = useState('');
     const [showAddForm, setShowAddForm] = useState(false);
     const [loading, setLoading] = useState(true);
+    const [ioPortfolioId, setIoPortfolioId] = useState(currentPortfolioId);
     const fileInputRef = useRef(null);
 
     useEffect(() => {
@@ -92,8 +93,10 @@ export default function SettingsModal({ onClose, onPortfolioChange, currentPortf
 
     const handleExportCsv = async () => {
         const { exportToCsv } = await import('@/utils/db');
-        const csv = await exportToCsv(currentPortfolioId === 'all' ? null : currentPortfolioId);
-        const filename = `portfolio-${new Date().toISOString().split('T')[0]}.csv`;
+        const exportId = ioPortfolioId === 'all' ? null : ioPortfolioId;
+        const csv = await exportToCsv(exportId);
+        const pName = ioPortfolioId === 'all' ? 'all' : (portfolios.find(p => p.id === ioPortfolioId)?.name || 'export');
+        const filename = `portfolio-${pName.toLowerCase().replace(/\s+/g, '-')}-${new Date().toISOString().split('T')[0]}.csv`;
 
         try {
             const { Capacitor } = await import('@capacitor/core');
@@ -162,6 +165,7 @@ export default function SettingsModal({ onClose, onPortfolioChange, currentPortf
                     case 'Fee amount': tx.fee = parseFloat(val) || 0; break;
                     case 'Fee currency (name)': tx.feeCurrency = val || null; break;
                     case 'Notes': tx.notes = val || null; break;
+                    case 'Portfolio ID': tx.portfolioId = parseInt(val) || null; break;
                 }
             });
 
@@ -175,8 +179,15 @@ export default function SettingsModal({ onClose, onPortfolioChange, currentPortf
             return;
         }
 
-        const targetPortfolio = currentPortfolioId === 'all' ? 1 : currentPortfolioId;
-        await importTransactions(transactions, targetPortfolio);
+        // If currently viewing a specific portfolio, force all imported tx to that portfolio
+        // If viewing 'all', respect the Portfolio ID in the CSV if present
+        const targetPortfolioId = ioPortfolioId === 'all' ? 1 : ioPortfolioId;
+
+        if (ioPortfolioId !== 'all') {
+            transactions.forEach(tx => tx.portfolioId = ioPortfolioId);
+        }
+
+        await importTransactions(transactions, targetPortfolioId);
         alert(`Imported ${transactions.length} transactions`);
         onClose();
     };
@@ -409,8 +420,28 @@ export default function SettingsModal({ onClose, onPortfolioChange, currentPortf
 
                     {activeTab === 'export' && (
                         <div className="flex flex-col gap-4">
-                            <p className="text-muted text-sm">
-                                Export your transactions to CSV or import from a CSV file.
+                            <div className="flex flex-col gap-2">
+                                <label className="text-muted text-xs font-semibold uppercase tracking-wider">Target Portfolio</label>
+                                <select
+                                    className="bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-white/30 transition-all text-sm font-medium appearance-none cursor-pointer"
+                                    value={ioPortfolioId}
+                                    onChange={(e) => setIoPortfolioId(e.target.value === 'all' ? 'all' : parseInt(e.target.value))}
+                                    style={{
+                                        backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 24 24' stroke='white' stroke-width='2.5'%3E%3Cpath stroke-linecap='round' stroke-linejoin='round' d='M19.5 8.25l-7.5 7.5-7.5-7.5' /%3E%3C/svg%3E")`,
+                                        backgroundRepeat: 'no-repeat',
+                                        backgroundPosition: 'right 16px center',
+                                        backgroundSize: '16px'
+                                    }}
+                                >
+                                    <option value="all">All Portfolios (Consolidated)</option>
+                                    {portfolios.map(p => (
+                                        <option key={p.id} value={p.id}>{p.name}</option>
+                                    ))}
+                                </select>
+                            </div>
+
+                            <p className="text-muted text-sm pb-2">
+                                Select which portfolio to export or where you want to import your data.
                             </p>
 
                             <button

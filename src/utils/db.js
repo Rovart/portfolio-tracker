@@ -112,6 +112,9 @@ export async function exportToCsv(portfolioId = null) {
         ? await getTransactionsByPortfolio(portfolioId)
         : await getAllTransactions();
 
+    const portfolios = await getAllPortfolios();
+    const portfolioMap = portfolios.reduce((acc, p) => ({ ...acc, [p.id]: p.name }), {});
+
     const csvRows = transactions.map(tx => ({
         'Date': new Date(tx.date).toISOString().split('T')[0],
         'Way': tx.type,
@@ -124,6 +127,7 @@ export async function exportToCsv(portfolioId = null) {
         'Fee amount': tx.fee || 0,
         'Fee currency (name)': tx.feeCurrency || '',
         'Notes': tx.notes || '',
+        'Portfolio Name': portfolioMap[tx.portfolioId] || 'Default',
         'Portfolio ID': tx.portfolioId || 1
     }));
 

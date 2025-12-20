@@ -16,45 +16,57 @@ export default function PullToRefresh({ onRefresh, children, disabled = false })
 
     const handleTouchStart = useCallback((e) => {
         // Don't allow pull if disabled
-        if (disabled) return;
+        if (disabled || refreshing) return;
 
         // Only allow pull if we're exactly at the top of the page
+        // Use a tiny buffer for potential sub-pixel issues but keep it very strict
         const isAtTop = window.scrollY <= 0;
         startedAtTop.current = isAtTop;
 
         if (isAtTop) {
             startY.current = e.touches[0].clientY;
-            setPulling(true);
+            // Don't set pulling true yet, wait for move to confirm it's a pull DOWN
         }
-    }, [disabled]);
+    }, [disabled, refreshing]);
 
     const handleTouchMove = useCallback((e) => {
-        // Must have started at top AND still be at top
-        if (!pulling || refreshing || !startedAtTop.current) return;
+        const y = e.touches[0].clientY;
+        const delta = y - startY.current;
 
-        // If user scrolled away from top, cancel the pull
+        // If we didn't start at top, or we're refreshing, ignore
+        if (!startedAtTop.current || refreshing) return;
+
+        // If we're not pulling yet, check if this move qualifies as starting a pull
+        if (!pulling) {
+            // Only start pulling if move is positive (DOWN) and we are still at top
+            if (delta > 5 && window.scrollY <= 0) {
+                setPulling(true);
+            } else {
+                return;
+            }
+        }
+
+        // If user scrolled away from top, cancel the pull immediately
         if (window.scrollY > 0) {
             setPullDistance(0);
             setPulling(false);
+            startedAtTop.current = false;
             return;
         }
 
-        currentY.current = e.touches[0].clientY;
-        const delta = currentY.current - startY.current;
-
-        // Only pull down, not up
+        // Apply resistance to make it feel more natural
         if (delta > 0) {
-            // Apply resistance to make it feel more natural
-            const distance = Math.min(delta * 0.5, MAX_PULL);
+            const distance = Math.min(delta * 0.4, MAX_PULL);
             setPullDistance(distance);
 
-            // Prevent default scroll when pulling
-            if (distance > 10) {
-                e.preventDefault();
+            // Prevent default scroll when pulling to avoid browser overscroll
+            if (distance > 5) {
+                if (e.cancelable) e.preventDefault();
             }
         } else {
-            // User is scrolling up, cancel the pull
+            // User is scrolling up (pushing back), reduce distance or cancel
             setPullDistance(0);
+            setPulling(false);
         }
     }, [pulling, refreshing]);
 
