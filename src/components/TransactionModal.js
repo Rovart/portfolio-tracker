@@ -669,35 +669,24 @@ function TransactionForm({ holding, existingTx, transactions, onSave, onCancel, 
             async function fetchPrice() {
                 setFetchingPrice(true);
                 try {
-                    // Handle bare currencies (EUR=X) specially
-                    if (isBareCurrency && bareCurrencyCode) {
-                        // If baseCurrency is the same as the bare currency, price is 1
-                        if (bareCurrencyCode === baseCurrency) {
-                            setPrice(1);
-                            setFetchingPrice(false);
-                            return;
-                        }
-                        // Otherwise, fetch the FX rate (e.g., EURUSD=X for EUR to USD)
-                        const fxSym = `${bareCurrencyCode}${baseCurrency}=X`;
-                        const res = await fetch(`/api/quote?symbols=${fxSym}`);
-                        const json = await res.json();
-                        if (json.data && json.data[0]) {
-                            setPrice(json.data[0].price);
-                        } else {
-                            // Fallback: price is 1 if we can't get FX rate
-                            setPrice(1);
-                        }
-                    } else {
-                        // Normal asset price fetch
-                        let fetchSym = sym;
-                        if (holding.originalType === 'CRYPTOCURRENCY' && !fetchSym.includes('-')) {
-                            fetchSym += '-USD';
-                        }
-                        const res = await fetch(`/api/quote?symbols=${fetchSym}`);
-                        const json = await res.json();
-                        if (json.data && json.data[0]) {
-                            setPrice(json.data[0].price);
-                        }
+                    // For bare currencies (EUR=X), price is always 1
+                    // DEPOSIT/WITHDRAW of currency: 100 EUR is 100 EUR
+                    // FX conversion to baseCurrency happens in dashboard display
+                    if (isBareCurrency) {
+                        setPrice(1);
+                        setFetchingPrice(false);
+                        return;
+                    }
+
+                    // Normal asset price fetch
+                    let fetchSym = sym;
+                    if (holding.originalType === 'CRYPTOCURRENCY' && !fetchSym.includes('-')) {
+                        fetchSym += '-USD';
+                    }
+                    const res = await fetch(`/api/quote?symbols=${fetchSym}`);
+                    const json = await res.json();
+                    if (json.data && json.data[0]) {
+                        setPrice(json.data[0].price);
                     }
                 } catch (e) { console.error(e); }
                 finally { setFetchingPrice(false); }
@@ -706,7 +695,7 @@ function TransactionForm({ holding, existingTx, transactions, onSave, onCancel, 
         } else if (existingTx && existingTx.quoteAmount && existingTx.baseAmount) {
             setPrice(existingTx.quoteAmount / existingTx.baseAmount);
         }
-    }, [sym, existingTx, isBareCurrency, bareCurrencyCode, baseCurrency]);
+    }, [sym, existingTx, isBareCurrency]);
 
     // Historical price fetch when date changes - ONLY if NOT editing and NOT manually set
     useEffect(() => {
