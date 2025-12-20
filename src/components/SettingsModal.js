@@ -422,37 +422,30 @@ export default function SettingsModal({ onClose, onPortfolioChange, currentPortf
                         <div className="flex flex-col gap-4">
                             <div className="flex flex-col gap-2">
                                 <label className="text-muted text-xs font-semibold uppercase tracking-wider">Target Portfolio</label>
-                                <div
-                                    className="flex items-center gap-2 transition-all"
+                                <select
+                                    value={ioPortfolioId}
+                                    onChange={(e) => setIoPortfolioId(e.target.value === 'all' ? 'all' : parseInt(e.target.value))}
                                     style={{
-                                        background: 'rgba(255, 255, 255, 0.05)',
+                                        width: '100%',
+                                        background: `rgba(255, 255, 255, 0.05) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='18' height='18' viewBox='0 0 24 24' fill='none' stroke='rgba(255,255,255,0.5)' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E") no-repeat right 14px center`,
                                         border: '1px solid rgba(255, 255, 255, 0.1)',
                                         borderRadius: '12px',
-                                        padding: '0 14px',
-                                        cursor: 'pointer'
+                                        padding: '12px 44px 12px 14px',
+                                        color: 'white',
+                                        fontSize: '14px',
+                                        fontWeight: '500',
+                                        cursor: 'pointer',
+                                        outline: 'none',
+                                        appearance: 'none',
+                                        WebkitAppearance: 'none',
+                                        MozAppearance: 'none'
                                     }}
-                                    onFocusCapture={(e) => e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.3)'}
-                                    onBlurCapture={(e) => e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.1)'}
                                 >
-                                    <select
-                                        className="flex-1 text-white text-sm font-medium py-3 cursor-pointer outline-none appearance-none bg-transparent"
-                                        style={{
-                                            WebkitAppearance: 'none',
-                                            MozAppearance: 'none',
-                                            border: 'none'
-                                        }}
-                                        value={ioPortfolioId}
-                                        onChange={(e) => setIoPortfolioId(e.target.value === 'all' ? 'all' : parseInt(e.target.value))}
-                                    >
-                                        <option value="all" style={{ background: '#121212' }}>All Portfolios (Consolidated)</option>
-                                        {portfolios.map(p => (
-                                            <option key={p.id} value={p.id} style={{ background: '#121212' }}>{p.name}</option>
-                                        ))}
-                                    </select>
-                                    <div className="pointer-events-none text-white/40 flex items-center">
-                                        <ChevronDown size={18} strokeWidth={2.5} />
-                                    </div>
-                                </div>
+                                    <option value="all" style={{ background: '#121212', color: 'white' }}>All Portfolios (Consolidated)</option>
+                                    {portfolios.map(p => (
+                                        <option key={p.id} value={p.id} style={{ background: '#121212', color: 'white' }}>{p.name}</option>
+                                    ))}
+                                </select>
                             </div>
 
                             <p className="text-muted text-sm pb-2">
