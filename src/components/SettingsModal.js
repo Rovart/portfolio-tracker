@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
-import { ArrowLeft, Plus, Trash2, Edit2, Check, X, Upload, Download, FolderOpen, ChevronDown, Star } from 'lucide-react';
+import { ArrowLeft, Plus, Trash2, Edit2, Check, X, Upload, Download, FolderOpen, ChevronDown, Star, ArrowRight, FileText } from 'lucide-react';
 import {
     getAllPortfolios,
     addPortfolio,
@@ -263,6 +263,7 @@ export default function SettingsModal({ onClose, onPortfolioChange, currentPortf
                 await importTransactions(txsToImport, targetP.id);
             }
             await loadPortfolios();
+            onPortfolioChange('all');
             onClose();
             return;
         }
@@ -291,8 +292,10 @@ export default function SettingsModal({ onClose, onPortfolioChange, currentPortf
             portfolioId: portfolioId  // Force the new portfolio ID
         }));
         await importTransactions(txsToImport, portfolioId);
-        // Refresh current view
-        onPortfolioChange(ioPortfolioId);
+
+        // After import, always switch to the affected portfolio
+        onPortfolioChange(portfolioId);
+
         setImportConflict(null);
         onClose();
     };
@@ -314,6 +317,7 @@ export default function SettingsModal({ onClose, onPortfolioChange, currentPortf
         await importTransactions(txsToImport, newPortfolioId);
         await loadPortfolios();
         setImportConflict(null);
+
         // Switch to the newly created portfolio
         onPortfolioChange(newPortfolioId);
         onClose();
@@ -661,7 +665,8 @@ export default function SettingsModal({ onClose, onPortfolioChange, currentPortf
                     left: 0,
                     right: 0,
                     bottom: 0,
-                    backgroundColor: 'rgba(0, 0, 0, 0.8)',
+                    backgroundColor: 'rgba(0, 0, 0, 0.7)',
+                    backdropFilter: 'blur(10px)',
                     display: 'flex',
                     alignItems: 'center',
                     justifyContent: 'center',
@@ -669,90 +674,99 @@ export default function SettingsModal({ onClose, onPortfolioChange, currentPortf
                     padding: '20px'
                 }}>
                     <div style={{
-                        backgroundColor: '#1a1a1a',
-                        borderRadius: '16px',
-                        padding: '24px',
-                        maxWidth: '400px',
+                        backgroundColor: '#121212',
+                        borderRadius: '24px',
+                        padding: '32px',
+                        maxWidth: '440px',
                         width: '100%',
-                        border: '1px solid #333'
+                        border: '1px solid rgba(255, 255, 255, 0.1)',
+                        boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.5)',
+                        animation: 'enter 0.3s ease-out'
                     }}>
-                        <h3 style={{ margin: '0 0 16px 0', fontSize: '1.25rem', fontWeight: 'bold' }}>
-                            Portfolio Mismatch
-                        </h3>
-                        <p style={{ margin: '0 0 8px 0', color: '#a1a1aa', lineHeight: 1.5 }}>
-                            The CSV contains transactions from:
-                        </p>
-                        <p style={{
-                            margin: '0 0 16px 0',
-                            fontWeight: 'bold',
-                            color: '#3b82f6',
-                            fontSize: '1.1rem'
-                        }}>
-                            "{importConflict.csvPortfolioName}"
-                        </p>
-                        <p style={{ margin: '0 0 8px 0', color: '#a1a1aa', lineHeight: 1.5 }}>
-                            But you're importing into:
-                        </p>
-                        <p style={{
-                            margin: '0 0 24px 0',
-                            fontWeight: 'bold',
-                            color: '#22c55e',
-                            fontSize: '1.1rem'
-                        }}>
-                            "{importConflict.targetPortfolioName}"
-                        </p>
-                        <p style={{ margin: '0 0 24px 0', color: '#a1a1aa', fontSize: '0.9rem' }}>
-                            {importConflict.transactions.length} transaction(s) to import
-                        </p>
+                        <div className="flex items-center gap-3 mb-6">
+                            <div className="p-2 rounded-xl bg-blue-500/10 text-blue-400">
+                                <FileText size={20} />
+                            </div>
+                            <h3 style={{ margin: 0, fontSize: '1.25rem', fontWeight: '700', letterSpacing: '-0.02em' }}>
+                                Portfolio Mismatch
+                            </h3>
+                        </div>
 
-                        <div style={{ display: 'flex', gap: '12px' }}>
+                        <div className="space-y-6 mb-8">
+                            <div className="flex flex-col gap-2 p-4 rounded-2xl bg-white/5 border border-white/5">
+                                <span className="text-[10px] font-bold uppercase tracking-wider text-muted/60">CSV SOURCE</span>
+                                <span className="text-lg font-semibold text-white/90 truncate">
+                                    "{importConflict.csvPortfolioName}"
+                                </span>
+                            </div>
+
+                            <div className="flex justify-center -my-2 relative z-10">
+                                <div className="p-2 rounded-full bg-neutral-900 border border-white/10 text-muted">
+                                    <ArrowRight size={16} />
+                                </div>
+                            </div>
+
+                            <div className="flex flex-col gap-2 p-4 rounded-2xl bg-white/5 border border-white/5">
+                                <span className="text-[10px] font-bold uppercase tracking-wider text-muted/60">TARGET DESTINATION</span>
+                                <span className="text-lg font-semibold text-white/90 truncate">
+                                    "{importConflict.targetPortfolioName}"
+                                </span>
+                            </div>
+
+                            <div className="text-center pt-2">
+                                <span className="inline-block px-3 py-1 rounded-full bg-white/5 text-xs font-medium text-muted">
+                                    {importConflict.transactions.length} transactions found
+                                </span>
+                            </div>
+                        </div>
+
+                        <div className="grid grid-cols-2 gap-3">
                             <button
                                 onClick={handleImportMerge}
+                                className="flex flex-col items-center gap-2 p-4 rounded-2xl transition-all group hover:scale-[1.02] active:scale-[0.98]"
                                 style={{
-                                    flex: 1,
-                                    padding: '12px 16px',
-                                    backgroundColor: 'rgba(34, 197, 94, 0.15)',
-                                    color: '#22c55e',
-                                    border: '1px solid rgba(34, 197, 94, 0.3)',
-                                    borderRadius: '10px',
+                                    backgroundColor: 'rgba(34, 197, 94, 0.08)',
+                                    border: '1px solid rgba(34, 197, 94, 0.2)',
+                                    color: '#4ade80',
                                     cursor: 'pointer',
-                                    fontWeight: '600',
-                                    fontSize: '0.9rem'
                                 }}
                             >
-                                Merge
+                                <Check size={20} className="group-hover:scale-110 transition-transform" />
+                                <span className="text-sm font-bold">Merge Into</span>
                             </button>
                             <button
                                 onClick={handleImportCreateNew}
+                                className="flex flex-col items-center gap-2 p-4 rounded-2xl transition-all group hover:scale-[1.02] active:scale-[0.98]"
                                 style={{
-                                    flex: 1,
-                                    padding: '12px 16px',
-                                    backgroundColor: 'rgba(59, 130, 246, 0.15)',
-                                    color: '#3b82f6',
-                                    border: '1px solid rgba(59, 130, 246, 0.3)',
-                                    borderRadius: '10px',
+                                    backgroundColor: 'rgba(59, 130, 246, 0.08)',
+                                    border: '1px solid rgba(59, 130, 246, 0.2)',
+                                    color: '#60a5fa',
                                     cursor: 'pointer',
-                                    fontWeight: '600',
-                                    fontSize: '0.9rem'
                                 }}
                             >
-                                Create New
+                                <Plus size={20} className="group-hover:scale-110 transition-transform" />
+                                <span className="text-sm font-bold">New Portfolio</span>
                             </button>
                         </div>
+
                         <button
                             onClick={() => setImportConflict(null)}
                             style={{
                                 width: '100%',
-                                marginTop: '12px',
-                                padding: '10px',
+                                marginTop: '16px',
+                                padding: '12px',
                                 backgroundColor: 'transparent',
-                                color: '#666',
+                                color: 'rgba(255, 255, 255, 0.4)',
                                 border: 'none',
                                 cursor: 'pointer',
-                                fontSize: '0.85rem'
+                                fontSize: '13px',
+                                fontWeight: '500',
+                                transition: 'color 0.2s'
                             }}
+                            onMouseOver={(e) => e.target.style.color = 'rgba(255, 255, 255, 0.8)'}
+                            onMouseOut={(e) => e.target.style.color = 'rgba(255, 255, 255, 0.4)'}
                         >
-                            Cancel
+                            Cancel Import
                         </button>
                     </div>
                 </div>
