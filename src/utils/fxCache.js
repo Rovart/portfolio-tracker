@@ -1,13 +1,31 @@
 'use client';
 
-// Global cache for FX data to avoid redundant API calls
+// Global cache for FX data and asset history to avoid redundant API calls
 const fxCache = {
-    current: {}, // { 'EUR-USD': { rate: 1.04, timestamp: Date.now() } }
-    history: {}  // { 'EUR-USD': { data: {...}, timestamp: Date.now() } }
+    current: {},       // { 'EUR-USD': { data: {...}, timestamp: Date.now() } }
+    history: {},       // { 'EUR-USD-ALL': { data: {...}, timestamp: Date.now() } }
+    assetHistory: {}   // { 'AAPL-1Y': { data: [...], timestamp: Date.now() } }
 };
 
-const CURRENT_CACHE_DURATION = 60 * 60 * 1000; // 1 hour
-const HISTORY_CACHE_DURATION = 60 * 60 * 1000; // 1 hour
+// Cache durations based on timeframe
+// Short timeframes need more frequent updates, long timeframes can cache longer
+const CACHE_DURATIONS = {
+    current: 60 * 60 * 1000,    // 1 hour for current prices
+    '1D': 5 * 60 * 1000,        // 5 min for 1D (intraday data changes rapidly)
+    '1W': 15 * 60 * 1000,       // 15 min for 1W
+    '1M': 30 * 60 * 1000,       // 30 min for 1M
+    '3M': 60 * 60 * 1000,       // 1 hour for 3M
+    '1Y': 60 * 60 * 1000,       // 1 hour for 1Y
+    'ALL': 60 * 60 * 1000,      // 1 hour for ALL
+    'default': 60 * 60 * 1000   // 1 hour default
+};
+
+/**
+ * Get cache duration based on timeframe
+ */
+function getCacheDuration(range) {
+    return CACHE_DURATIONS[range] || CACHE_DURATIONS.default;
+}
 
 /**
  * Get the cache key for an FX pair
@@ -42,7 +60,7 @@ export async function getCachedFxRate(fromCurrency, toCurrency) {
     const key = getCacheKey(from, to);
 
     // Check cache
-    if (isCacheValid(fxCache.current[key], CURRENT_CACHE_DURATION)) {
+    if (isCacheValid(fxCache.current[key], CACHE_DURATIONS.current)) {
         return fxCache.current[key].data;
     }
 
@@ -90,9 +108,10 @@ export async function getCachedFxHistory(fromCurrency, toCurrency, range = 'ALL'
     }
 
     const key = `${getCacheKey(from, to)}-${range}`;
+    const cacheDuration = getCacheDuration(range);
 
-    // Check cache
-    if (isCacheValid(fxCache.history[key], HISTORY_CACHE_DURATION)) {
+    // Check cache - duration varies by timeframe
+    if (isCacheValid(fxCache.history[key], cacheDuration)) {
         return fxCache.history[key].data;
     }
 
@@ -124,11 +143,12 @@ export async function getCachedFxHistory(fromCurrency, toCurrency, range = 'ALL'
 }
 
 /**
- * Clear all cached FX data
+ * Clear all cached data
  */
 export function clearFxCache() {
     fxCache.current = {};
     fxCache.history = {};
+    fxCache.assetHistory = {};
 }
 
 /**
@@ -146,5 +166,70 @@ export function setCachedFxHistory(fromCurrency, toCurrency, range, data) {
     fxCache.history[key] = {
         data,
         timestamp: Date.now()
+    };
+}
+
+/**
+ * Get cached asset history with timeframe-aware caching
+ * @param {string} symbol - Asset symbol (e.g., 'AAPL', 'BTC-USD')
+ * @param {string} range - Time range (e.g., 'ALL', '1Y', '1D')
+ * @returns {Promise<Array>} - Array of { date, price } objects
+ */
+export async function getCachedAssetHistory(symbol, range = 'ALL') {
+    const key = `${symbol.toUpperCase()}-${range}`;
+    const cacheDuration = getCacheDuration(range);
+
+    // Check cache
+    if (isCacheValid(fxCache.assetHistory[key], cacheDuration)) {
+        return fxCache.assetHistory[key].data;
+    }
+
+    // Fetch fresh data
+    try {
+        const res = await fetch(`/api/history?symbol=${symbol}&range=${range}`);
+        const json = await res.json();
+
+        if (json.history && json.history.length > 0) {
+            const data = json.history
+                .filter(d => d.price !== null && d.price !== undefined && d.price > 0)
+                .map(d => ({
+                    date: d.date,
+                    price: d.price
+                }));
+
+            // Update cache
+            fxCache.assetHistory[key] = {
+                data,
+                timestamp: Date.now()
+            };
+
+            return data;
+        }
+    } catch (e) {
+        console.error(`Failed to fetch asset history for ${symbol}:`, e);
+    }
+
+    return [];
+}
+
+/**
+ * Set cached asset history (useful for pre-populating from Dashboard)
+ */
+export function setCachedAssetHistory(symbol, range, data) {
+    const key = `${symbol.toUpperCase()}-${range}`;
+    fxCache.assetHistory[key] = {
+        data,
+        timestamp: Date.now()
+    };
+}
+
+/**
+ * Get cache stats for debugging
+ */
+export function getCacheStats() {
+    return {
+        currentFxEntries: Object.keys(fxCache.current).length,
+        historyFxEntries: Object.keys(fxCache.history).length,
+        assetHistoryEntries: Object.keys(fxCache.assetHistory).length
     };
 }

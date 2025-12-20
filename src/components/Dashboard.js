@@ -10,6 +10,7 @@ import SettingsModal from './SettingsModal';
 import PullToRefresh from './PullToRefresh';
 import { calculateHoldings } from '@/utils/portfolio-logic';
 import { calculatePortfolioHistory } from '@/utils/portfolio-history';
+import { getCachedAssetHistory, setCachedAssetHistory, getCachedFxHistory } from '@/utils/fxCache';
 import {
     getAllTransactions,
     getTransactionsByPortfolio,
@@ -289,36 +290,49 @@ export default function Dashboard() {
             }
 
             // Pass 2: Fetch history for all base assets and discovered quote currencies
+            // Using cached history with timeframe-aware TTLs (5min for 1D, 15min for 1W, 1hr for others)
             const allSymbolsToFetch = [...new Set([...baseAssets, ...[...discoveredCurrencies].map(c => `${c}${baseCurrency}=X`)])];
 
             await Promise.all(allSymbolsToFetch.map(async (fetchSym) => {
                 if (fetchSym === 'USD' || !fetchSym) return;
                 try {
-                    // Always fetch ALL for long-term context
-                    const res = await fetch(`/api/history?symbol=${fetchSym}&range=ALL`);
-                    const data = await res.json();
+                    // Check if this is an FX symbol
+                    const fxRegex = new RegExp(`^([A-Z]{3})${baseCurrency}(=X)$`, 'i');
+                    const isFxSymbol = fxRegex.test(fetchSym);
+
                     let historyData = [];
-                    if (data.history) {
-                        historyData = data.history
-                            .filter(d => d.price !== null && d.price !== undefined && d.price > 0)
-                            .map(d => ({
-                                date: d.date,
-                                price: d.price
-                            }));
+
+                    if (isFxSymbol) {
+                        // Use FX cache for currency pairs
+                        const fxMatch = fetchSym.match(fxRegex);
+                        if (fxMatch) {
+                            const fxCurr = fxMatch[1].toUpperCase();
+                            // Get FX history as map, convert to array
+                            const fxMap = await getCachedFxHistory(fxCurr, baseCurrency, 'ALL');
+                            historyData = Object.entries(fxMap).map(([date, price]) => ({ date, price }))
+                                .sort((a, b) => a.date.localeCompare(b.date));
+                        }
+                    } else {
+                        // Use asset history cache for regular assets
+                        historyData = await getCachedAssetHistory(fetchSym, 'ALL');
                     }
 
-                    // If short timeframe, augment with granular data
+                    // If short timeframe, augment with granular data (with shorter cache)
                     if (timeframe === '1D' || timeframe === '1W') {
-                        const granularRes = await fetch(`/api/history?symbol=${fetchSym}&range=${timeframe}`);
-                        const granularData = await granularRes.json();
-                        if (granularData.history) {
-                            const newPoints = granularData.history
-                                .filter(d => d.price !== null && d.price !== undefined && d.price > 0)
-                                .map(d => ({
-                                    date: d.date,
-                                    price: d.price
-                                }));
-                            const merged = [...historyData, ...newPoints];
+                        let granularData = [];
+                        if (isFxSymbol) {
+                            const fxMatch = fetchSym.match(fxRegex);
+                            if (fxMatch) {
+                                const fxCurr = fxMatch[1].toUpperCase();
+                                const fxMap = await getCachedFxHistory(fxCurr, baseCurrency, timeframe);
+                                granularData = Object.entries(fxMap).map(([date, price]) => ({ date, price }));
+                            }
+                        } else {
+                            granularData = await getCachedAssetHistory(fetchSym, timeframe);
+                        }
+
+                        if (granularData.length > 0) {
+                            const merged = [...historyData, ...granularData];
                             const unique = Array.from(new Map(merged.map(item => [item.date, item])).values());
                             historyData = unique.sort((a, b) => a.date.localeCompare(b.date));
                         }
