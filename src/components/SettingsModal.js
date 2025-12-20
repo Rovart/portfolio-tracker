@@ -711,7 +711,7 @@ export default function SettingsModal({ onClose, onPortfolioChange, currentPortf
                             <input
                                 ref={fileInputRef}
                                 type="file"
-                                accept=".csv"
+                                accept=".csv,text/csv,application/csv,text/comma-separated-values"
                                 onChange={handleImportCsv}
                                 style={{ display: 'none' }}
                             />
