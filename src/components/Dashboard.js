@@ -369,11 +369,12 @@ export default function Dashboard() {
 
                     if (isFxSymbol) {
                         // Use FX cache for currency pairs
+                        // IMPORTANT: Always fetch against USD for portfolio history pivot calculations
                         const fxMatch = fetchSym.match(fxRegex);
                         if (fxMatch) {
                             const fxCurr = fxMatch[1].toUpperCase();
-                            // Get FX history as map, convert to array
-                            const fxMap = await getCachedFxHistory(fxCurr, baseCurrency, 'ALL');
+                            // Get FX history against USD (not baseCurrency!) for pivot calculations
+                            const fxMap = await getCachedFxHistory(fxCurr, 'USD', 'ALL');
                             historyData = Object.entries(fxMap).map(([date, price]) => ({ date, price }))
                                 .sort((a, b) => a.date.localeCompare(b.date));
                         }
@@ -389,7 +390,8 @@ export default function Dashboard() {
                             const fxMatch = fetchSym.match(fxRegex);
                             if (fxMatch) {
                                 const fxCurr = fxMatch[1].toUpperCase();
-                                const fxMap = await getCachedFxHistory(fxCurr, baseCurrency, timeframe);
+                                // Use USD (not baseCurrency) for consistency with pivot logic
+                                const fxMap = await getCachedFxHistory(fxCurr, 'USD', timeframe);
                                 granularData = Object.entries(fxMap).map(([date, price]) => ({ date, price }));
                             }
                         } else {
