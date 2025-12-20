@@ -195,13 +195,6 @@ export default function TransactionModal({ mode, holding, transactions, onClose,
         let totalCostBase = 0; // Total cost in baseCurrency
         let buyAmount = 0;
 
-        // Priority: currency from selectedAsset, then symbol split
-        let quoteCurr = selectedAsset.currency;
-        if (!quoteCurr) {
-            const parts = selectedAsset.symbol.split(/[-/]/);
-            quoteCurr = parts.length > 1 ? parts[parts.length - 1].toUpperCase() : 'USD';
-        }
-
         const normalizedSymbol = normalizeAsset(selectedAsset.symbol);
 
         transactions
@@ -211,8 +204,23 @@ export default function TransactionModal({ mode, holding, transactions, onClose,
                 const qAmt = parseFloat(t.quoteAmount) || 0;
                 const dateStr = t.date.split('T')[0];
 
-                // Get historical FX rate or fallback to current
-                const hFx = quoteCurr === baseCurrency ? 1 : (historicalFx[dateStr] || fxRate || 1);
+                // Use the transaction's ACTUAL quote currency, not the asset's default
+                const txQuoteCurr = normalizeAsset(t.quoteCurrency) || 'USD';
+
+                // Get historical FX rate for this specific transaction's quote currency
+                let hFx = 1;
+                if (txQuoteCurr !== baseCurrency) {
+                    // Try to find historical FX rate, fallback to current fxRate if matching, else 1
+                    const assetQuoteCurr = selectedAsset.currency?.toUpperCase() || 'USD';
+                    if (txQuoteCurr === assetQuoteCurr) {
+                        // This transaction uses the same quote currency as the asset's current quote
+                        hFx = historicalFx[dateStr] || fxRate || 1;
+                    } else {
+                        // Different currency - we don't have historical FX for this, use 1 as approximation
+                        // TODO: In the future, we could fetch additional FX history for better accuracy
+                        hFx = 1;
+                    }
+                }
 
                 if (['BUY', 'DEPOSIT'].includes(t.type)) {
                     totalAmount += bAmt;
