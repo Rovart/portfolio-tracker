@@ -69,6 +69,9 @@ export async function GET(request) {
         case '1M':
             period1.setMonth(now.getMonth() - 1);
             break;
+        case '3M':
+            period1.setMonth(now.getMonth() - 3);
+            break;
         case '1Y':
             period1.setFullYear(now.getFullYear() - 1);
             break;

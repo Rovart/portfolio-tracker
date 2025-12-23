@@ -79,7 +79,7 @@ export default function Dashboard() {
 
                 // Load saved portfolio timeframe
                 const savedTimeframe = localStorage.getItem('portfolio_chart_timeframe');
-                if (savedTimeframe && ['1D', '1W', '1M', '1Y', 'YTD', 'ALL'].includes(savedTimeframe)) {
+                if (savedTimeframe && ['1D', '1W', '1M', '3M', '1Y', 'YTD', 'ALL'].includes(savedTimeframe)) {
                     setTimeframe(savedTimeframe);
                 }
             } catch (e) {
