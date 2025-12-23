@@ -181,55 +181,61 @@ function ProfitabilityTrend({ data }) {
     );
 }
 
-// Financial Health (Liquidity comparison)
+// Financial Health - Clean professional design
 function FinancialHealth({ data }) {
     const fd = data.financialData;
     const cash = fd.totalCash || 0;
     const debt = fd.totalDebt || 0;
     const ratio = fd.currentRatio || 0;
-
-    const chartData = [
-        { name: 'Balance', Cash: cash / 1e9, Debt: debt / 1e9 }
-    ];
+    const total = cash + debt;
+    const cashPct = total > 0 ? (cash / total) * 100 : 50;
 
     return (
-        <div className="rounded-2xl p-5 border border-white/[0.04]" style={{ background: 'linear-gradient(180deg, rgba(255,255,255,0.03) 0%, rgba(255,255,255,0.01) 100%)' }}>
-            <div className="flex items-center justify-between mb-2">
-                <div className="flex flex-col gap-0.5">
-                    <span className="text-[10px] text-white/30 uppercase tracking-[0.2em] font-bold">Balance Sheet</span>
-                    <span className="text-xs font-semibold text-white/90">Liquidity & Debt</span>
+        <div className="rounded-2xl p-4" style={{ background: 'rgba(255,255,255,0.03)' }}>
+            <div className="flex items-baseline justify-between mb-6">
+                <span className="text-xs font-semibold text-white/90 uppercase tracking-wide">Balance Sheet</span>
+                <span className="text-xs text-white/20 lowercase">billions USD</span>
+            </div>
+
+            {/* Progress bar style comparison */}
+            <div className="mb-6">
+                <div className="flex h-8 rounded-lg overflow-hidden">
+                    <div
+                        style={{ width: `${cashPct}%` }}
+                        className="bg-success/80 flex items-center justify-center transition-all"
+                    >
+                        {cashPct > 20 && <span className="text-[10px] font-bold text-white/90">{formatNum(cash)}</span>}
+                    </div>
+                    <div
+                        style={{ width: `${100 - cashPct}%` }}
+                        className="bg-danger/60 flex items-center justify-center transition-all"
+                    >
+                        {(100 - cashPct) > 20 && <span className="text-[10px] font-bold text-white/90">{formatNum(debt)}</span>}
+                    </div>
                 </div>
-                <div className={`px-2 py-1 rounded-lg border ${ratio > 2 ? 'bg-success/10 border-success/20 text-success' : ratio < 1 ? 'bg-danger/10 border-danger/20 text-danger' : 'bg-white/5 border-white/10 text-white/60'} flex items-center gap-1.5`}>
-                    {ratio > 2 ? <ShieldCheck size={10} /> : ratio < 1 ? <AlertCircle size={10} /> : <ShieldCheck size={10} />}
-                    <span className="text-[10px] font-bold tracking-tight">Ratio: {ratio.toFixed(2)}</span>
+                <div className="flex justify-between mt-2 px-1">
+                    <span className="text-[10px] text-success font-medium">Cash {cashPct.toFixed(0)}%</span>
+                    <span className="text-[10px] text-danger font-medium">Debt {(100 - cashPct).toFixed(0)}%</span>
                 </div>
             </div>
 
-            <div className="flex flex-col gap-4">
-                {/* Stats Header */}
-                <div className="flex items-center justify-between px-1">
-                    <div className="flex flex-col">
-                        <span className="text-[10px] text-white/40 font-medium uppercase tracking-wider">Total Cash</span>
-                        <span className="text-sm font-bold text-white/90">{formatNum(cash)}</span>
-                    </div>
-                    <div className="flex flex-col items-end">
-                        <span className="text-[10px] text-white/40 font-medium uppercase tracking-wider">Total Debt</span>
-                        <span className="text-sm font-bold text-white/90">{formatNum(debt)}</span>
-                    </div>
+            {/* Clean stats row */}
+            <div className="flex items-center justify-between py-3 px-4 rounded-xl bg-white/[0.02]">
+                <div className="text-center">
+                    <div className="text-[10px] text-white/40 mb-1">Cash</div>
+                    <div className="text-sm font-semibold text-white">{formatNum(cash)}</div>
                 </div>
-
-                {/* Single Mixed Chart */}
-                <div style={{ height: 100 }}>
-                    <ResponsiveContainer width="100%" height="100%">
-                        <BarChart data={chartData} margin={{ top: 0, right: 0, left: 0, bottom: 0 }} barGap={8}>
-                            <Tooltip
-                                cursor={{ fill: 'transparent' }}
-                                content={<CustomTooltip prefix="$" suffix="B" />}
-                            />
-                            <Bar dataKey="Cash" fill="#22c55e" radius={[4, 4, 4, 4]} barSize={32} />
-                            <Bar dataKey="Debt" fill="#ef4444" radius={[4, 4, 4, 4]} barSize={32} />
-                        </BarChart>
-                    </ResponsiveContainer>
+                <div className="w-px h-8 bg-white/10" />
+                <div className="text-center">
+                    <div className="text-[10px] text-white/40 mb-1">Debt</div>
+                    <div className="text-sm font-semibold text-white">{formatNum(debt)}</div>
+                </div>
+                <div className="w-px h-8 bg-white/10" />
+                <div className="text-center">
+                    <div className="text-[10px] text-white/40 mb-1">Ratio</div>
+                    <div className={`text-sm font-semibold ${ratio > 2 ? 'text-success' : ratio < 1 ? 'text-danger' : 'text-white'}`}>
+                        {ratio.toFixed(2)}
+                    </div>
                 </div>
             </div>
         </div>
@@ -241,17 +247,23 @@ function EarningsChart({ data }) {
     const earnings = data.earningsHistory.slice().reverse();
     if (earnings.length === 0) return null;
 
+    // Calculate domain with 10% headroom
+    const allValues = earnings.flatMap(e => [e.epsEstimate, e.epsActual]).filter(v => v != null);
+    const minVal = Math.min(0, ...allValues);
+    const maxVal = Math.max(...allValues);
+    const padding = (maxVal - minVal) * 0.1;
+
     return (
         <div className="rounded-2xl p-4" style={{ background: 'rgba(255,255,255,0.03)' }}>
             <div className="flex items-baseline justify-between mb-8">
-                <span className="text-xs font-semibold text-white/90 uppercase tracking-wide">Quarterly EPS Evolution</span>
+                <span className="text-xs font-semibold text-white/90 uppercase tracking-wide">Quarterly EPS</span>
             </div>
 
-            <div style={{ height: 160 }}>
+            <div style={{ height: 140 }}>
                 <ResponsiveContainer width="100%" height="100%">
-                    <BarChart data={earnings} margin={{ top: 0, right: 0, left: -24, bottom: 0 }} barGap={2}>
+                    <BarChart data={earnings} margin={{ top: 10, right: 0, left: -24, bottom: 0 }} barGap={2}>
                         <XAxis dataKey="date" tick={{ fill: '#52525b', fontSize: 10 }} tickFormatter={(v) => `Q${Math.floor(new Date(v).getMonth() / 3) + 1}`} axisLine={false} tickLine={false} />
-                        <YAxis domain={[dataMin => Math.min(0, dataMin), 'auto']} tick={{ fill: '#52525b', fontSize: 10 }} axisLine={false} tickLine={false} tickFormatter={(v) => `$${v.toFixed(1)}`} />
+                        <YAxis domain={[minVal, maxVal + padding]} tick={{ fill: '#52525b', fontSize: 10 }} axisLine={false} tickLine={false} tickFormatter={(v) => `$${v.toFixed(1)}`} />
                         <Tooltip content={<EpsTooltip />} cursor={false} />
                         <Bar dataKey="epsEstimate" fill="#444446" radius={[2, 2, 2, 2]} barSize={5} />
                         <Bar dataKey="epsActual" radius={[4, 4, 4, 4]} barSize={12}>
