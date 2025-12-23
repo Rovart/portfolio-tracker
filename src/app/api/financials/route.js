@@ -13,23 +13,20 @@ export async function GET(request) {
 
     try {
         // Fetch comprehensive financial data
-        const [quoteSummary, earnings] = await Promise.all([
-            yahooFinance.quoteSummary(symbol, {
-                modules: [
-                    'summaryDetail',
-                    'defaultKeyStatistics',
-                    'financialData',
-                    'calendarEvents',
-                    'earnings',
-                    'earningsHistory',
-                    'earningsTrend',
-                    'incomeStatementHistory',
-                    'balanceSheetHistory',
-                    'cashflowStatementHistory'
-                ]
-            }).catch(() => null),
-            yahooFinance.earnings(symbol).catch(() => null)
-        ]);
+        const quoteSummary = await yahooFinance.quoteSummary(symbol, {
+            modules: [
+                'summaryDetail',
+                'defaultKeyStatistics',
+                'financialData',
+                'calendarEvents',
+                'earnings',
+                'earningsHistory',
+                'earningsTrend',
+                'incomeStatementHistory',
+                'balanceSheetHistory',
+                'cashflowStatementHistory'
+            ]
+        }).catch(() => null);
 
         if (!quoteSummary) {
             return NextResponse.json({ error: 'No financial data available' }, { status: 404 });
@@ -136,13 +133,6 @@ export async function GET(request) {
                     high: t.revenueEstimate.high,
                     numberOfAnalysts: t.revenueEstimate.numberOfAnalysts
                 } : null
-            })) || [],
-
-            // Annual earnings from earnings endpoint
-            annualEarnings: earnings?.earningsChart?.quarterly?.map(e => ({
-                date: e.date,
-                actual: e.actual?.raw,
-                estimate: e.estimate?.raw
             })) || [],
 
             // Balance Sheet History (last 4 years)
