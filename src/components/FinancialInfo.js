@@ -301,9 +301,9 @@ function RevenueTrend({ data }) {
 
     return (
         <div className="rounded-2xl p-4" style={{ background: 'rgba(255,255,255,0.03)' }}>
-            <div className="flex items-center justify-between mb-6">
-                <span className="text-xs font-medium text-white/50 uppercase tracking-wider">Annual Revenue</span>
-                <span className="text-[7px] text-white/10 uppercase tracking-widest">in billions USD</span>
+            <div className="flex items-baseline justify-between mb-4">
+                <span className="text-xs font-semibold text-white/90 uppercase tracking-wide">Annual Revenue</span>
+                <span className="text-[10px] text-white/20 lowercase">billions USD</span>
             </div>
 
             <div style={{ height: 100 }}>
