@@ -1,12 +1,13 @@
 'use client';
 
-import { useMemo, useState, useCallback } from 'react';
+import { useMemo, useState, useCallback, useRef } from 'react';
 import { AreaChart, Area, XAxis, Tooltip, ResponsiveContainer, YAxis, ReferenceArea, ReferenceLine } from 'recharts';
 
 export default function ProfitChart({ data, baseCurrency, hideBalances, loading }) {
     const [selectionStart, setSelectionStart] = useState(null);
     const [selectionEnd, setSelectionEnd] = useState(null);
     const [isSelecting, setIsSelecting] = useState(false);
+    const containerRef = useRef(null);
 
     const clearSelection = useCallback(() => {
         setSelectionStart(null);
@@ -70,6 +71,49 @@ export default function ProfitChart({ data, baseCurrency, hideBalances, loading 
         setIsSelecting(false);
     }, []);
 
+    const handleTouchStart = useCallback((e) => {
+        if (e.touches.length === 2 && containerRef.current) {
+            const rect = containerRef.current.getBoundingClientRect();
+            const count = chartData.length;
+            if (count === 0) return;
+
+            const t1 = e.touches[0].clientX - rect.left;
+            const t2 = e.touches[1].clientX - rect.left;
+
+            const idx1 = Math.max(0, Math.min(count - 1, Math.floor((t1 / rect.width) * count)));
+            const idx2 = Math.max(0, Math.min(count - 1, Math.floor((t2 / rect.width) * count)));
+
+            setSelectionStart(idx1);
+            setSelectionEnd(idx2);
+            setIsSelecting(true);
+        }
+    }, [chartData]);
+
+    const handleTouchMove = useCallback((e) => {
+        if (e.touches.length === 2 && containerRef.current) {
+            if (e.cancelable) e.preventDefault();
+
+            const rect = containerRef.current.getBoundingClientRect();
+            const count = chartData.length;
+            if (count === 0) return;
+
+            const t1 = e.touches[0].clientX - rect.left;
+            const t2 = e.touches[1].clientX - rect.left;
+
+            const idx1 = Math.max(0, Math.min(count - 1, Math.floor((t1 / rect.width) * count)));
+            const idx2 = Math.max(0, Math.min(count - 1, Math.floor((t2 / rect.width) * count)));
+
+            setSelectionStart(idx1);
+            setSelectionEnd(idx2);
+        }
+    }, [chartData]);
+
+    const handleTouchEnd = useCallback((e) => {
+        if (e.touches.length < 2) {
+            setIsSelecting(false);
+        }
+    }, []);
+
     if (loading || !chartData || chartData.length === 0) return <LoadingChart />;
 
     const green = "#22c55e";
@@ -77,8 +121,22 @@ export default function ProfitChart({ data, baseCurrency, hideBalances, loading 
     const hasSelection = selectionMetrics !== null;
 
     return (
-        <div className="flex flex-col gap-2 no-select" style={{ cursor: 'default' }}>
-            <div style={{ height: '300px', width: '100%', position: 'relative' }}>
+        <div
+            className="flex flex-col gap-2 no-select"
+            style={{
+                cursor: 'default',
+                touchAction: isSelecting ? 'none' : 'pan-y',
+                userSelect: 'none',
+                WebkitUserSelect: 'none'
+            }}
+        >
+            <div
+                ref={containerRef}
+                style={{ height: '300px', width: '100%', position: 'relative' }}
+                onTouchStart={handleTouchStart}
+                onTouchMove={handleTouchMove}
+                onTouchEnd={handleTouchEnd}
+            >
                 {/* Selection metrics overlay on chart */}
                 {selectionMetrics && !hideBalances && (
                     <div
