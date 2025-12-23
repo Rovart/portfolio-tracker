@@ -473,30 +473,34 @@ export default function TransactionModal({ mode, holding, transactions, onClose,
                     {currentView === 'LIST' && selectedAsset && (
                         <div className="flex flex-col gap-4">
                             {/* Tab Navigation */}
-                            <div className="flex gap-1 p-1 rounded-xl" style={{ background: 'rgba(255,255,255,0.03)' }}>
+                            <div className="flex gap-2 p-1 rounded-full" style={{ background: '#171717' }}>
                                 <button
                                     onClick={() => setAssetTab('overview')}
-                                    className="flex-1 py-2 px-4 rounded-lg text-sm font-medium transition-all"
+                                    className="flex-1 text-xs font-bold rounded-full transition-all"
                                     style={{
-                                        background: assetTab === 'overview' ? 'rgba(255,255,255,0.1)' : 'transparent',
-                                        color: assetTab === 'overview' ? '#fff' : 'rgba(255,255,255,0.5)',
+                                        background: assetTab === 'overview' ? 'white' : 'transparent',
+                                        color: assetTab === 'overview' ? 'black' : '#a1a1aa',
                                         border: 'none',
-                                        cursor: 'pointer'
+                                        cursor: 'pointer',
+                                        padding: '12px 16px',
+                                        boxShadow: assetTab === 'overview' ? '0 4px 6px -1px rgba(0, 0, 0, 0.1)' : 'none'
                                     }}
                                 >
-                                    Overview
+                                    OVERVIEW
                                 </button>
                                 <button
                                     onClick={() => setAssetTab('financials')}
-                                    className="flex-1 py-2 px-4 rounded-lg text-sm font-medium transition-all"
+                                    className="flex-1 text-xs font-bold rounded-full transition-all"
                                     style={{
-                                        background: assetTab === 'financials' ? 'rgba(255,255,255,0.1)' : 'transparent',
-                                        color: assetTab === 'financials' ? '#fff' : 'rgba(255,255,255,0.5)',
+                                        background: assetTab === 'financials' ? 'white' : 'transparent',
+                                        color: assetTab === 'financials' ? 'black' : '#a1a1aa',
                                         border: 'none',
-                                        cursor: 'pointer'
+                                        cursor: 'pointer',
+                                        padding: '12px 16px',
+                                        boxShadow: assetTab === 'financials' ? '0 4px 6px -1px rgba(0, 0, 0, 0.1)' : 'none'
                                     }}
                                 >
-                                    Financials
+                                    FINANCIALS
                                 </button>
                             </div>
 
