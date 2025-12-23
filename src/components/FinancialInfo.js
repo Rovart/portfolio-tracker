@@ -83,16 +83,16 @@ const CustomTooltip = ({ active, payload, label, prefix = '', suffix = '' }) => 
     if (!active || !payload?.length) return null;
 
     return (
-        <div className="px-6 py-5 rounded-2xl shadow-2xl border border-white/10 backdrop-blur-xl" style={{ background: 'rgba(10, 10, 10, 0.95)' }}>
-            <div className="text-xs text-white/30 uppercase tracking-[0.2em] font-bold mb-5 border-b border-white/5 pb-2.5">
+        <div className="px-5 py-4 rounded-2xl shadow-2xl border border-white/10 backdrop-blur-xl" style={{ background: 'rgba(10, 10, 10, 0.95)' }}>
+            <div className="text-xs text-white/30 uppercase tracking-[0.2em] font-medium mb-5 border-b border-white/5 pb-3">
                 {label}
             </div>
             <div className="flex flex-col gap-4">
                 {payload.map((p, i) => (
                     <div key={i} className="flex items-center justify-between gap-12">
-                        <div className="flex items-center gap-3">
+                        <div className="flex items-center gap-2.5">
                             <div className="w-1.5 h-1.5 rounded-full" style={{ background: p.color || p.fill }} />
-                            <span className="text-xs font-normal text-white/50">{p.name}</span>
+                            <span className="text-xs text-white/40">{p.name}</span>
                         </div>
                         <span className="text-xs font-semibold" style={{ color: p.color || p.fill }}>
                             {prefix}{typeof p.value === 'number' ? p.value.toLocaleString(undefined, { maximumFractionDigits: 1 }) : p.value}{suffix}
@@ -112,29 +112,29 @@ const EpsTooltip = ({ active, payload, label }) => {
     const beat = actual >= estimate;
 
     return (
-        <div className="px-6 py-5 rounded-2xl shadow-2xl border border-white/10 backdrop-blur-xl" style={{ background: 'rgba(10, 10, 10, 0.95)' }}>
-            <div className="text-xs text-white/30 uppercase tracking-[0.2em] font-bold mb-5 border-b border-white/5 pb-2.5">
+        <div className="px-5 py-4 rounded-2xl shadow-2xl border border-white/10 backdrop-blur-xl" style={{ background: 'rgba(10, 10, 10, 0.95)' }}>
+            <div className="text-xs text-white/30 uppercase tracking-[0.2em] font-bold mb-4 border-b border-white/5 pb-2">
                 Q{Math.floor(new Date(label).getMonth() / 3) + 1} {new Date(label).getFullYear()}
             </div>
-            <div className="flex flex-col gap-4">
-                <div className="flex items-center justify-between gap-12">
-                    <div className="flex items-center gap-3">
+            <div className="flex flex-col gap-3">
+                <div className="flex items-center justify-between gap-10">
+                    <div className="flex items-center gap-2.5">
                         <div className="w-1.5 h-1.5 rounded-full" style={{ background: '#444446' }} />
-                        <span className="text-xs font-normal text-white/50">Estimate</span>
+                        <span className="text-xs font-medium text-white/50">Estimate</span>
                     </div>
-                    <span className="text-xs font-medium text-white/80">${estimate?.toFixed(2)}</span>
+                    <span className="text-xs font-bold text-white/80">${estimate?.toFixed(2)}</span>
                 </div>
-                <div className="flex items-center justify-between gap-12">
-                    <div className="flex items-center gap-3">
+                <div className="flex items-center justify-between gap-10">
+                    <div className="flex items-center gap-2.5">
                         <div className="w-1.5 h-1.5 rounded-full" style={{ background: beat ? '#22c55e' : '#ef4444' }} />
-                        <span className="text-xs font-normal text-white/50">Actual</span>
+                        <span className="text-xs font-medium text-white/50">Actual</span>
                     </div>
                     <span className="text-xs font-bold" style={{ color: beat ? '#22c55e' : '#ef4444' }}>
                         ${actual?.toFixed(2)}
                     </span>
                 </div>
                 {beat && (
-                    <div className="mt-1 pt-2.5 border-t border-white/5 text-[11px] text-success/80 font-medium tracking-wide uppercase">
+                    <div className="mt-1 pt-2 border-t border-white/5 text-xs text-success/80 font-semibold tracking-wide uppercase">
                         Beat by {((actual - estimate) / Math.abs(estimate) * 100).toFixed(1)}%
                     </div>
                 )}
@@ -193,44 +193,42 @@ function FinancialHealth({ data }) {
 
     return (
         <div className="rounded-2xl p-4" style={{ background: 'rgba(255,255,255,0.03)' }}>
-            <div className="flex items-baseline justify-between mb-8">
+            <div className="flex items-baseline justify-between mb-6">
                 <span className="text-xs font-semibold text-white/90 uppercase tracking-wide">Liquidity & Debt</span>
-                <span className="text-[11px] text-white/20 lowercase font-light tracking-wide">Financial Position</span>
             </div>
 
-            <div className="flex flex-col gap-8 px-2 pb-2">
-                {/* Elegant Stacked Bar */}
-                <div className="flex flex-col gap-4">
+            <div className="flex flex-col gap-5">
+                {/* Stacked Indicator */}
+                <div className="flex flex-col gap-3">
                     <div className="flex h-1.5 rounded-full overflow-hidden bg-white/5">
                         <div style={{ width: `${cashWidth}%`, background: '#22c55e' }} className="h-full" />
-                        <div style={{ width: `${debtWidth}%`, background: '#ef4444' }} className="h-full opacity-40" />
+                        <div style={{ width: `${debtWidth}%`, background: '#ef4444' }} className="h-full opacity-50" />
                     </div>
-                    <div className="flex justify-between items-center px-1">
-                        <div className="flex flex-col">
-                            <span className="text-[10px] text-success font-medium uppercase tracking-widest mb-1">Cash</span>
-                            <span className="text-base font-light text-white/90">{formatNum(cash) || '$0'}</span>
-                        </div>
-                        <div className="flex flex-col items-end">
-                            <span className="text-[10px] text-danger font-medium uppercase tracking-widest mb-1">Debt</span>
-                            <span className="text-base font-light text-white/90">{formatNum(debt) || '$0'}</span>
-                        </div>
+                    <div className="flex justify-between text-[10px] font-light tracking-wider text-white/30">
+                        <span>Cash {cashWidth.toFixed(0)}%</span>
+                        <span>Debt {debtWidth.toFixed(0)}%</span>
                     </div>
                 </div>
 
-                {/* Subtle Divider Line */}
-                <div className="h-[1px] w-full bg-white/[0.04]" />
-
-                {/* Ratio Row */}
-                <div className="flex items-center justify-between">
-                    <div className="flex flex-col gap-1">
-                        <span className="text-[11px] text-white/40 uppercase tracking-wider font-normal">Current Ratio</span>
-                        <span className="text-[10px] text-white/20 font-light">Short-term solvency indicator</span>
+                {/* Stats */}
+                <div className="flex flex-col gap-3.5">
+                    <div className="flex items-center justify-between">
+                        <span className="text-xs text-white/40 font-light">Total Cash</span>
+                        <span className="text-xs text-success font-normal">{formatNum(cash)}</span>
                     </div>
-                    <div className="flex items-baseline gap-2">
-                        <div className={`text-2xl font-extralight ${fd.currentRatio > 2 ? 'text-success' : fd.currentRatio < 1 ? 'text-danger' : 'text-white'}`}>
-                            {fd.currentRatio?.toFixed(2)}
+                    <div className="flex items-center justify-between">
+                        <span className="text-xs text-white/40 font-light">Total Debt</span>
+                        <span className="text-xs text-danger/80 font-normal">{formatNum(debt)}</span>
+                    </div>
+                    <div className="h-[1px] bg-white/5 my-1" />
+                    <div className="flex items-center justify-between">
+                        <div className="flex flex-col">
+                            <span className="text-xs text-white/40 font-light">Current Ratio</span>
+                            <span className="text-[10px] text-white/20 font-light">short-term solvency</span>
                         </div>
-                        <div className={`w-1.5 h-1.5 rounded-full ${fd.currentRatio > 2 ? 'bg-success' : fd.currentRatio < 1 ? 'bg-danger' : 'bg-white/20'}`} />
+                        <span className={`text-sm font-normal ${fd.currentRatio > 2 ? 'text-success' : fd.currentRatio < 1 ? 'text-danger' : 'text-white/80'}`}>
+                            {fd.currentRatio?.toFixed(2)}
+                        </span>
                     </div>
                 </div>
             </div>
