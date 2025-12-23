@@ -139,7 +139,7 @@ function EarningsChart({ data }) {
                             content={<EpsTooltip />}
                             cursor={false}
                         />
-                        <Bar dataKey="epsEstimate" fill="#52525b" radius={[2, 2, 2, 2]} barSize={2} opacity={0.4} />
+                        <Bar dataKey="epsEstimate" fill="#444446" radius={[2, 2, 2, 2]} barSize={4} />
                         <Bar dataKey="epsActual" radius={[4, 4, 4, 4]} barSize={10}>
                             {earnings.map((e, i) => (
                                 <Cell key={i} fill={e.epsActual >= e.epsEstimate ? '#22c55e' : '#ef4444'} />
