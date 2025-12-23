@@ -274,8 +274,8 @@ function StatsSection({ data }) {
                 >
                     <span className="text-sm text-white/50">{stat.label}</span>
                     <span className={`text-sm font-medium ${typeof stat.value === 'string' && stat.value.includes('%') && !stat.value.includes('-')
-                            ? (parseFloat(stat.value) > 20 ? 'text-success' : 'text-white')
-                            : 'text-white'
+                        ? (parseFloat(stat.value) > 20 ? 'text-success' : 'text-white')
+                        : 'text-white'
                         }`}>
                         {stat.value}
                     </span>
@@ -303,7 +303,7 @@ function RevenueTrend({ data }) {
         <div className="rounded-2xl p-4" style={{ background: 'rgba(255,255,255,0.03)' }}>
             <div className="flex items-center justify-between mb-3">
                 <span className="text-xs font-medium text-white/50 uppercase tracking-wider">Annual Revenue</span>
-                <span className="text-[10px] text-white/30">in billions USD</span>
+                <span className="text-[9px] text-white/20 uppercase tracking-tight">in billions USD</span>
             </div>
 
             <div style={{ height: 100 }}>
@@ -322,6 +322,7 @@ function RevenueTrend({ data }) {
                             tickLine={false}
                         />
                         <YAxis
+                            domain={['auto', 'auto']}
                             tick={{ fill: '#52525b', fontSize: 10 }}
                             tickFormatter={(v) => `$${v.toFixed(0)}B`}
                             axisLine={false}
