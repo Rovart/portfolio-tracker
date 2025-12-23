@@ -11,7 +11,7 @@ const fxCache = {
 // Short timeframes need more frequent updates, long timeframes can cache longer
 const CACHE_DURATIONS = {
     current: 60 * 60 * 1000,    // 1 hour for current prices
-    '1D': 5 * 60 * 1000,        // 5 min for 1D (intraday data changes rapidly)
+    '1D': 15 * 60 * 1000,        // 15 min for 1D (intraday data changes rapidly)
     '1W': 30 * 60 * 1000,       // 30 min for 1W (resampled to hourly anyway)
     '1M': 30 * 60 * 1000,       // 30 min for 1M
     '3M': 60 * 60 * 1000,       // 1 hour for 3M
