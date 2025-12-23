@@ -62,8 +62,8 @@ export default function AssetChart({ symbol, chartSymbol, baseCurrency = 'USD', 
         if (symbol || chartSymbol) load();
     }, [symbol, range, needsFxConversion, assetCurrency, baseCurrency, chartSymbol]);
 
-    const { chartData, offset, startPrice } = useMemo(() => {
-        if (!rawData || rawData.length === 0) return { chartData: [], offset: 0, startPrice: 0 };
+    const { chartData, offset, startPrice, yDomain } = useMemo(() => {
+        if (!rawData || rawData.length === 0) return { chartData: [], offset: 0, startPrice: 0, yDomain: [0, 100] };
         let processedData = rawData;
         if (rawData.length > 300) {
             const step = Math.ceil(rawData.length / 300);
@@ -93,6 +93,11 @@ export default function AssetChart({ symbol, chartSymbol, baseCurrency = 'USD', 
         const prices = convertedData.map(d => d.value);
         const max = Math.max(...prices);
         const min = Math.min(...prices);
+
+        // Calculate fixed Y domain with padding
+        const padding = (max - min) * 0.05 || max * 0.05;
+        const fixedYDomain = [min - padding, max + padding];
+
         let off = 0;
         if (max === min) off = 0.5;
         else {
@@ -100,7 +105,7 @@ export default function AssetChart({ symbol, chartSymbol, baseCurrency = 'USD', 
             if (isNaN(off) || !isFinite(off)) off = 0;
             off = Math.max(0, Math.min(1, off));
         }
-        return { chartData: convertedData, offset: off, startPrice: start };
+        return { chartData: convertedData, offset: off, startPrice: start, yDomain: fixedYDomain };
     }, [rawData, fxRate, fxHistory, needsFxConversion]);
 
     // Selection metrics
@@ -182,7 +187,7 @@ export default function AssetChart({ symbol, chartSymbol, baseCurrency = 'USD', 
                             </linearGradient>
                         </defs>
                         <XAxis dataKey="date" hide />
-                        <YAxis domain={['auto', 'auto']} hide />
+                        <YAxis domain={yDomain} hide />
 
                         {/* Gray overlay for areas OUTSIDE selection */}
                         {selectionMetrics && (
@@ -221,19 +226,22 @@ export default function AssetChart({ symbol, chartSymbol, baseCurrency = 'USD', 
                             </>
                         )}
 
-                        <Tooltip
-                            contentStyle={{ backgroundColor: '#171717', border: '1px solid #262626', borderRadius: '12px', padding: '8px 12px' }}
-                            formatter={(val) => [
-                                <span key="price" style={{ color: val >= startPrice ? green : red }}>
-                                    {val.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} {baseCurrency === 'USD' ? '$' : baseCurrency}
-                                </span>,
-                                'Price'
-                            ]}
-                            labelFormatter={(label) => new Date(label).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
-                            labelStyle={{ color: '#a1a1aa', fontSize: '0.75rem', marginBottom: '4px' }}
-                            cursor={{ stroke: '#525252', strokeWidth: 1 }}
-                            isAnimationActive={false}
-                        />
+                        {/* Hide tooltip when selecting */}
+                        {!isSelecting && !hasSelection && (
+                            <Tooltip
+                                contentStyle={{ backgroundColor: '#171717', border: '1px solid #262626', borderRadius: '12px', padding: '8px 12px' }}
+                                formatter={(val) => [
+                                    <span key="price" style={{ color: val >= startPrice ? green : red }}>
+                                        {val.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} {baseCurrency === 'USD' ? '$' : baseCurrency}
+                                    </span>,
+                                    'Price'
+                                ]}
+                                labelFormatter={(label) => new Date(label).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                                labelStyle={{ color: '#a1a1aa', fontSize: '0.75rem', marginBottom: '4px' }}
+                                cursor={{ stroke: '#525252', strokeWidth: 1 }}
+                                isAnimationActive={false}
+                            />
+                        )}
 
                         {/* Main chart line - always visible with original colors */}
                         <Area
@@ -243,22 +251,25 @@ export default function AssetChart({ symbol, chartSymbol, baseCurrency = 'USD', 
                             fill="url(#splitFill)"
                             strokeWidth={2}
                             baseValue={startPrice}
+                            isAnimationActive={false}
                         />
 
                         {/* White highlight line for selected portion only */}
-                        {selectionMetrics && chartData.length > 0 && (
+                        {selectionMetrics && (
                             <Area
                                 type="monotone"
-                                dataKey="value"
+                                dataKey={(d) => {
+                                    const idx = chartData.findIndex(cd => cd.date === d.date);
+                                    if (idx >= selectionMetrics.startIdx && idx <= selectionMetrics.endIdx) {
+                                        return d.value;
+                                    }
+                                    return null;
+                                }}
                                 stroke="#ffffff"
                                 fill="none"
                                 strokeWidth={2.5}
-                                baseValue={startPrice}
-                                data={chartData.map((d, i) => ({
-                                    ...d,
-                                    value: (i >= selectionMetrics.startIdx && i <= selectionMetrics.endIdx) ? d.value : null
-                                }))}
                                 connectNulls={false}
+                                isAnimationActive={false}
                             />
                         )}
                     </AreaChart>

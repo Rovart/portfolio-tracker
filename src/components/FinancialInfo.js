@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell, AreaChart, Area } from 'recharts';
-import { TrendingUp, TrendingDown, Calendar, Target, Activity, DollarSign, PieChart, BarChart2 } from 'lucide-react';
+import { ChevronRight } from 'lucide-react';
 
 export default function FinancialInfo({ symbol, baseCurrency = 'USD' }) {
     const [data, setData] = useState(null);
@@ -20,7 +20,7 @@ export default function FinancialInfo({ symbol, baseCurrency = 'USD' }) {
                 const json = await res.json();
                 setData(json.data);
             } catch (e) {
-                setError('Financial data not available for this asset');
+                setError('Financial data not available');
             } finally {
                 setLoading(false);
             }
@@ -29,211 +29,188 @@ export default function FinancialInfo({ symbol, baseCurrency = 'USD' }) {
     }, [symbol]);
 
     if (loading) return <LoadingSkeleton />;
-    if (error) return <ErrorState message={error} />;
-    if (!data) return <ErrorState message="No financial data available" />;
+    if (error || !data) return null;
+
+    // Check if there's any meaningful data
+    const hasData = data.summaryDetail?.marketCap ||
+        data.financialData?.numberOfAnalystOpinions ||
+        data.earningsHistory?.length > 0;
+
+    if (!hasData) return null;
 
     return (
-        <div className="flex flex-col gap-5">
-            {/* Key Metrics Row */}
-            <KeyMetricsRow data={data} />
-
-            {/* Analyst Section */}
+        <div className="flex flex-col gap-6 pb-4">
+            {/* Analyst Rating Section */}
             {data.financialData?.numberOfAnalystOpinions > 0 && (
-                <AnalystCard data={data} />
+                <AnalystSection data={data} />
             )}
 
-            {/* Earnings History */}
+            {/* Earnings Chart */}
             {data.earningsHistory?.length > 0 && (
-                <EarningsCard data={data} />
+                <EarningsChart data={data} />
             )}
 
-            {/* Upcoming Events */}
-            {data.calendarEvents && <EventsCard data={data} />}
+            {/* Key Stats */}
+            <StatsSection data={data} />
 
-            {/* Detailed Metrics */}
-            <DetailedMetrics data={data} />
-
-            {/* Revenue Chart */}
+            {/* Revenue Trend */}
             {data.incomeStatement?.filter(i => i.totalRevenue).length > 1 && (
-                <RevenueCard data={data} />
+                <RevenueTrend data={data} />
             )}
         </div>
     );
 }
 
-// Format helpers
-const fmt = (num, decimals = 2) => {
-    if (num === null || num === undefined || isNaN(num)) return null;
-    if (Math.abs(num) >= 1e12) return `${(num / 1e12).toFixed(decimals)}T`;
-    if (Math.abs(num) >= 1e9) return `${(num / 1e9).toFixed(decimals)}B`;
-    if (Math.abs(num) >= 1e6) return `${(num / 1e6).toFixed(decimals)}M`;
-    if (Math.abs(num) >= 1e3) return `${(num / 1e3).toFixed(decimals)}K`;
-    return num.toFixed ? num.toFixed(decimals) : String(num);
+// Number formatting
+const formatNum = (n, d = 1) => {
+    if (n === null || n === undefined || isNaN(n)) return null;
+    if (Math.abs(n) >= 1e12) return `$${(n / 1e12).toFixed(d)}T`;
+    if (Math.abs(n) >= 1e9) return `$${(n / 1e9).toFixed(d)}B`;
+    if (Math.abs(n) >= 1e6) return `$${(n / 1e6).toFixed(d)}M`;
+    return `$${n.toFixed(d)}`;
 };
 
-const pct = (num) => {
-    if (num === null || num === undefined || isNaN(num)) return null;
-    return `${(num * 100).toFixed(1)}%`;
+const formatPct = (n) => {
+    if (n === null || n === undefined || isNaN(n)) return null;
+    return `${(n * 100).toFixed(1)}%`;
 };
 
-// Key Metrics - compact row
-function KeyMetricsRow({ data }) {
-    const metrics = [
-        { label: 'Mkt Cap', value: fmt(data.summaryDetail?.marketCap, 1) },
-        { label: 'P/E', value: data.summaryDetail?.trailingPE?.toFixed(1) },
-        { label: 'Div', value: pct(data.summaryDetail?.dividendYield) },
-        { label: 'Beta', value: data.keyStats?.beta?.toFixed(2) },
-    ].filter(m => m.value !== null);
-
-    if (metrics.length === 0) return null;
-
-    return (
-        <div className="flex gap-2">
-            {metrics.map((m, i) => (
-                <div
-                    key={i}
-                    className="flex-1 p-3 rounded-xl text-center"
-                    style={{ background: 'rgba(255,255,255,0.03)' }}
-                >
-                    <div className="text-[10px] uppercase tracking-wider text-white/40 mb-1">{m.label}</div>
-                    <div className="text-sm font-semibold text-white">{m.value}</div>
-                </div>
-            ))}
-        </div>
-    );
-}
-
-// Analyst Card
-function AnalystCard({ data }) {
+// Analyst Section - clean modern design
+function AnalystSection({ data }) {
     const fd = data.financialData;
-    const rec = fd.recommendationKey?.replace(/_/g, ' ').toUpperCase();
+    const rec = fd.recommendationKey?.toUpperCase().replace(/_/g, ' ');
     if (!rec) return null;
 
-    const isBuy = rec.includes('BUY');
-    const isSell = rec.includes('SELL');
-    const recColor = isBuy ? '#22c55e' : isSell ? '#ef4444' : '#a1a1aa';
-
+    const analysts = fd.numberOfAnalystOpinions;
     const current = fd.currentPrice || 0;
     const target = fd.targetMeanPrice || 0;
-    const upside = current > 0 ? ((target - current) / current * 100) : null;
     const low = fd.targetLowPrice;
     const high = fd.targetHighPrice;
+    const upside = current > 0 ? ((target - current) / current * 100) : 0;
 
-    const pricePosition = low && high && high > low
-        ? Math.max(0, Math.min(100, ((current - low) / (high - low)) * 100))
-        : 50;
+    const getBadgeStyle = () => {
+        if (rec.includes('BUY') || rec.includes('STRONG')) return { bg: 'rgba(34, 197, 94, 0.12)', color: '#22c55e' };
+        if (rec.includes('SELL')) return { bg: 'rgba(239, 68, 68, 0.12)', color: '#ef4444' };
+        return { bg: 'rgba(161, 161, 170, 0.12)', color: '#a1a1aa' };
+    };
+    const badge = getBadgeStyle();
 
     return (
-        <div className="p-4 rounded-xl" style={{ background: 'rgba(255,255,255,0.03)' }}>
+        <div>
             <div className="flex items-center justify-between mb-4">
-                <div className="flex items-center gap-2">
-                    <Target size={14} className="text-white/40" />
-                    <span className="text-xs text-white/60">Analyst Ratings</span>
-                </div>
-                {fd.numberOfAnalystOpinions && (
-                    <span className="text-[10px] text-white/30">{fd.numberOfAnalystOpinions} analysts</span>
-                )}
+                <h3 className="text-sm font-semibold text-white">Analyst Rating</h3>
+                <span className="text-xs text-white/40">{analysts} analysts</span>
             </div>
 
-            <div className="flex items-center gap-4">
-                {/* Recommendation */}
-                <div
-                    className="px-3 py-1.5 rounded-lg text-xs font-bold"
-                    style={{ background: `${recColor}15`, color: recColor }}
+            <div className="flex items-center gap-4 mb-4">
+                <span
+                    className="px-3 py-1.5 rounded-lg text-xs font-bold tracking-wide"
+                    style={{ background: badge.bg, color: badge.color }}
                 >
                     {rec}
-                </div>
-
-                {/* Price Target Bar */}
-                {low && high && (
-                    <div className="flex-1 flex items-center gap-2">
-                        <span className="text-[10px] text-white/40 w-10 text-right">{fmt(low, 0)}</span>
-                        <div className="flex-1 h-1.5 rounded-full relative" style={{ background: 'rgba(255,255,255,0.1)' }}>
-                            <div
-                                className="absolute h-1.5 rounded-full"
-                                style={{
-                                    left: 0,
-                                    width: `${pricePosition}%`,
-                                    background: isBuy ? '#22c55e' : isSell ? '#ef4444' : '#3b82f6'
-                                }}
-                            />
-                            <div
-                                className="absolute w-2.5 h-2.5 rounded-full border-2 border-white"
-                                style={{
-                                    left: `${pricePosition}%`,
-                                    top: '50%',
-                                    transform: 'translate(-50%, -50%)',
-                                    background: '#0a0a0a'
-                                }}
-                            />
-                        </div>
-                        <span className="text-[10px] text-white/40 w-10">{fmt(high, 0)}</span>
-                    </div>
-                )}
-
-                {/* Upside */}
-                {upside !== null && (
-                    <div className="flex items-center gap-1">
-                        {upside >= 0 ? (
-                            <TrendingUp size={12} className="text-success" />
-                        ) : (
-                            <TrendingDown size={12} className="text-danger" />
-                        )}
-                        <span className={`text-sm font-bold ${upside >= 0 ? 'text-success' : 'text-danger'}`}>
+                </span>
+                <div className="flex-1" />
+                {upside !== 0 && (
+                    <div className="text-right">
+                        <div className="text-xs text-white/40">Target upside</div>
+                        <div className={`text-lg font-bold ${upside >= 0 ? 'text-success' : 'text-danger'}`}>
                             {upside >= 0 ? '+' : ''}{upside.toFixed(0)}%
-                        </span>
+                        </div>
                     </div>
                 )}
             </div>
+
+            {/* Price target scale */}
+            {low && high && high > low && (
+                <div className="pt-2">
+                    <div className="flex justify-between text-[10px] text-white/40 mb-2">
+                        <span>${low.toFixed(0)}</span>
+                        <span>Target: ${target.toFixed(0)}</span>
+                        <span>${high.toFixed(0)}</span>
+                    </div>
+                    <div className="relative h-2 rounded-full" style={{ background: 'rgba(255,255,255,0.06)' }}>
+                        {/* Range bar */}
+                        <div
+                            className="absolute h-2 rounded-full"
+                            style={{
+                                left: 0,
+                                width: `${((target - low) / (high - low)) * 100}%`,
+                                background: 'linear-gradient(90deg, #22c55e, #3b82f6)'
+                            }}
+                        />
+                        {/* Current price marker */}
+                        <div
+                            className="absolute top-1/2 w-3 h-3 rounded-full border-2 border-white shadow-lg"
+                            style={{
+                                left: `${Math.max(0, Math.min(100, ((current - low) / (high - low)) * 100))}%`,
+                                transform: 'translate(-50%, -50%)',
+                                background: '#0a0a0a'
+                            }}
+                        />
+                    </div>
+                    <div className="flex justify-between text-[10px] text-white/30 mt-1">
+                        <span>Low</span>
+                        <span>Current: ${current.toFixed(0)}</span>
+                        <span>High</span>
+                    </div>
+                </div>
+            )}
         </div>
     );
 }
 
-// Earnings Card
-function EarningsCard({ data }) {
+// Earnings Chart
+function EarningsChart({ data }) {
     const earnings = data.earningsHistory.slice().reverse();
     if (earnings.length === 0) return null;
 
     return (
-        <div className="p-4 rounded-xl" style={{ background: 'rgba(255,255,255,0.03)' }}>
+        <div>
             <div className="flex items-center justify-between mb-3">
-                <div className="flex items-center gap-2">
-                    <BarChart2 size={14} className="text-white/40" />
-                    <span className="text-xs text-white/60">Quarterly EPS</span>
-                </div>
-                <div className="flex items-center gap-3 text-[10px] text-white/40">
-                    <span className="flex items-center gap-1">
-                        <span className="w-2 h-2 rounded-sm" style={{ background: '#22c55e' }} /> Beat
+                <h3 className="text-sm font-semibold text-white">Quarterly EPS</h3>
+                <div className="flex items-center gap-4 text-[10px] text-white/40">
+                    <span className="flex items-center gap-1.5">
+                        <span className="w-2 h-2 rounded-sm" style={{ background: '#3f3f46' }} />
+                        Estimate
                     </span>
-                    <span className="flex items-center gap-1">
-                        <span className="w-2 h-2 rounded-sm" style={{ background: '#ef4444' }} /> Miss
+                    <span className="flex items-center gap-1.5">
+                        <span className="w-2 h-2 rounded-sm" style={{ background: '#22c55e' }} />
+                        Actual
                     </span>
                 </div>
             </div>
 
-            <div style={{ height: '120px' }}>
+            <div style={{ height: 140 }}>
                 <ResponsiveContainer width="100%" height="100%">
-                    <BarChart data={earnings} margin={{ top: 5, right: 5, left: -25, bottom: 0 }} barGap={4}>
+                    <BarChart data={earnings} margin={{ top: 8, right: 0, left: -24, bottom: 0 }} barGap={6}>
                         <XAxis
                             dataKey="date"
-                            tick={{ fill: '#525252', fontSize: 9 }}
-                            tickFormatter={(val) => {
-                                const d = new Date(val);
-                                return `Q${Math.floor(d.getMonth() / 3) + 1}`;
-                            }}
+                            tick={{ fill: '#52525b', fontSize: 10 }}
+                            tickFormatter={(v) => `Q${Math.floor(new Date(v).getMonth() / 3) + 1}`}
                             axisLine={false}
                             tickLine={false}
                         />
-                        <YAxis tick={{ fill: '#525252', fontSize: 9 }} axisLine={false} tickLine={false} />
-                        <Tooltip
-                            contentStyle={{ background: '#171717', border: 'none', borderRadius: '8px', fontSize: '11px' }}
-                            labelFormatter={(val) => `Q${Math.floor(new Date(val).getMonth() / 3) + 1} ${new Date(val).getFullYear()}`}
-                            formatter={(v, name) => [`$${v?.toFixed(2)}`, name === 'epsActual' ? 'Actual' : 'Est']}
+                        <YAxis
+                            tick={{ fill: '#52525b', fontSize: 10 }}
+                            axisLine={false}
+                            tickLine={false}
+                            tickFormatter={(v) => `$${v}`}
                         />
-                        <Bar dataKey="epsEstimate" fill="#3f3f46" radius={[3, 3, 0, 0]} />
-                        <Bar dataKey="epsActual" radius={[3, 3, 0, 0]}>
-                            {earnings.map((entry, i) => (
-                                <Cell key={i} fill={entry.epsActual >= entry.epsEstimate ? '#22c55e' : '#ef4444'} />
+                        <Tooltip
+                            contentStyle={{
+                                background: '#18181b',
+                                border: '1px solid #27272a',
+                                borderRadius: 8,
+                                fontSize: 11,
+                                padding: '8px 12px'
+                            }}
+                            labelFormatter={(v) => `Q${Math.floor(new Date(v).getMonth() / 3) + 1} ${new Date(v).getFullYear()}`}
+                            formatter={(v, name) => [`$${v?.toFixed(2)}`, name === 'epsActual' ? 'Actual' : 'Estimate']}
+                        />
+                        <Bar dataKey="epsEstimate" fill="#3f3f46" radius={[4, 4, 0, 0]} />
+                        <Bar dataKey="epsActual" radius={[4, 4, 0, 0]}>
+                            {earnings.map((e, i) => (
+                                <Cell key={i} fill={e.epsActual >= e.epsEstimate ? '#22c55e' : '#ef4444'} />
                             ))}
                         </Bar>
                     </BarChart>
@@ -243,176 +220,119 @@ function EarningsCard({ data }) {
     );
 }
 
-// Events Card
-function EventsCard({ data }) {
-    const events = [];
-    const now = new Date();
+// Stats Section - clean list style
+function StatsSection({ data }) {
+    const sd = data.summaryDetail || {};
+    const ks = data.keyStats || {};
+    const fd = data.financialData || {};
 
-    if (data.calendarEvents.earnings?.earningsDate?.[0]) {
-        const d = new Date(data.calendarEvents.earnings.earningsDate[0]);
-        const days = Math.ceil((d - now) / (1000 * 60 * 60 * 24));
-        if (days > 0) events.push({ label: 'Earnings', date: d, days });
-    }
-    if (data.calendarEvents.exDividendDate) {
-        const d = new Date(data.calendarEvents.exDividendDate);
-        const days = Math.ceil((d - now) / (1000 * 60 * 60 * 24));
-        if (days > 0) events.push({ label: 'Ex-Div', date: d, days });
-    }
-    if (data.calendarEvents.dividendDate) {
-        const d = new Date(data.calendarEvents.dividendDate);
-        const days = Math.ceil((d - now) / (1000 * 60 * 60 * 24));
-        if (days > 0) events.push({ label: 'Dividend', date: d, days });
-    }
+    const stats = [
+        { label: 'Market Cap', value: formatNum(sd.marketCap) },
+        { label: 'P/E Ratio', value: sd.trailingPE?.toFixed(1) },
+        { label: 'Forward P/E', value: ks.forwardPE?.toFixed(1) },
+        { label: 'PEG Ratio', value: ks.pegRatio?.toFixed(2) },
+        { label: 'Dividend Yield', value: formatPct(sd.dividendYield) },
+        { label: 'Beta', value: ks.beta?.toFixed(2) },
+        {
+            label: '52W Range', value: sd.fiftyTwoWeekLow && sd.fiftyTwoWeekHigh ?
+                `$${sd.fiftyTwoWeekLow.toFixed(0)} - $${sd.fiftyTwoWeekHigh.toFixed(0)}` : null
+        },
+        { label: 'Gross Margin', value: formatPct(fd.grossMargins) },
+        { label: 'Operating Margin', value: formatPct(fd.operatingMargins) },
+        { label: 'Profit Margin', value: formatPct(fd.profitMargins) },
+        { label: 'Return on Equity', value: formatPct(fd.returnOnEquity) },
+        { label: 'Revenue Growth', value: formatPct(fd.revenueGrowth) },
+        { label: 'Total Cash', value: formatNum(fd.totalCash) },
+        { label: 'Total Debt', value: formatNum(fd.totalDebt) },
+        { label: 'Debt to Equity', value: fd.debtToEquity?.toFixed(0) },
+        { label: 'Free Cash Flow', value: formatNum(fd.freeCashflow) },
+    ].filter(s => s.value !== null);
 
-    if (events.length === 0) return null;
+    if (stats.length === 0) return null;
 
     return (
-        <div className="flex gap-2 overflow-x-auto no-scrollbar">
-            {events.map((e, i) => (
-                <div
-                    key={i}
-                    className="flex-shrink-0 p-3 rounded-xl flex items-center gap-3"
-                    style={{ background: 'rgba(59, 130, 246, 0.08)' }}
-                >
-                    <Calendar size={14} className="text-blue-400" />
-                    <div>
-                        <div className="text-[10px] uppercase tracking-wider text-white/40">{e.label}</div>
-                        <div className="text-xs font-medium text-white">
-                            {e.date.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}
-                        </div>
+        <div>
+            <h3 className="text-sm font-semibold text-white mb-3">Key Statistics</h3>
+            <div className="rounded-xl overflow-hidden" style={{ background: 'rgba(255,255,255,0.02)' }}>
+                {stats.map((stat, i) => (
+                    <div
+                        key={i}
+                        className="flex items-center justify-between px-4 py-3"
+                        style={{ borderBottom: i < stats.length - 1 ? '1px solid rgba(255,255,255,0.04)' : 'none' }}
+                    >
+                        <span className="text-sm text-white/60">{stat.label}</span>
+                        <span className={`text-sm font-medium ${typeof stat.value === 'string' && stat.value.includes('%') && !stat.value.includes('-')
+                                ? (parseFloat(stat.value) > 20 ? 'text-success' : 'text-white')
+                                : 'text-white'
+                            }`}>
+                            {stat.value}
+                        </span>
                     </div>
-                    <div className="text-[10px] text-blue-400 font-medium">
-                        {e.days}d
-                    </div>
-                </div>
-            ))}
+                ))}
+            </div>
         </div>
     );
 }
 
-// Detailed Metrics
-function DetailedMetrics({ data }) {
-    const sections = [
-        {
-            title: 'Valuation',
-            icon: PieChart,
-            items: [
-                ['P/E (TTM)', data.summaryDetail?.trailingPE?.toFixed(1)],
-                ['Forward P/E', data.keyStats?.forwardPE?.toFixed(1)],
-                ['PEG', data.keyStats?.pegRatio?.toFixed(2)],
-                ['P/B', data.keyStats?.priceToBook?.toFixed(1)],
-                ['EV/Rev', data.keyStats?.enterpriseToRevenue?.toFixed(1)],
-                ['EV/EBITDA', data.keyStats?.enterpriseToEbitda?.toFixed(1)],
-            ]
-        },
-        {
-            title: 'Profitability',
-            icon: Activity,
-            items: [
-                ['Gross Margin', pct(data.financialData?.grossMargins)],
-                ['Op. Margin', pct(data.financialData?.operatingMargins)],
-                ['Net Margin', pct(data.financialData?.profitMargins)],
-                ['ROE', pct(data.financialData?.returnOnEquity)],
-                ['ROA', pct(data.financialData?.returnOnAssets)],
-                ['Rev Growth', pct(data.financialData?.revenueGrowth)],
-            ]
-        },
-        {
-            title: 'Balance Sheet',
-            icon: DollarSign,
-            items: [
-                ['Cash', fmt(data.financialData?.totalCash, 1)],
-                ['Debt', fmt(data.financialData?.totalDebt, 1)],
-                ['D/E', data.financialData?.debtToEquity?.toFixed(0)],
-                ['Current', data.financialData?.currentRatio?.toFixed(2)],
-                ['FCF', fmt(data.financialData?.freeCashflow, 1)],
-            ]
-        }
-    ];
-
-    return (
-        <div className="flex flex-col gap-3">
-            {sections.map((section, i) => {
-                const validItems = section.items.filter(([, v]) => v !== null && v !== undefined);
-                if (validItems.length === 0) return null;
-
-                const Icon = section.icon;
-                return (
-                    <div key={i} className="p-4 rounded-xl" style={{ background: 'rgba(255,255,255,0.03)' }}>
-                        <div className="flex items-center gap-2 mb-3">
-                            <Icon size={14} className="text-white/40" />
-                            <span className="text-xs text-white/60">{section.title}</span>
-                        </div>
-                        <div className="grid grid-cols-3 gap-x-4 gap-y-2">
-                            {validItems.map(([label, value], j) => (
-                                <div key={j} className="flex flex-col">
-                                    <span className="text-[10px] text-white/30">{label}</span>
-                                    <span className={`text-sm font-medium ${typeof value === 'string' && value.includes('%')
-                                            ? (parseFloat(value) > 0 ? 'text-success' : parseFloat(value) < 0 ? 'text-danger' : 'text-white')
-                                            : 'text-white'
-                                        }`}>{value}</span>
-                                </div>
-                            ))}
-                        </div>
-                    </div>
-                );
-            })}
-        </div>
-    );
-}
-
-// Revenue Card
-function RevenueCard({ data }) {
+// Revenue Trend
+function RevenueTrend({ data }) {
     const chartData = data.incomeStatement
         .filter(i => i.totalRevenue)
         .slice()
         .reverse()
-        .map(item => ({
-            year: new Date(item.date).getFullYear().toString().slice(2),
-            revenue: item.totalRevenue,
-            income: item.netIncome,
+        .map(i => ({
+            year: `'${new Date(i.date).getFullYear().toString().slice(2)}`,
+            revenue: i.totalRevenue / 1e9,
+            income: i.netIncome ? i.netIncome / 1e9 : 0
         }));
 
     if (chartData.length < 2) return null;
 
     return (
-        <div className="p-4 rounded-xl" style={{ background: 'rgba(255,255,255,0.03)' }}>
+        <div>
             <div className="flex items-center justify-between mb-3">
-                <div className="flex items-center gap-2">
-                    <TrendingUp size={14} className="text-white/40" />
-                    <span className="text-xs text-white/60">Revenue & Income</span>
-                </div>
-                <div className="flex items-center gap-3 text-[10px] text-white/40">
-                    <span className="flex items-center gap-1">
-                        <span className="w-3 h-0.5 rounded" style={{ background: '#3b82f6' }} /> Rev
-                    </span>
-                    <span className="flex items-center gap-1">
-                        <span className="w-3 h-0.5 rounded" style={{ background: '#22c55e' }} /> Net
-                    </span>
-                </div>
+                <h3 className="text-sm font-semibold text-white">Annual Revenue</h3>
+                <span className="text-[10px] text-white/40">in billions</span>
             </div>
 
-            <div style={{ height: '100px' }}>
+            <div style={{ height: 120 }}>
                 <ResponsiveContainer width="100%" height="100%">
-                    <AreaChart data={chartData} margin={{ top: 5, right: 5, left: -25, bottom: 0 }}>
+                    <AreaChart data={chartData} margin={{ top: 8, right: 0, left: -24, bottom: 0 }}>
                         <defs>
-                            <linearGradient id="revGrad" x1="0" y1="0" x2="0" y2="1">
-                                <stop offset="0%" stopColor="#3b82f6" stopOpacity={0.15} />
+                            <linearGradient id="revGradFin" x1="0" y1="0" x2="0" y2="1">
+                                <stop offset="0%" stopColor="#3b82f6" stopOpacity={0.2} />
                                 <stop offset="100%" stopColor="#3b82f6" stopOpacity={0} />
                             </linearGradient>
-                            <linearGradient id="incGrad" x1="0" y1="0" x2="0" y2="1">
-                                <stop offset="0%" stopColor="#22c55e" stopOpacity={0.15} />
-                                <stop offset="100%" stopColor="#22c55e" stopOpacity={0} />
-                            </linearGradient>
                         </defs>
-                        <XAxis dataKey="year" tick={{ fill: '#525252', fontSize: 9 }} axisLine={false} tickLine={false} />
-                        <YAxis tick={{ fill: '#525252', fontSize: 9 }} tickFormatter={(v) => fmt(v, 0)} axisLine={false} tickLine={false} />
-                        <Tooltip
-                            contentStyle={{ background: '#171717', border: 'none', borderRadius: '8px', fontSize: '11px' }}
-                            formatter={(v) => [fmt(v, 1)]}
+                        <XAxis
+                            dataKey="year"
+                            tick={{ fill: '#52525b', fontSize: 10 }}
+                            axisLine={false}
+                            tickLine={false}
                         />
-                        <Area type="monotone" dataKey="revenue" stroke="#3b82f6" fill="url(#revGrad)" strokeWidth={1.5} name="Revenue" />
-                        <Area type="monotone" dataKey="income" stroke="#22c55e" fill="url(#incGrad)" strokeWidth={1.5} name="Net Income" />
+                        <YAxis
+                            tick={{ fill: '#52525b', fontSize: 10 }}
+                            tickFormatter={(v) => `$${v.toFixed(0)}B`}
+                            axisLine={false}
+                            tickLine={false}
+                        />
+                        <Tooltip
+                            contentStyle={{
+                                background: '#18181b',
+                                border: '1px solid #27272a',
+                                borderRadius: 8,
+                                fontSize: 11
+                            }}
+                            formatter={(v) => [`$${v.toFixed(1)}B`]}
+                        />
+                        <Area
+                            type="monotone"
+                            dataKey="revenue"
+                            stroke="#3b82f6"
+                            fill="url(#revGradFin)"
+                            strokeWidth={2}
+                            name="Revenue"
+                        />
                     </AreaChart>
                 </ResponsiveContainer>
             </div>
@@ -422,24 +342,23 @@ function RevenueCard({ data }) {
 
 function LoadingSkeleton() {
     return (
-        <div className="flex flex-col gap-4 animate-pulse">
-            <div className="flex gap-2">
-                {[1, 2, 3, 4].map(i => (
-                    <div key={i} className="flex-1 h-14 rounded-xl" style={{ background: 'rgba(255,255,255,0.03)' }} />
-                ))}
+        <div className="flex flex-col gap-6 animate-pulse">
+            <div>
+                <div className="h-4 w-24 bg-white/5 rounded mb-4" />
+                <div className="h-10 bg-white/5 rounded-lg" />
             </div>
-            <div className="h-24 rounded-xl" style={{ background: 'rgba(255,255,255,0.03)' }} />
-            <div className="h-36 rounded-xl" style={{ background: 'rgba(255,255,255,0.03)' }} />
-        </div>
-    );
-}
-
-function ErrorState({ message }) {
-    return (
-        <div className="flex flex-col items-center justify-center py-12 text-center">
-            <Activity size={32} className="text-white/20 mb-3" />
-            <p className="text-white/50 text-sm">{message}</p>
-            <p className="text-white/20 text-xs mt-1">Available for stocks and ETFs only</p>
+            <div>
+                <div className="h-4 w-20 bg-white/5 rounded mb-3" />
+                <div className="h-32 bg-white/5 rounded-lg" />
+            </div>
+            <div>
+                <div className="h-4 w-28 bg-white/5 rounded mb-3" />
+                <div className="space-y-0">
+                    {[1, 2, 3, 4, 5].map(i => (
+                        <div key={i} className="h-12 bg-white/5" style={{ borderRadius: i === 1 ? '12px 12px 0 0' : i === 5 ? '0 0 12px 12px' : 0 }} />
+                    ))}
+                </div>
+            </div>
         </div>
     );
 }

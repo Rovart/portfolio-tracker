@@ -29,7 +29,16 @@ export default function HoldingsList({ holdings, onSelect, onAddAsset, loading, 
     };
 
     // Sort holdings based on selected option
+    // FIAT currencies ALWAYS go to bottom regardless of sort
     const sortedHoldings = [...holdings].sort((a, b) => {
+        const aIsFiat = a.type === 'CURRENCY' || a.isBareCurrency;
+        const bIsFiat = b.type === 'CURRENCY' || b.isBareCurrency;
+
+        // If one is FIAT and the other isn't, FIAT goes to bottom
+        if (aIsFiat && !bIsFiat) return 1;
+        if (!aIsFiat && bIsFiat) return -1;
+
+        // Both are FIAT or both are not FIAT - apply normal sorting
         switch (sortBy) {
             case 'gainers':
                 return b.change24h - a.change24h;

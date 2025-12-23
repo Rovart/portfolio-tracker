@@ -472,37 +472,39 @@ export default function TransactionModal({ mode, holding, transactions, onClose,
 
                     {currentView === 'LIST' && selectedAsset && (
                         <div className="flex flex-col gap-4">
-                            {/* Tab Navigation */}
-                            <div className="flex gap-2 p-1 rounded-full" style={{ background: '#171717' }}>
-                                <button
-                                    onClick={() => setAssetTab('overview')}
-                                    className="flex-1 text-xs font-bold rounded-full transition-all"
-                                    style={{
-                                        background: assetTab === 'overview' ? 'white' : 'transparent',
-                                        color: assetTab === 'overview' ? 'black' : '#a1a1aa',
-                                        border: 'none',
-                                        cursor: 'pointer',
-                                        padding: '12px 16px',
-                                        boxShadow: assetTab === 'overview' ? '0 4px 6px -1px rgba(0, 0, 0, 0.1)' : 'none'
-                                    }}
-                                >
-                                    OVERVIEW
-                                </button>
-                                <button
-                                    onClick={() => setAssetTab('financials')}
-                                    className="flex-1 text-xs font-bold rounded-full transition-all"
-                                    style={{
-                                        background: assetTab === 'financials' ? 'white' : 'transparent',
-                                        color: assetTab === 'financials' ? 'black' : '#a1a1aa',
-                                        border: 'none',
-                                        cursor: 'pointer',
-                                        padding: '12px 16px',
-                                        boxShadow: assetTab === 'financials' ? '0 4px 6px -1px rgba(0, 0, 0, 0.1)' : 'none'
-                                    }}
-                                >
-                                    FINANCIALS
-                                </button>
-                            </div>
+                            {/* Tab Navigation - only show for stocks/ETFs that have financials */}
+                            {selectedAsset.type !== 'CURRENCY' && !selectedAsset.isBareCurrency && selectedAsset.type !== 'CRYPTOCURRENCY' && (
+                                <div className="flex gap-2 p-1 rounded-full" style={{ background: '#171717' }}>
+                                    <button
+                                        onClick={() => setAssetTab('overview')}
+                                        className="flex-1 text-xs font-bold rounded-full transition-all"
+                                        style={{
+                                            background: assetTab === 'overview' ? 'white' : 'transparent',
+                                            color: assetTab === 'overview' ? 'black' : '#a1a1aa',
+                                            border: 'none',
+                                            cursor: 'pointer',
+                                            padding: '12px 16px',
+                                            boxShadow: assetTab === 'overview' ? '0 4px 6px -1px rgba(0, 0, 0, 0.1)' : 'none'
+                                        }}
+                                    >
+                                        OVERVIEW
+                                    </button>
+                                    <button
+                                        onClick={() => setAssetTab('financials')}
+                                        className="flex-1 text-xs font-bold rounded-full transition-all"
+                                        style={{
+                                            background: assetTab === 'financials' ? 'white' : 'transparent',
+                                            color: assetTab === 'financials' ? 'black' : '#a1a1aa',
+                                            border: 'none',
+                                            cursor: 'pointer',
+                                            padding: '12px 16px',
+                                            boxShadow: assetTab === 'financials' ? '0 4px 6px -1px rgba(0, 0, 0, 0.1)' : 'none'
+                                        }}
+                                    >
+                                        FINANCIALS
+                                    </button>
+                                </div>
+                            )}
 
                             {/* Overview Tab */}
                             {assetTab === 'overview' && (
