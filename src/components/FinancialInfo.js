@@ -76,21 +76,32 @@ const EpsTooltip = ({ active, payload, label }) => {
     const beat = actual >= estimate;
 
     return (
-        <div className="px-3 py-2 rounded-lg shadow-xl" style={{ background: '#1c1c1e', border: '1px solid #38383a' }}>
-            <div className="text-[10px] text-white/40 uppercase tracking-wider mb-2">
+        <div className="px-4 py-3 rounded-xl shadow-2xl border border-white/5 backdrop-blur-md" style={{ background: 'rgba(23, 23, 23, 0.95)' }}>
+            <div className="text-[10px] text-white/30 uppercase tracking-widest font-bold mb-3 border-b border-white/5 pb-2">
                 Q{Math.floor(new Date(label).getMonth() / 3) + 1} {new Date(label).getFullYear()}
             </div>
-            <div className="flex flex-col gap-2">
-                <div className="flex items-center justify-between gap-6">
-                    <span className="text-[11px] text-white/50">Estimate</span>
-                    <span className="text-[11px] font-medium text-white/80">${estimate?.toFixed(2)}</span>
+            <div className="flex flex-col gap-2.5">
+                <div className="flex items-center justify-between gap-8">
+                    <div className="flex items-center gap-2">
+                        <div className="w-1.5 h-1.5 rounded-full" style={{ background: '#52525b' }} />
+                        <span className="text-[11px] text-white/50">Estimate</span>
+                    </div>
+                    <span className="text-[11px] font-semibold text-white/90">${estimate?.toFixed(2)}</span>
                 </div>
-                <div className="flex items-center justify-between gap-6">
-                    <span className="text-[11px] text-white/50">Actual</span>
+                <div className="flex items-center justify-between gap-8">
+                    <div className="flex items-center gap-2">
+                        <div className="w-1.5 h-1.5 rounded-full" style={{ background: beat ? '#22c55e' : '#ef4444' }} />
+                        <span className="text-[11px] text-white/50">Actual</span>
+                    </div>
                     <span className={`text-[11px] font-bold ${beat ? 'text-success' : 'text-danger'}`}>
                         ${actual?.toFixed(2)}
                     </span>
                 </div>
+                {beat && (
+                    <div className="mt-1 pt-2 border-t border-white/5 text-[9px] text-success/80 font-medium">
+                        Beat estimate by {((actual - estimate) / Math.abs(estimate) * 100).toFixed(1)}%
+                    </div>
+                )}
             </div>
         </div>
     );
@@ -105,17 +116,11 @@ function EarningsChart({ data }) {
         <div className="rounded-2xl p-4" style={{ background: 'rgba(255,255,255,0.03)' }}>
             <div className="flex items-baseline justify-between mb-6">
                 <span className="text-xs font-semibold text-white/90 uppercase tracking-wide">Quarterly EPS</span>
-                <div className="flex items-center gap-3">
-                    <div className="flex items-center gap-1.5 grayscale opacity-50 text-[10px] text-white/40">
-                        <span className="w-1.5 h-1.5 rounded-full" style={{ background: '#52525b' }} />
-                        EST
-                    </div>
-                </div>
             </div>
 
             <div style={{ height: 120 }}>
                 <ResponsiveContainer width="100%" height="100%">
-                    <BarChart data={earnings} margin={{ top: 0, right: 0, left: -24, bottom: 0 }} barGap={6}>
+                    <BarChart data={earnings} margin={{ top: 0, right: 0, left: -24, bottom: 0 }} barGap={2}>
                         <XAxis
                             dataKey="date"
                             tick={{ fill: '#52525b', fontSize: 10 }}
@@ -132,10 +137,10 @@ function EarningsChart({ data }) {
                         />
                         <Tooltip
                             content={<EpsTooltip />}
-                            cursor={{ fill: 'rgba(255,255,255,0.03)', radius: 4 }}
+                            cursor={false}
                         />
-                        <Bar dataKey="epsEstimate" fill="#262626" radius={[4, 4, 4, 4]} barSize={4} />
-                        <Bar dataKey="epsActual" radius={[4, 4, 4, 4]} barSize={8}>
+                        <Bar dataKey="epsEstimate" fill="#52525b" radius={[2, 2, 2, 2]} barSize={2} opacity={0.4} />
+                        <Bar dataKey="epsActual" radius={[4, 4, 4, 4]} barSize={10}>
                             {earnings.map((e, i) => (
                                 <Cell key={i} fill={e.epsActual >= e.epsEstimate ? '#22c55e' : '#ef4444'} />
                             ))}
@@ -190,8 +195,8 @@ function StatsSection({ data }) {
                 >
                     <span className="text-sm text-white/50">{stat.label}</span>
                     <span className={`text-sm font-medium ${typeof stat.value === 'string' && stat.value.includes('%') && !stat.value.includes('-')
-                            ? (parseFloat(stat.value) > 20 ? 'text-success' : 'text-white')
-                            : 'text-white'
+                        ? (parseFloat(stat.value) > 20 ? 'text-success' : 'text-white')
+                        : 'text-white'
                         }`}>
                         {stat.value}
                     </span>
