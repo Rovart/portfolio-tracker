@@ -188,7 +188,11 @@ function FinancialHealth({ data }) {
     const debt = fd.totalDebt || 0;
     const ratio = fd.currentRatio || 0;
     const total = cash + debt;
-    const cashPct = total > 0 ? (cash / total) * 100 : 50;
+
+    // If no data, don't render
+    if (total === 0) return null;
+
+    const cashPct = (cash / total) * 100;
 
     return (
         <div className="rounded-2xl p-4" style={{ background: 'rgba(255,255,255,0.03)' }}>
@@ -199,18 +203,18 @@ function FinancialHealth({ data }) {
 
             {/* Progress bar style comparison */}
             <div className="mb-6">
-                <div className="flex h-8 rounded-lg overflow-hidden">
+                <div className="flex h-8 rounded-lg overflow-hidden" style={{ background: '#27272a' }}>
                     <div
-                        style={{ width: `${cashPct}%` }}
-                        className="bg-success/80 flex items-center justify-center transition-all"
+                        style={{ width: `${Math.max(cashPct, 1)}%`, background: '#22c55e' }}
+                        className="flex items-center justify-center transition-all"
                     >
-                        {cashPct > 20 && <span className="text-[10px] font-bold text-white/90">{formatNum(cash)}</span>}
+                        {cashPct > 20 && <span className="text-[10px] font-bold text-white">{formatNum(cash)}</span>}
                     </div>
                     <div
-                        style={{ width: `${100 - cashPct}%` }}
-                        className="bg-danger/60 flex items-center justify-center transition-all"
+                        style={{ width: `${Math.max(100 - cashPct, 1)}%`, background: '#dc2626' }}
+                        className="flex items-center justify-center transition-all"
                     >
-                        {(100 - cashPct) > 20 && <span className="text-[10px] font-bold text-white/90">{formatNum(debt)}</span>}
+                        {(100 - cashPct) > 20 && <span className="text-[10px] font-bold text-white">{formatNum(debt)}</span>}
                     </div>
                 </div>
                 <div className="flex justify-between mt-2 px-1">
