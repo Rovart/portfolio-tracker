@@ -84,7 +84,7 @@ const CustomTooltip = ({ active, payload, label, prefix = '', suffix = '' }) => 
 
     return (
         <div className="px-5 py-4 rounded-2xl shadow-2xl border border-white/10 backdrop-blur-xl" style={{ background: 'rgba(10, 10, 10, 0.95)' }}>
-            <div className="text-[10px] text-white/30 uppercase tracking-[0.2em] font-bold mb-4 border-b border-white/5 pb-2">
+            <div className="text-xs text-white/30 uppercase tracking-[0.2em] font-bold mb-4 border-b border-white/5 pb-2">
                 {label}
             </div>
             <div className="flex flex-col gap-3">
@@ -92,7 +92,7 @@ const CustomTooltip = ({ active, payload, label, prefix = '', suffix = '' }) => 
                     <div key={i} className="flex items-center justify-between gap-10">
                         <div className="flex items-center gap-2.5">
                             <div className="w-1.5 h-1.5 rounded-full" style={{ background: p.color || p.fill }} />
-                            <span className="text-[11px] font-medium text-white/50">{p.name}</span>
+                            <span className="text-xs font-medium text-white/50">{p.name}</span>
                         </div>
                         <span className="text-xs font-bold" style={{ color: p.color || p.fill }}>
                             {prefix}{typeof p.value === 'number' ? p.value.toLocaleString(undefined, { maximumFractionDigits: 1 }) : p.value}{suffix}
@@ -113,28 +113,28 @@ const EpsTooltip = ({ active, payload, label }) => {
 
     return (
         <div className="px-5 py-4 rounded-2xl shadow-2xl border border-white/10 backdrop-blur-xl" style={{ background: 'rgba(10, 10, 10, 0.95)' }}>
-            <div className="text-[10px] text-white/30 uppercase tracking-[0.2em] font-bold mb-4 border-b border-white/5 pb-2">
+            <div className="text-xs text-white/30 uppercase tracking-[0.2em] font-bold mb-4 border-b border-white/5 pb-2">
                 Q{Math.floor(new Date(label).getMonth() / 3) + 1} {new Date(label).getFullYear()}
             </div>
             <div className="flex flex-col gap-3">
                 <div className="flex items-center justify-between gap-10">
                     <div className="flex items-center gap-2.5">
                         <div className="w-1.5 h-1.5 rounded-full" style={{ background: '#444446' }} />
-                        <span className="text-[11px] font-medium text-white/50">Estimate</span>
+                        <span className="text-xs font-medium text-white/50">Estimate</span>
                     </div>
                     <span className="text-xs font-bold text-white/80">${estimate?.toFixed(2)}</span>
                 </div>
                 <div className="flex items-center justify-between gap-10">
                     <div className="flex items-center gap-2.5">
                         <div className="w-1.5 h-1.5 rounded-full" style={{ background: beat ? '#22c55e' : '#ef4444' }} />
-                        <span className="text-[11px] font-medium text-white/50">Actual</span>
+                        <span className="text-xs font-medium text-white/50">Actual</span>
                     </div>
                     <span className="text-xs font-bold" style={{ color: beat ? '#22c55e' : '#ef4444' }}>
                         ${actual?.toFixed(2)}
                     </span>
                 </div>
                 {beat && (
-                    <div className="mt-1 pt-2 border-t border-white/5 text-[10px] text-success/80 font-semibold tracking-wide uppercase">
+                    <div className="mt-1 pt-2 border-t border-white/5 text-xs text-success/80 font-semibold tracking-wide uppercase">
                         Beat by {((actual - estimate) / Math.abs(estimate) * 100).toFixed(1)}%
                     </div>
                 )}
@@ -309,8 +309,8 @@ function StatsSection({ data }) {
                 >
                     <span className="text-sm text-white/50">{stat.label}</span>
                     <span className={`text-sm font-medium ${typeof stat.value === 'string' && stat.value.includes('%') && !stat.value.includes('-')
-                            ? (parseFloat(stat.value) > 20 ? 'text-success' : 'text-white')
-                            : 'text-white'
+                        ? (parseFloat(stat.value) > 20 ? 'text-success' : 'text-white')
+                        : 'text-white'
                         }`}>
                         {stat.value}
                     </span>
