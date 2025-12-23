@@ -189,8 +189,7 @@ function FinancialHealth({ data }) {
     const ratio = fd.currentRatio || 0;
 
     const chartData = [
-        { name: 'Cash', value: cash / 1e9, fill: '#22c55e' },
-        { name: 'Debt', value: debt / 1e9, fill: '#ef4444' }
+        { name: 'Balance', Cash: cash / 1e9, Debt: debt / 1e9 }
     ];
 
     return (
@@ -200,62 +199,37 @@ function FinancialHealth({ data }) {
                     <span className="text-[10px] text-white/30 uppercase tracking-[0.2em] font-bold">Balance Sheet</span>
                     <span className="text-xs font-semibold text-white/90">Liquidity & Debt</span>
                 </div>
+                <div className={`px-2 py-1 rounded-lg border ${ratio > 2 ? 'bg-success/10 border-success/20 text-success' : ratio < 1 ? 'bg-danger/10 border-danger/20 text-danger' : 'bg-white/5 border-white/10 text-white/60'} flex items-center gap-1.5`}>
+                    {ratio > 2 ? <ShieldCheck size={10} /> : ratio < 1 ? <AlertCircle size={10} /> : <ShieldCheck size={10} />}
+                    <span className="text-[10px] font-bold tracking-tight">Ratio: {ratio.toFixed(2)}</span>
+                </div>
             </div>
 
             <div className="flex flex-col gap-4">
-                {/* Re-introduced Real Chart */}
+                {/* Stats Header */}
+                <div className="flex items-center justify-between px-1">
+                    <div className="flex flex-col">
+                        <span className="text-[10px] text-white/40 font-medium uppercase tracking-wider">Total Cash</span>
+                        <span className="text-sm font-bold text-white/90">{formatNum(cash)}</span>
+                    </div>
+                    <div className="flex flex-col items-end">
+                        <span className="text-[10px] text-white/40 font-medium uppercase tracking-wider">Total Debt</span>
+                        <span className="text-sm font-bold text-white/90">{formatNum(debt)}</span>
+                    </div>
+                </div>
+
+                {/* Single Mixed Chart */}
                 <div style={{ height: 100 }}>
                     <ResponsiveContainer width="100%" height="100%">
-                        <BarChart data={chartData} layout="vertical" margin={{ top: 0, right: 30, left: 0, bottom: 0 }} barSize={16}>
-                            <XAxis type="number" hide />
-                            <YAxis type="category" dataKey="name" tick={{ fill: '#71717a', fontSize: 10, fontWeight: 500 }} axisLine={false} tickLine={false} width={50} />
+                        <BarChart data={chartData} margin={{ top: 0, right: 0, left: 0, bottom: 0 }} barGap={8}>
                             <Tooltip
                                 cursor={{ fill: 'transparent' }}
-                                contentStyle={{ background: '#18181b', border: '1px solid #27272a', borderRadius: '8px', fontSize: '11px' }}
-                                formatter={(val) => [`$${val.toFixed(2)}B`]}
+                                content={<CustomTooltip prefix="$" suffix="B" />}
                             />
-                            <Bar dataKey="value" radius={[0, 4, 4, 0]}>
-                                <Cell fill="#22c55e" />
-                                <Cell fill="#ef4444" />
-                            </Bar>
+                            <Bar dataKey="Cash" fill="#22c55e" radius={[4, 4, 4, 4]} barSize={32} />
+                            <Bar dataKey="Debt" fill="#ef4444" radius={[4, 4, 4, 4]} barSize={32} />
                         </BarChart>
                     </ResponsiveContainer>
-                </div>
-
-                {/* Elegant Stats Grid */}
-                <div className="grid grid-cols-2 gap-3 pt-2 border-t border-white/5">
-                    <div className="flex items-center gap-3">
-                        <div className="p-1.5 rounded-lg bg-success/10">
-                            <Wallet size={12} className="text-success" />
-                        </div>
-                        <div className="flex flex-col">
-                            <span className="text-[10px] text-white/40 font-medium">Cash</span>
-                            <span className="text-xs font-semibold text-white/90">{formatNum(cash)}</span>
-                        </div>
-                    </div>
-                    <div className="flex items-center gap-3">
-                        <div className="p-1.5 rounded-lg bg-danger/10">
-                            <Banknote size={12} className="text-danger" />
-                        </div>
-                        <div className="flex flex-col">
-                            <span className="text-[10px] text-white/40 font-medium">Debt</span>
-                            <span className="text-xs font-semibold text-white/90">{formatNum(debt)}</span>
-                        </div>
-                    </div>
-                </div>
-
-                {/* Ratio Indicator */}
-                <div className="flex items-center justify-between py-2 px-3 rounded-xl bg-white/[0.02] border border-white/[0.04]">
-                    <div className="flex items-center gap-2">
-                        {ratio > 2 ? <ShieldCheck size={14} className="text-success" /> :
-                            ratio < 1 ? <AlertCircle size={14} className="text-danger" /> :
-                                <ShieldCheck size={14} className="text-white/40" />}
-                        <span className="text-[10px] text-white/50 font-medium">Current Ratio</span>
-                    </div>
-                    <span className={`text-sm font-bold ${ratio > 2 ? 'text-success' : ratio < 1 ? 'text-danger' : 'text-white/80'
-                        }`}>
-                        {ratio.toFixed(2)}
-                    </span>
                 </div>
             </div>
         </div>
