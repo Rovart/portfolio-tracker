@@ -147,8 +147,8 @@ export default function AssetChart({ symbol, chartSymbol, baseCurrency = 'USD', 
                 {/* Selection metrics overlay on chart */}
                 {selectionMetrics && (
                     <div
-                        className="absolute top-2 left-1/2 transform -translate-x-1/2 z-10 flex items-center gap-2 px-3 py-1.5 rounded-full"
-                        style={{ background: 'rgba(0,0,0,0.8)', backdropFilter: 'blur(8px)' }}
+                        className="absolute top-2 left-1/2 transform -translate-x-1/2 z-10 flex items-center gap-2 px-3 py-1.5 rounded-full cursor-pointer"
+                        style={{ background: 'rgba(0,0,0,0.85)', backdropFilter: 'blur(8px)' }}
                         onClick={clearSelection}
                     >
                         <span className="text-[10px] text-white/60">
@@ -177,37 +177,46 @@ export default function AssetChart({ symbol, chartSymbol, baseCurrency = 'USD', 
                                 <stop offset={offset} stopColor={red} stopOpacity={1} />
                             </linearGradient>
                             <linearGradient id="splitFill" x1="0" y1="0" x2="0" y2="1">
-                                <stop offset={offset} stopColor={green} stopOpacity={hasSelection ? 0.05 : 0.2} />
-                                <stop offset={offset} stopColor={red} stopOpacity={hasSelection ? 0.05 : 0.2} />
-                            </linearGradient>
-                            {/* Highlighted gradient for selected area */}
-                            <linearGradient id="selectedFill" x1="0" y1="0" x2="0" y2="1">
-                                <stop offset="0%" stopColor="#ffffff" stopOpacity={0.15} />
-                                <stop offset="100%" stopColor="#ffffff" stopOpacity={0.02} />
+                                <stop offset={offset} stopColor={green} stopOpacity={0.2} />
+                                <stop offset={offset} stopColor={red} stopOpacity={0.2} />
                             </linearGradient>
                         </defs>
                         <XAxis dataKey="date" hide />
                         <YAxis domain={['auto', 'auto']} hide />
 
-                        {/* Vertical lines at selection boundaries */}
+                        {/* Gray overlay for areas OUTSIDE selection */}
                         {selectionMetrics && (
                             <>
+                                {/* Left gray zone */}
+                                {selectionMetrics.startIdx > 0 && (
+                                    <ReferenceArea
+                                        x1={chartData[0].date}
+                                        x2={chartData[selectionMetrics.startIdx].date}
+                                        fill="rgba(0,0,0,0.6)"
+                                        fillOpacity={1}
+                                    />
+                                )}
+                                {/* Right gray zone */}
+                                {selectionMetrics.endIdx < chartData.length - 1 && (
+                                    <ReferenceArea
+                                        x1={chartData[selectionMetrics.endIdx].date}
+                                        x2={chartData[chartData.length - 1].date}
+                                        fill="rgba(0,0,0,0.6)"
+                                        fillOpacity={1}
+                                    />
+                                )}
+                                {/* Vertical lines at selection boundaries */}
                                 <ReferenceLine
                                     x={chartData[selectionMetrics.startIdx].date}
-                                    stroke="rgba(255,255,255,0.4)"
+                                    stroke="rgba(255,255,255,0.5)"
                                     strokeWidth={1}
+                                    strokeDasharray="3 3"
                                 />
                                 <ReferenceLine
                                     x={chartData[selectionMetrics.endIdx].date}
-                                    stroke="rgba(255,255,255,0.4)"
+                                    stroke="rgba(255,255,255,0.5)"
                                     strokeWidth={1}
-                                />
-                                {/* Highlight selected area */}
-                                <ReferenceArea
-                                    x1={chartData[selectionMetrics.startIdx].date}
-                                    x2={chartData[selectionMetrics.endIdx].date}
-                                    fill="url(#selectedFill)"
-                                    fillOpacity={1}
+                                    strokeDasharray="3 3"
                                 />
                             </>
                         )}
@@ -225,24 +234,31 @@ export default function AssetChart({ symbol, chartSymbol, baseCurrency = 'USD', 
                             cursor={{ stroke: '#525252', strokeWidth: 1 }}
                             isAnimationActive={false}
                         />
+
+                        {/* Main chart line - always visible with original colors */}
                         <Area
                             type="monotone"
                             dataKey="value"
-                            stroke={hasSelection ? "rgba(255,255,255,0.3)" : "url(#splitColor)"}
+                            stroke="url(#splitColor)"
                             fill="url(#splitFill)"
-                            strokeWidth={hasSelection ? 1 : 2}
+                            strokeWidth={2}
                             baseValue={startPrice}
                         />
-                        {/* Overlay highlighted line for selected portion */}
-                        {selectionMetrics && (
+
+                        {/* White highlight line for selected portion only */}
+                        {selectionMetrics && chartData.length > 0 && (
                             <Area
                                 type="monotone"
                                 dataKey="value"
                                 stroke="#ffffff"
-                                fill="transparent"
-                                strokeWidth={2}
+                                fill="none"
+                                strokeWidth={2.5}
                                 baseValue={startPrice}
-                                data={chartData.slice(selectionMetrics.startIdx, selectionMetrics.endIdx + 1)}
+                                data={chartData.map((d, i) => ({
+                                    ...d,
+                                    value: (i >= selectionMetrics.startIdx && i <= selectionMetrics.endIdx) ? d.value : null
+                                }))}
+                                connectNulls={false}
                             />
                         )}
                     </AreaChart>
