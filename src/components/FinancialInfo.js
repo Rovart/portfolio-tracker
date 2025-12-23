@@ -189,58 +189,73 @@ function FinancialHealth({ data }) {
     const ratio = fd.currentRatio || 0;
 
     const chartData = [
-        { name: 'Assets', value: cash / 1e9, fill: '#22c55e' },
+        { name: 'Cash', value: cash / 1e9, fill: '#22c55e' },
         { name: 'Debt', value: debt / 1e9, fill: '#ef4444' }
     ];
 
     return (
         <div className="rounded-2xl p-5 border border-white/[0.04]" style={{ background: 'linear-gradient(180deg, rgba(255,255,255,0.03) 0%, rgba(255,255,255,0.01) 100%)' }}>
-            <div className="flex items-center justify-between mb-8">
+            <div className="flex items-center justify-between mb-2">
                 <div className="flex flex-col gap-0.5">
                     <span className="text-[10px] text-white/30 uppercase tracking-[0.2em] font-bold">Balance Sheet</span>
-                    <span className="text-xs font-medium text-white/80">Liquidity & Debt (Billions USD)</span>
+                    <span className="text-xs font-semibold text-white/90">Liquidity & Debt</span>
                 </div>
             </div>
 
-            <div className="flex flex-col gap-6">
-                {/* Visual Chart */}
-                <div style={{ height: 100 }} className="flex items-end gap-1 px-2 border-b border-white/5 pb-2">
-                    <div style={{ height: `${Math.max(15, (cash / (cash + debt)) * 100)}%` }} className="flex-1 rounded-t-lg bg-success/20 border-x border-t border-success/30 flex flex-col items-center justify-end pb-2 gap-1">
-                        <Wallet size={12} className="text-success/50" />
-                        <span className="text-[10px] font-bold text-success/80">${(cash / 1e9).toFixed(1)}B</span>
-                    </div>
-                    <div style={{ height: `${Math.max(15, (debt / (cash + debt)) * 100)}%` }} className="flex-1 rounded-t-lg bg-danger/20 border-x border-t border-danger/30 flex flex-col items-center justify-end pb-2 gap-1">
-                        <Banknote size={12} className="text-danger/50" />
-                        <span className="text-[10px] font-bold text-danger/80">${(debt / 1e9).toFixed(1)}B</span>
-                    </div>
+            <div className="flex flex-col gap-4">
+                {/* Re-introduced Real Chart */}
+                <div style={{ height: 100 }}>
+                    <ResponsiveContainer width="100%" height="100%">
+                        <BarChart data={chartData} layout="vertical" margin={{ top: 0, right: 30, left: 0, bottom: 0 }} barSize={16}>
+                            <XAxis type="number" hide />
+                            <YAxis type="category" dataKey="name" tick={{ fill: '#71717a', fontSize: 10, fontWeight: 500 }} axisLine={false} tickLine={false} width={50} />
+                            <Tooltip
+                                cursor={{ fill: 'transparent' }}
+                                contentStyle={{ background: '#18181b', border: '1px solid #27272a', borderRadius: '8px', fontSize: '11px' }}
+                                formatter={(val) => [`$${val.toFixed(2)}B`]}
+                            />
+                            <Bar dataKey="value" radius={[0, 4, 4, 0]}>
+                                <Cell fill="#22c55e" />
+                                <Cell fill="#ef4444" />
+                            </Bar>
+                        </BarChart>
+                    </ResponsiveContainer>
                 </div>
 
-                <div className="flex justify-between items-center px-2">
-                    <span className="text-[10px] text-white/40 uppercase tracking-widest font-medium">Cash Reserve</span>
-                    <span className="text-[10px] text-white/40 uppercase tracking-widest font-medium">Total Liabilities</span>
-                </div>
-
-                {/* Health Highlight */}
-                <div className={`mt-2 flex items-center justify-between p-3.5 rounded-xl border ${ratio > 2 ? 'bg-success/[0.02] border-success/10' :
-                        ratio < 1 ? 'bg-danger/[0.02] border-danger/10' :
-                            'bg-white/[0.02] border-white/5'
-                    }`}>
+                {/* Elegant Stats Grid */}
+                <div className="grid grid-cols-2 gap-3 pt-2 border-t border-white/5">
                     <div className="flex items-center gap-3">
-                        <div className={`p-2 rounded-full ${ratio > 2 ? 'bg-success/10 text-success' :
-                                ratio < 1 ? 'bg-danger/10 text-danger' :
-                                    'bg-white/10 text-white/40'
-                            }`}>
-                            {ratio < 1 ? <AlertCircle size={14} /> : <ShieldCheck size={14} />}
+                        <div className="p-1.5 rounded-lg bg-success/10">
+                            <Wallet size={12} className="text-success" />
                         </div>
-                        <div className="flex flex-col gap-0.5">
-                            <span className="text-[10px] text-white/50 uppercase font-semibold tracking-wide">Current Ratio</span>
-                            <span className="text-[9px] text-white/20 italic">Liquidity coverage</span>
+                        <div className="flex flex-col">
+                            <span className="text-[10px] text-white/40 font-medium">Cash</span>
+                            <span className="text-xs font-semibold text-white/90">{formatNum(cash)}</span>
                         </div>
                     </div>
-                    <div className={`text-lg font-bold tracking-tight ${ratio > 2 ? 'text-success' : ratio < 1 ? 'text-danger' : 'text-white/90'
+                    <div className="flex items-center gap-3">
+                        <div className="p-1.5 rounded-lg bg-danger/10">
+                            <Banknote size={12} className="text-danger" />
+                        </div>
+                        <div className="flex flex-col">
+                            <span className="text-[10px] text-white/40 font-medium">Debt</span>
+                            <span className="text-xs font-semibold text-white/90">{formatNum(debt)}</span>
+                        </div>
+                    </div>
+                </div>
+
+                {/* Ratio Indicator */}
+                <div className="flex items-center justify-between py-2 px-3 rounded-xl bg-white/[0.02] border border-white/[0.04]">
+                    <div className="flex items-center gap-2">
+                        {ratio > 2 ? <ShieldCheck size={14} className="text-success" /> :
+                            ratio < 1 ? <AlertCircle size={14} className="text-danger" /> :
+                                <ShieldCheck size={14} className="text-white/40" />}
+                        <span className="text-[10px] text-white/50 font-medium">Current Ratio</span>
+                    </div>
+                    <span className={`text-sm font-bold ${ratio > 2 ? 'text-success' : ratio < 1 ? 'text-danger' : 'text-white/80'
                         }`}>
                         {ratio.toFixed(2)}
-                    </div>
+                    </span>
                 </div>
             </div>
         </div>
@@ -262,7 +277,7 @@ function EarningsChart({ data }) {
                 <ResponsiveContainer width="100%" height="100%">
                     <BarChart data={earnings} margin={{ top: 0, right: 0, left: -24, bottom: 0 }} barGap={2}>
                         <XAxis dataKey="date" tick={{ fill: '#52525b', fontSize: 10 }} tickFormatter={(v) => `Q${Math.floor(new Date(v).getMonth() / 3) + 1}`} axisLine={false} tickLine={false} />
-                        <YAxis domain={['auto', 'auto']} tick={{ fill: '#52525b', fontSize: 10 }} axisLine={false} tickLine={false} tickFormatter={(v) => `$${v.toFixed(1)}`} />
+                        <YAxis domain={[dataMin => Math.min(0, dataMin), 'auto']} tick={{ fill: '#52525b', fontSize: 10 }} axisLine={false} tickLine={false} tickFormatter={(v) => `$${v.toFixed(1)}`} />
                         <Tooltip content={<EpsTooltip />} cursor={false} />
                         <Bar dataKey="epsEstimate" fill="#444446" radius={[2, 2, 2, 2]} barSize={5} />
                         <Bar dataKey="epsActual" radius={[4, 4, 4, 4]} barSize={12}>
