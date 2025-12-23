@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell, AreaChart, Area, ComposedChart, Line } from 'recharts';
+import { Wallet, Banknote, ShieldCheck, AlertCircle } from 'lucide-react';
 
 export default function FinancialInfo({ symbol, baseCurrency = 'USD' }) {
     const [data, setData] = useState(null);
@@ -84,17 +85,17 @@ const CustomTooltip = ({ active, payload, label, prefix = '', suffix = '' }) => 
 
     return (
         <div className="px-5 py-4 rounded-2xl shadow-2xl border border-white/10 backdrop-blur-xl" style={{ background: 'rgba(10, 10, 10, 0.95)' }}>
-            <div className="text-xs text-white/30 uppercase tracking-[0.2em] font-medium mb-5 border-b border-white/5 pb-3">
+            <div className="text-xs text-white/30 uppercase tracking-[0.2em] font-bold mb-4 border-b border-white/5 pb-2">
                 {label}
             </div>
-            <div className="flex flex-col gap-4">
+            <div className="flex flex-col gap-3">
                 {payload.map((p, i) => (
-                    <div key={i} className="flex items-center justify-between gap-12">
+                    <div key={i} className="flex items-center justify-between gap-10">
                         <div className="flex items-center gap-2.5">
                             <div className="w-1.5 h-1.5 rounded-full" style={{ background: p.color || p.fill }} />
-                            <span className="text-xs text-white/40">{p.name}</span>
+                            <span className="text-xs font-medium text-white/50">{p.name}</span>
                         </div>
-                        <span className="text-xs font-semibold" style={{ color: p.color || p.fill }}>
+                        <span className="text-xs font-bold" style={{ color: p.color || p.fill }}>
                             {prefix}{typeof p.value === 'number' ? p.value.toLocaleString(undefined, { maximumFractionDigits: 1 }) : p.value}{suffix}
                         </span>
                     </div>
@@ -187,47 +188,90 @@ function FinancialHealth({ data }) {
     const debt = fd.totalDebt || 0;
     const total = cash + debt;
 
-    // Percentages for the stacked bar
     const cashWidth = total > 0 ? (cash / total) * 100 : 0;
     const debtWidth = total > 0 ? (debt / total) * 100 : 0;
+    const ratio = fd.currentRatio || 0;
 
     return (
-        <div className="rounded-2xl p-4" style={{ background: 'rgba(255,255,255,0.03)' }}>
-            <div className="flex items-baseline justify-between mb-6">
-                <span className="text-xs font-semibold text-white/90 uppercase tracking-wide">Liquidity & Debt</span>
+        <div className="rounded-2xl p-5 border border-white/[0.04]" style={{ background: 'linear-gradient(180deg, rgba(255,255,255,0.03) 0%, rgba(255,255,255,0.01) 100%)' }}>
+            <div className="flex items-center justify-between mb-8">
+                <div className="flex flex-col gap-1">
+                    <span className="text-[10px] text-white/30 uppercase tracking-[0.2em] font-bold">Balance Sheet</span>
+                    <span className="text-sm font-semibold text-white/90">Liquidity & Debt</span>
+                </div>
+                <div className="p-2 rounded-lg bg-white/[0.03] border border-white/5">
+                    <ShieldCheck size={16} className="text-white/40" />
+                </div>
             </div>
 
-            <div className="flex flex-col gap-5">
-                {/* Stacked Indicator */}
+            <div className="flex flex-col gap-8">
+                {/* Visual Ratio Indicator */}
                 <div className="flex flex-col gap-3">
-                    <div className="flex h-1.5 rounded-full overflow-hidden bg-white/5">
-                        <div style={{ width: `${cashWidth}%`, background: '#22c55e' }} className="h-full" />
-                        <div style={{ width: `${debtWidth}%`, background: '#ef4444' }} className="h-full opacity-50" />
+                    <div className="relative h-2.5 rounded-full bg-white/[0.05] overflow-hidden flex">
+                        <div
+                            style={{ width: `${cashWidth}%` }}
+                            className="h-full bg-gradient-to-r from-success/80 to-success transition-all duration-1000"
+                        />
+                        <div
+                            style={{ width: `${debtWidth}%` }}
+                            className="h-full bg-gradient-to-r from-danger/60 to-danger/80 transition-all duration-1000"
+                        />
                     </div>
-                    <div className="flex justify-between text-[10px] font-light tracking-wider text-white/30">
-                        <span>Cash {cashWidth.toFixed(0)}%</span>
-                        <span>Debt {debtWidth.toFixed(0)}%</span>
+                    <div className="flex justify-between items-center px-1">
+                        <div className="flex flex-col">
+                            <span className="text-[10px] text-success font-bold tracking-widest uppercase">Cash Assets</span>
+                            <span className="text-xs font-medium text-white/40">{cashWidth.toFixed(0)}% of total</span>
+                        </div>
+                        <div className="flex flex-col items-end">
+                            <span className="text-[10px] text-danger font-bold tracking-widest uppercase">Total Debt</span>
+                            <span className="text-xs font-medium text-white/40">{debtWidth.toFixed(0)}% of total</span>
+                        </div>
                     </div>
                 </div>
 
-                {/* Stats */}
-                <div className="flex flex-col gap-3.5">
-                    <div className="flex items-center justify-between">
-                        <span className="text-xs text-white/40 font-light">Total Cash</span>
-                        <span className="text-xs text-success font-normal">{formatNum(cash)}</span>
-                    </div>
-                    <div className="flex items-center justify-between">
-                        <span className="text-xs text-white/40 font-light">Total Debt</span>
-                        <span className="text-xs text-danger/80 font-normal">{formatNum(debt)}</span>
-                    </div>
-                    <div className="h-[1px] bg-white/5 my-1" />
-                    <div className="flex items-center justify-between">
-                        <div className="flex flex-col">
-                            <span className="text-xs text-white/40 font-light">Current Ratio</span>
-                            <span className="text-[10px] text-white/20 font-light">short-term solvency</span>
+                {/* Stat Tiles */}
+                <div className="grid grid-cols-2 gap-3">
+                    <div className="flex items-center gap-3 p-4 rounded-xl bg-white/[0.02] border border-white/[0.04]">
+                        <div className="p-2 rounded-lg bg-success/10 border border-success/10">
+                            <Wallet size={14} className="text-success" />
                         </div>
-                        <span className={`text-sm font-normal ${fd.currentRatio > 2 ? 'text-success' : fd.currentRatio < 1 ? 'text-danger' : 'text-white/80'}`}>
-                            {fd.currentRatio?.toFixed(2)}
+                        <div className="flex flex-col">
+                            <span className="text-[10px] text-white/30 uppercase font-bold tracking-wider">Total Cash</span>
+                            <span className="text-sm font-bold text-white">{formatNum(cash)}</span>
+                        </div>
+                    </div>
+                    <div className="flex items-center gap-3 p-4 rounded-xl bg-white/[0.02] border border-white/[0.04]">
+                        <div className="p-2 rounded-lg bg-danger/10 border border-danger/10">
+                            <Banknote size={14} className="text-danger" />
+                        </div>
+                        <div className="flex flex-col">
+                            <span className="text-[10px] text-white/30 uppercase font-bold tracking-wider">Total Debt</span>
+                            <span className="text-sm font-bold text-white">{formatNum(debt)}</span>
+                        </div>
+                    </div>
+                </div>
+
+                {/* Health Highlight */}
+                <div className={`flex items-center justify-between p-4 rounded-xl border ${ratio > 2 ? 'bg-success/[0.02] border-success/10' :
+                    ratio < 1 ? 'bg-danger/[0.02] border-danger/10' :
+                        'bg-white/[0.02] border-white/5'
+                    }`}>
+                    <div className="flex items-center gap-4">
+                        <div className={`p-2.5 rounded-full ${ratio > 2 ? 'bg-success/10 text-success' :
+                            ratio < 1 ? 'bg-danger/10 text-danger' :
+                                'bg-white/10 text-white/60'
+                            }`}>
+                            {ratio < 1 ? <AlertCircle size={18} /> : <ShieldCheck size={18} />}
+                        </div>
+                        <div className="flex flex-col">
+                            <span className="text-[10px] text-white/40 uppercase font-bold tracking-wider">Current Ratio</span>
+                            <span className="text-[10px] text-white/20 italic">Liquidity rating</span>
+                        </div>
+                    </div>
+                    <div className="flex flex-col items-end">
+                        <span className={`text-2xl font-black tracking-tighter ${ratio > 2 ? 'text-success' : ratio < 1 ? 'text-danger' : 'text-white'
+                            }`}>
+                            {ratio.toFixed(2)}
                         </span>
                     </div>
                 </div>
