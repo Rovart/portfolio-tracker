@@ -186,93 +186,60 @@ function FinancialHealth({ data }) {
     const fd = data.financialData;
     const cash = fd.totalCash || 0;
     const debt = fd.totalDebt || 0;
-    const total = cash + debt;
-
-    const cashWidth = total > 0 ? (cash / total) * 100 : 0;
-    const debtWidth = total > 0 ? (debt / total) * 100 : 0;
     const ratio = fd.currentRatio || 0;
+
+    const chartData = [
+        { name: 'Assets', value: cash / 1e9, fill: '#22c55e' },
+        { name: 'Debt', value: debt / 1e9, fill: '#ef4444' }
+    ];
 
     return (
         <div className="rounded-2xl p-5 border border-white/[0.04]" style={{ background: 'linear-gradient(180deg, rgba(255,255,255,0.03) 0%, rgba(255,255,255,0.01) 100%)' }}>
             <div className="flex items-center justify-between mb-8">
-                <div className="flex flex-col gap-1">
+                <div className="flex flex-col gap-0.5">
                     <span className="text-[10px] text-white/30 uppercase tracking-[0.2em] font-bold">Balance Sheet</span>
-                    <span className="text-sm font-semibold text-white/90">Liquidity & Debt</span>
-                </div>
-                <div className="p-2 rounded-lg bg-white/[0.03] border border-white/5">
-                    <ShieldCheck size={16} className="text-white/40" />
+                    <span className="text-xs font-medium text-white/80">Liquidity & Debt (Billions USD)</span>
                 </div>
             </div>
 
-            <div className="flex flex-col gap-8">
-                {/* Visual Ratio Indicator */}
-                <div className="flex flex-col gap-3">
-                    <div className="relative h-2.5 rounded-full bg-white/[0.05] overflow-hidden flex">
-                        <div
-                            style={{ width: `${cashWidth}%` }}
-                            className="h-full bg-gradient-to-r from-success/80 to-success transition-all duration-1000"
-                        />
-                        <div
-                            style={{ width: `${debtWidth}%` }}
-                            className="h-full bg-gradient-to-r from-danger/60 to-danger/80 transition-all duration-1000"
-                        />
+            <div className="flex flex-col gap-6">
+                {/* Visual Chart */}
+                <div style={{ height: 100 }} className="flex items-end gap-1 px-2 border-b border-white/5 pb-2">
+                    <div style={{ height: `${Math.max(15, (cash / (cash + debt)) * 100)}%` }} className="flex-1 rounded-t-lg bg-success/20 border-x border-t border-success/30 flex flex-col items-center justify-end pb-2 gap-1">
+                        <Wallet size={12} className="text-success/50" />
+                        <span className="text-[10px] font-bold text-success/80">${(cash / 1e9).toFixed(1)}B</span>
                     </div>
-                    <div className="flex justify-between items-center px-1">
-                        <div className="flex flex-col">
-                            <span className="text-[10px] text-success font-bold tracking-widest uppercase">Cash Assets</span>
-                            <span className="text-xs font-medium text-white/40">{cashWidth.toFixed(0)}% of total</span>
-                        </div>
-                        <div className="flex flex-col items-end">
-                            <span className="text-[10px] text-danger font-bold tracking-widest uppercase">Total Debt</span>
-                            <span className="text-xs font-medium text-white/40">{debtWidth.toFixed(0)}% of total</span>
-                        </div>
+                    <div style={{ height: `${Math.max(15, (debt / (cash + debt)) * 100)}%` }} className="flex-1 rounded-t-lg bg-danger/20 border-x border-t border-danger/30 flex flex-col items-center justify-end pb-2 gap-1">
+                        <Banknote size={12} className="text-danger/50" />
+                        <span className="text-[10px] font-bold text-danger/80">${(debt / 1e9).toFixed(1)}B</span>
                     </div>
                 </div>
 
-                {/* Stat Tiles */}
-                <div className="grid grid-cols-2 gap-3">
-                    <div className="flex items-center gap-3 p-4 rounded-xl bg-white/[0.02] border border-white/[0.04]">
-                        <div className="p-2 rounded-lg bg-success/10 border border-success/10">
-                            <Wallet size={14} className="text-success" />
-                        </div>
-                        <div className="flex flex-col">
-                            <span className="text-[10px] text-white/30 uppercase font-bold tracking-wider">Total Cash</span>
-                            <span className="text-sm font-bold text-white">{formatNum(cash)}</span>
-                        </div>
-                    </div>
-                    <div className="flex items-center gap-3 p-4 rounded-xl bg-white/[0.02] border border-white/[0.04]">
-                        <div className="p-2 rounded-lg bg-danger/10 border border-danger/10">
-                            <Banknote size={14} className="text-danger" />
-                        </div>
-                        <div className="flex flex-col">
-                            <span className="text-[10px] text-white/30 uppercase font-bold tracking-wider">Total Debt</span>
-                            <span className="text-sm font-bold text-white">{formatNum(debt)}</span>
-                        </div>
-                    </div>
+                <div className="flex justify-between items-center px-2">
+                    <span className="text-[10px] text-white/40 uppercase tracking-widest font-medium">Cash Reserve</span>
+                    <span className="text-[10px] text-white/40 uppercase tracking-widest font-medium">Total Liabilities</span>
                 </div>
 
                 {/* Health Highlight */}
-                <div className={`flex items-center justify-between p-4 rounded-xl border ${ratio > 2 ? 'bg-success/[0.02] border-success/10' :
-                    ratio < 1 ? 'bg-danger/[0.02] border-danger/10' :
-                        'bg-white/[0.02] border-white/5'
+                <div className={`mt-2 flex items-center justify-between p-3.5 rounded-xl border ${ratio > 2 ? 'bg-success/[0.02] border-success/10' :
+                        ratio < 1 ? 'bg-danger/[0.02] border-danger/10' :
+                            'bg-white/[0.02] border-white/5'
                     }`}>
-                    <div className="flex items-center gap-4">
-                        <div className={`p-2.5 rounded-full ${ratio > 2 ? 'bg-success/10 text-success' :
-                            ratio < 1 ? 'bg-danger/10 text-danger' :
-                                'bg-white/10 text-white/60'
+                    <div className="flex items-center gap-3">
+                        <div className={`p-2 rounded-full ${ratio > 2 ? 'bg-success/10 text-success' :
+                                ratio < 1 ? 'bg-danger/10 text-danger' :
+                                    'bg-white/10 text-white/40'
                             }`}>
-                            {ratio < 1 ? <AlertCircle size={18} /> : <ShieldCheck size={18} />}
+                            {ratio < 1 ? <AlertCircle size={14} /> : <ShieldCheck size={14} />}
                         </div>
-                        <div className="flex flex-col">
-                            <span className="text-[10px] text-white/40 uppercase font-bold tracking-wider">Current Ratio</span>
-                            <span className="text-[10px] text-white/20 italic">Liquidity rating</span>
+                        <div className="flex flex-col gap-0.5">
+                            <span className="text-[10px] text-white/50 uppercase font-semibold tracking-wide">Current Ratio</span>
+                            <span className="text-[9px] text-white/20 italic">Liquidity coverage</span>
                         </div>
                     </div>
-                    <div className="flex flex-col items-end">
-                        <span className={`text-2xl font-black tracking-tighter ${ratio > 2 ? 'text-success' : ratio < 1 ? 'text-danger' : 'text-white'
-                            }`}>
-                            {ratio.toFixed(2)}
-                        </span>
+                    <div className={`text-lg font-bold tracking-tight ${ratio > 2 ? 'text-success' : ratio < 1 ? 'text-danger' : 'text-white/90'
+                        }`}>
+                        {ratio.toFixed(2)}
                     </div>
                 </div>
             </div>
