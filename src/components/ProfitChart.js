@@ -14,8 +14,8 @@ export default function ProfitChart({ data, baseCurrency, hideBalances, loading 
         setIsSelecting(false);
     }, []);
 
-    const { chartData, offset, startValue } = useMemo(() => {
-        if (!data || data.length === 0) return { chartData: [], offset: 0, startValue: 0 };
+    const { chartData, offset, startValue, yDomain } = useMemo(() => {
+        if (!data || data.length === 0) return { chartData: [], offset: 0, startValue: 0, yDomain: [0, 100] };
         let processedData = data;
         if (data.length > 300) {
             const step = Math.ceil(data.length / 300);
@@ -25,6 +25,11 @@ export default function ProfitChart({ data, baseCurrency, hideBalances, loading 
         const values = processedData.map(d => d.value);
         const max = Math.max(...values);
         const min = Math.min(...values);
+
+        // Calculate fixed Y domain with padding
+        const padding = (max - min) * 0.05 || max * 0.05;
+        const fixedYDomain = [min - padding, max + padding];
+
         let off = 0;
         if (max === min) off = 0.5;
         else {
@@ -32,7 +37,7 @@ export default function ProfitChart({ data, baseCurrency, hideBalances, loading 
             if (isNaN(off) || !isFinite(off)) off = 0;
             off = Math.max(0, Math.min(1, off));
         }
-        return { chartData: processedData, offset: off, startValue: start };
+        return { chartData: processedData, offset: off, startValue: start, yDomain: fixedYDomain };
     }, [data]);
 
     const selectionMetrics = useMemo(() => {
@@ -86,8 +91,11 @@ export default function ProfitChart({ data, baseCurrency, hideBalances, loading 
                             {' → '}
                             {new Date(chartData[selectionMetrics.endIdx].date).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}
                         </span>
+                        <span className="text-xs text-white/80 font-medium">
+                            {selectionMetrics.change >= 0 ? '+' : ''}{hideBalances ? '••••' : selectionMetrics.change.toLocaleString(undefined, { maximumFractionDigits: 0 })} {baseCurrency}
+                        </span>
                         <span className={`text-xs font-bold ${selectionMetrics.change >= 0 ? 'text-success' : 'text-danger'}`}>
-                            {selectionMetrics.change >= 0 ? '+' : ''}{selectionMetrics.changePercent.toFixed(2)}%
+                            ({selectionMetrics.change >= 0 ? '+' : ''}{selectionMetrics.changePercent.toFixed(2)}%)
                         </span>
                     </div>
                 )}
@@ -112,7 +120,7 @@ export default function ProfitChart({ data, baseCurrency, hideBalances, loading 
                             </linearGradient>
                         </defs>
                         <XAxis dataKey="date" hide axisLine={false} tickLine={false} />
-                        <YAxis hide domain={['auto', 'auto']} />
+                        <YAxis hide domain={yDomain} />
 
                         {/* Gray overlay for areas OUTSIDE selection */}
                         {selectionMetrics && (
@@ -151,19 +159,22 @@ export default function ProfitChart({ data, baseCurrency, hideBalances, loading 
                             </>
                         )}
 
-                        <Tooltip
-                            contentStyle={{ backgroundColor: '#171717', border: '1px solid #262626', borderRadius: '8px', padding: '8px 12px' }}
-                            formatter={(value) => [
-                                <span key="val" style={{ color: value >= startValue ? green : red }}>
-                                    {hideBalances ? '••••••' : `${value.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ${baseCurrency === 'USD' ? '$' : baseCurrency}`}
-                                </span>,
-                                'Value'
-                            ]}
-                            labelFormatter={(label) => new Date(label).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
-                            labelStyle={{ color: '#a1a1aa', fontSize: '0.75rem', marginBottom: '4px' }}
-                            cursor={{ stroke: '#525252', strokeWidth: 1 }}
-                            isAnimationActive={false}
-                        />
+                        {/* Hide tooltip when selecting or when there's an active selection */}
+                        {!isSelecting && !hasSelection && (
+                            <Tooltip
+                                contentStyle={{ backgroundColor: '#171717', border: '1px solid #262626', borderRadius: '8px', padding: '8px 12px' }}
+                                formatter={(value) => [
+                                    <span key="val" style={{ color: value >= startValue ? green : red }}>
+                                        {hideBalances ? '••••••' : `${value.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ${baseCurrency === 'USD' ? '$' : baseCurrency}`}
+                                    </span>,
+                                    'Value'
+                                ]}
+                                labelFormatter={(label) => new Date(label).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                                labelStyle={{ color: '#a1a1aa', fontSize: '0.75rem', marginBottom: '4px' }}
+                                cursor={{ stroke: '#525252', strokeWidth: 1 }}
+                                isAnimationActive={false}
+                            />
+                        )}
 
                         {/* Main chart line - always visible with original colors */}
                         <Area
@@ -174,22 +185,25 @@ export default function ProfitChart({ data, baseCurrency, hideBalances, loading 
                             strokeWidth={2}
                             fillOpacity={1}
                             baseValue={startValue}
+                            isAnimationActive={false}
                         />
 
                         {/* White highlight line for selected portion only */}
-                        {selectionMetrics && chartData.length > 0 && (
+                        {selectionMetrics && (
                             <Area
                                 type="monotone"
-                                dataKey="value"
+                                dataKey={(d) => {
+                                    const idx = chartData.findIndex(cd => cd.date === d.date);
+                                    if (idx >= selectionMetrics.startIdx && idx <= selectionMetrics.endIdx) {
+                                        return d.value;
+                                    }
+                                    return null;
+                                }}
                                 stroke="#ffffff"
                                 fill="none"
                                 strokeWidth={2.5}
-                                baseValue={startValue}
-                                data={chartData.map((d, i) => ({
-                                    ...d,
-                                    value: (i >= selectionMetrics.startIdx && i <= selectionMetrics.endIdx) ? d.value : null
-                                }))}
                                 connectNulls={false}
+                                isAnimationActive={false}
                             />
                         )}
                     </AreaChart>

@@ -2,7 +2,6 @@
 
 import { useState, useEffect } from 'react';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell, AreaChart, Area } from 'recharts';
-import { ChevronRight } from 'lucide-react';
 
 export default function FinancialInfo({ symbol, baseCurrency = 'USD' }) {
     const [data, setData] = useState(null);
@@ -75,7 +74,7 @@ const formatPct = (n) => {
     return `${(n * 100).toFixed(1)}%`;
 };
 
-// Analyst Section - clean modern design
+// Analyst Section - cleaner design
 function AnalystSection({ data }) {
     const fd = data.financialData;
     const rec = fd.recommendationKey?.toUpperCase().replace(/_/g, ' ');
@@ -88,70 +87,57 @@ function AnalystSection({ data }) {
     const high = fd.targetHighPrice;
     const upside = current > 0 ? ((target - current) / current * 100) : 0;
 
-    const getBadgeStyle = () => {
-        if (rec.includes('BUY') || rec.includes('STRONG')) return { bg: 'rgba(34, 197, 94, 0.12)', color: '#22c55e' };
-        if (rec.includes('SELL')) return { bg: 'rgba(239, 68, 68, 0.12)', color: '#ef4444' };
-        return { bg: 'rgba(161, 161, 170, 0.12)', color: '#a1a1aa' };
-    };
-    const badge = getBadgeStyle();
+    const isBuy = rec.includes('BUY') || rec.includes('STRONG');
+    const isSell = rec.includes('SELL');
 
     return (
-        <div>
+        <div className="rounded-2xl p-4" style={{ background: 'rgba(255,255,255,0.03)' }}>
             <div className="flex items-center justify-between mb-4">
-                <h3 className="text-sm font-semibold text-white">Analyst Rating</h3>
-                <span className="text-xs text-white/40">{analysts} analysts</span>
+                <span className="text-xs font-medium text-white/50 uppercase tracking-wider">Analyst Consensus</span>
+                <span className="text-[11px] text-white/30">{analysts} analysts</span>
             </div>
 
-            <div className="flex items-center gap-4 mb-4">
-                <span
-                    className="px-3 py-1.5 rounded-lg text-xs font-bold tracking-wide"
-                    style={{ background: badge.bg, color: badge.color }}
-                >
+            <div className="flex items-baseline gap-3 mb-4">
+                <span className={`text-2xl font-bold ${isBuy ? 'text-success' : isSell ? 'text-danger' : 'text-white'}`}>
                     {rec}
                 </span>
-                <div className="flex-1" />
                 {upside !== 0 && (
-                    <div className="text-right">
-                        <div className="text-xs text-white/40">Target upside</div>
-                        <div className={`text-lg font-bold ${upside >= 0 ? 'text-success' : 'text-danger'}`}>
-                            {upside >= 0 ? '+' : ''}{upside.toFixed(0)}%
-                        </div>
-                    </div>
+                    <span className={`text-sm font-medium ${upside >= 0 ? 'text-success' : 'text-danger'}`}>
+                        {upside >= 0 ? '+' : ''}{upside.toFixed(0)}% upside
+                    </span>
                 )}
             </div>
 
-            {/* Price target scale */}
+            {/* Price target row */}
             {low && high && high > low && (
-                <div className="pt-2">
-                    <div className="flex justify-between text-[10px] text-white/40 mb-2">
-                        <span>${low.toFixed(0)}</span>
-                        <span>Target: ${target.toFixed(0)}</span>
-                        <span>${high.toFixed(0)}</span>
+                <div className="flex items-center gap-3 text-xs">
+                    <div className="text-white/40">
+                        <div className="text-[10px] uppercase">Low</div>
+                        <div className="font-medium text-white/70">${low.toFixed(0)}</div>
                     </div>
-                    <div className="relative h-2 rounded-full" style={{ background: 'rgba(255,255,255,0.06)' }}>
-                        {/* Range bar */}
+
+                    <div className="flex-1 relative h-1 rounded-full" style={{ background: 'rgba(255,255,255,0.08)' }}>
                         <div
-                            className="absolute h-2 rounded-full"
+                            className="absolute h-1 rounded-full"
                             style={{
                                 left: 0,
                                 width: `${((target - low) / (high - low)) * 100}%`,
-                                background: 'linear-gradient(90deg, #22c55e, #3b82f6)'
+                                background: isBuy ? '#22c55e' : isSell ? '#ef4444' : '#3b82f6'
                             }}
                         />
-                        {/* Current price marker */}
                         <div
-                            className="absolute top-1/2 w-3 h-3 rounded-full border-2 border-white shadow-lg"
+                            className="absolute top-1/2 w-2 h-2 rounded-full bg-white"
                             style={{
                                 left: `${Math.max(0, Math.min(100, ((current - low) / (high - low)) * 100))}%`,
                                 transform: 'translate(-50%, -50%)',
-                                background: '#0a0a0a'
+                                boxShadow: '0 0 4px rgba(0,0,0,0.5)'
                             }}
                         />
                     </div>
-                    <div className="flex justify-between text-[10px] text-white/30 mt-1">
-                        <span>Low</span>
-                        <span>Current: ${current.toFixed(0)}</span>
-                        <span>High</span>
+
+                    <div className="text-white/40 text-right">
+                        <div className="text-[10px] uppercase">High</div>
+                        <div className="font-medium text-white/70">${high.toFixed(0)}</div>
                     </div>
                 </div>
             )}
@@ -159,30 +145,62 @@ function AnalystSection({ data }) {
     );
 }
 
-// Earnings Chart
+// Custom tooltip for EPS chart
+const EpsTooltip = ({ active, payload, label }) => {
+    if (!active || !payload?.length) return null;
+    const estimate = payload.find(p => p.dataKey === 'epsEstimate')?.value;
+    const actual = payload.find(p => p.dataKey === 'epsActual')?.value;
+    const beat = actual >= estimate;
+
+    return (
+        <div className="px-3 py-2 rounded-lg" style={{ background: '#1c1c1e', border: '1px solid #38383a' }}>
+            <div className="text-[11px] text-white/50 mb-1">
+                Q{Math.floor(new Date(label).getMonth() / 3) + 1} {new Date(label).getFullYear()}
+            </div>
+            <div className="flex items-center gap-4">
+                <div>
+                    <div className="text-[10px] text-white/40">Est</div>
+                    <div className="text-sm font-medium text-white/70">${estimate?.toFixed(2)}</div>
+                </div>
+                <div>
+                    <div className="text-[10px] text-white/40">Actual</div>
+                    <div className={`text-sm font-bold ${beat ? 'text-success' : 'text-danger'}`}>
+                        ${actual?.toFixed(2)}
+                    </div>
+                </div>
+            </div>
+        </div>
+    );
+};
+
+// Earnings Chart - cleaner
 function EarningsChart({ data }) {
     const earnings = data.earningsHistory.slice().reverse();
     if (earnings.length === 0) return null;
 
     return (
-        <div>
+        <div className="rounded-2xl p-4" style={{ background: 'rgba(255,255,255,0.03)' }}>
             <div className="flex items-center justify-between mb-3">
-                <h3 className="text-sm font-semibold text-white">Quarterly EPS</h3>
-                <div className="flex items-center gap-4 text-[10px] text-white/40">
-                    <span className="flex items-center gap-1.5">
+                <span className="text-xs font-medium text-white/50 uppercase tracking-wider">Quarterly EPS</span>
+                <div className="flex items-center gap-3 text-[10px] text-white/40">
+                    <span className="flex items-center gap-1">
                         <span className="w-2 h-2 rounded-sm" style={{ background: '#3f3f46' }} />
-                        Estimate
+                        Est
                     </span>
-                    <span className="flex items-center gap-1.5">
+                    <span className="flex items-center gap-1">
                         <span className="w-2 h-2 rounded-sm" style={{ background: '#22c55e' }} />
-                        Actual
+                        Beat
+                    </span>
+                    <span className="flex items-center gap-1">
+                        <span className="w-2 h-2 rounded-sm" style={{ background: '#ef4444' }} />
+                        Miss
                     </span>
                 </div>
             </div>
 
-            <div style={{ height: 140 }}>
+            <div style={{ height: 120 }}>
                 <ResponsiveContainer width="100%" height="100%">
-                    <BarChart data={earnings} margin={{ top: 8, right: 0, left: -24, bottom: 0 }} barGap={6}>
+                    <BarChart data={earnings} margin={{ top: 8, right: 0, left: -24, bottom: 0 }} barGap={4}>
                         <XAxis
                             dataKey="date"
                             tick={{ fill: '#52525b', fontSize: 10 }}
@@ -197,18 +215,11 @@ function EarningsChart({ data }) {
                             tickFormatter={(v) => `$${v}`}
                         />
                         <Tooltip
-                            contentStyle={{
-                                background: '#18181b',
-                                border: '1px solid #27272a',
-                                borderRadius: 8,
-                                fontSize: 11,
-                                padding: '8px 12px'
-                            }}
-                            labelFormatter={(v) => `Q${Math.floor(new Date(v).getMonth() / 3) + 1} ${new Date(v).getFullYear()}`}
-                            formatter={(v, name) => [`$${v?.toFixed(2)}`, name === 'epsActual' ? 'Actual' : 'Estimate']}
+                            content={<EpsTooltip />}
+                            cursor={false}
                         />
-                        <Bar dataKey="epsEstimate" fill="#3f3f46" radius={[4, 4, 0, 0]} />
-                        <Bar dataKey="epsActual" radius={[4, 4, 0, 0]}>
+                        <Bar dataKey="epsEstimate" fill="#3f3f46" radius={[3, 3, 0, 0]} />
+                        <Bar dataKey="epsActual" radius={[3, 3, 0, 0]}>
                             {earnings.map((e, i) => (
                                 <Cell key={i} fill={e.epsActual >= e.epsEstimate ? '#22c55e' : '#ef4444'} />
                             ))}
@@ -251,25 +262,25 @@ function StatsSection({ data }) {
     if (stats.length === 0) return null;
 
     return (
-        <div>
-            <h3 className="text-sm font-semibold text-white mb-3">Key Statistics</h3>
-            <div className="rounded-xl overflow-hidden" style={{ background: 'rgba(255,255,255,0.02)' }}>
-                {stats.map((stat, i) => (
-                    <div
-                        key={i}
-                        className="flex items-center justify-between px-4 py-3"
-                        style={{ borderBottom: i < stats.length - 1 ? '1px solid rgba(255,255,255,0.04)' : 'none' }}
-                    >
-                        <span className="text-sm text-white/60">{stat.label}</span>
-                        <span className={`text-sm font-medium ${typeof stat.value === 'string' && stat.value.includes('%') && !stat.value.includes('-')
-                                ? (parseFloat(stat.value) > 20 ? 'text-success' : 'text-white')
-                                : 'text-white'
-                            }`}>
-                            {stat.value}
-                        </span>
-                    </div>
-                ))}
+        <div className="rounded-2xl overflow-hidden" style={{ background: 'rgba(255,255,255,0.03)' }}>
+            <div className="px-4 py-3 border-b" style={{ borderColor: 'rgba(255,255,255,0.05)' }}>
+                <span className="text-xs font-medium text-white/50 uppercase tracking-wider">Key Statistics</span>
             </div>
+            {stats.map((stat, i) => (
+                <div
+                    key={i}
+                    className="flex items-center justify-between px-4 py-3"
+                    style={{ borderBottom: i < stats.length - 1 ? '1px solid rgba(255,255,255,0.03)' : 'none' }}
+                >
+                    <span className="text-sm text-white/50">{stat.label}</span>
+                    <span className={`text-sm font-medium ${typeof stat.value === 'string' && stat.value.includes('%') && !stat.value.includes('-')
+                            ? (parseFloat(stat.value) > 20 ? 'text-success' : 'text-white')
+                            : 'text-white'
+                        }`}>
+                        {stat.value}
+                    </span>
+                </div>
+            ))}
         </div>
     );
 }
@@ -289,18 +300,18 @@ function RevenueTrend({ data }) {
     if (chartData.length < 2) return null;
 
     return (
-        <div>
+        <div className="rounded-2xl p-4" style={{ background: 'rgba(255,255,255,0.03)' }}>
             <div className="flex items-center justify-between mb-3">
-                <h3 className="text-sm font-semibold text-white">Annual Revenue</h3>
-                <span className="text-[10px] text-white/40">in billions</span>
+                <span className="text-xs font-medium text-white/50 uppercase tracking-wider">Annual Revenue</span>
+                <span className="text-[10px] text-white/30">in billions USD</span>
             </div>
 
-            <div style={{ height: 120 }}>
+            <div style={{ height: 100 }}>
                 <ResponsiveContainer width="100%" height="100%">
                     <AreaChart data={chartData} margin={{ top: 8, right: 0, left: -24, bottom: 0 }}>
                         <defs>
                             <linearGradient id="revGradFin" x1="0" y1="0" x2="0" y2="1">
-                                <stop offset="0%" stopColor="#3b82f6" stopOpacity={0.2} />
+                                <stop offset="0%" stopColor="#3b82f6" stopOpacity={0.15} />
                                 <stop offset="100%" stopColor="#3b82f6" stopOpacity={0} />
                             </linearGradient>
                         </defs>
@@ -318,19 +329,22 @@ function RevenueTrend({ data }) {
                         />
                         <Tooltip
                             contentStyle={{
-                                background: '#18181b',
-                                border: '1px solid #27272a',
+                                background: '#1c1c1e',
+                                border: '1px solid #38383a',
                                 borderRadius: 8,
-                                fontSize: 11
+                                fontSize: 11,
+                                padding: '6px 10px'
                             }}
                             formatter={(v) => [`$${v.toFixed(1)}B`]}
+                            labelStyle={{ color: '#a1a1aa', fontSize: 10, marginBottom: 2 }}
+                            cursor={false}
                         />
                         <Area
                             type="monotone"
                             dataKey="revenue"
                             stroke="#3b82f6"
                             fill="url(#revGradFin)"
-                            strokeWidth={2}
+                            strokeWidth={1.5}
                             name="Revenue"
                         />
                     </AreaChart>
@@ -342,22 +356,22 @@ function RevenueTrend({ data }) {
 
 function LoadingSkeleton() {
     return (
-        <div className="flex flex-col gap-6 animate-pulse">
-            <div>
-                <div className="h-4 w-24 bg-white/5 rounded mb-4" />
-                <div className="h-10 bg-white/5 rounded-lg" />
+        <div className="flex flex-col gap-4 animate-pulse">
+            <div className="rounded-2xl p-4" style={{ background: 'rgba(255,255,255,0.03)' }}>
+                <div className="h-3 w-24 rounded mb-4" style={{ background: 'rgba(255,255,255,0.05)' }} />
+                <div className="h-8 w-20 rounded mb-3" style={{ background: 'rgba(255,255,255,0.05)' }} />
+                <div className="h-1 rounded-full" style={{ background: 'rgba(255,255,255,0.05)' }} />
             </div>
-            <div>
-                <div className="h-4 w-20 bg-white/5 rounded mb-3" />
-                <div className="h-32 bg-white/5 rounded-lg" />
-            </div>
-            <div>
-                <div className="h-4 w-28 bg-white/5 rounded mb-3" />
-                <div className="space-y-0">
-                    {[1, 2, 3, 4, 5].map(i => (
-                        <div key={i} className="h-12 bg-white/5" style={{ borderRadius: i === 1 ? '12px 12px 0 0' : i === 5 ? '0 0 12px 12px' : 0 }} />
-                    ))}
+            <div className="rounded-2xl" style={{ background: 'rgba(255,255,255,0.03)' }}>
+                <div className="p-4">
+                    <div className="h-3 w-20 rounded" style={{ background: 'rgba(255,255,255,0.05)' }} />
                 </div>
+                {[1, 2, 3, 4, 5].map(i => (
+                    <div key={i} className="px-4 py-3 flex justify-between">
+                        <div className="h-4 w-24 rounded" style={{ background: 'rgba(255,255,255,0.03)' }} />
+                        <div className="h-4 w-16 rounded" style={{ background: 'rgba(255,255,255,0.03)' }} />
+                    </div>
+                ))}
             </div>
         </div>
     );

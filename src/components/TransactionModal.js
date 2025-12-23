@@ -514,13 +514,13 @@ export default function TransactionModal({ mode, holding, transactions, onClose,
                                             <span className="text-xs sm:text-sm text-muted uppercase tracking-wider flex items-center gap-1.5">
                                                 Current Price
                                                 {selectedAsset?.marketState && selectedAsset.marketState !== 'REGULAR' && selectedAsset.marketState !== 'CLOSED' && (
-                                                    <span className="inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded-full" style={{ background: 'rgba(255,255,255,0.1)' }}>
+                                                    <span className="inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded-full" style={{ background: 'rgba(255,255,255,0.1)', marginLeft: '5px' }}>
                                                         {selectedAsset.marketState === 'PRE' ? (
                                                             <Sun size={10} className="text-amber-400" />
                                                         ) : (
                                                             <Moon size={10} className="text-blue-400" />
                                                         )}
-                                                        <span className="opacity-80">{selectedAsset.marketState === 'PRE' ? 'Pre' : 'After'}</span>
+                                                        <span style={{ display: 'none' }} className="opacity-80">{selectedAsset.marketState === 'PRE' ? 'Pre' : 'After'}</span>
                                                     </span>
                                                 )}
                                             </span>

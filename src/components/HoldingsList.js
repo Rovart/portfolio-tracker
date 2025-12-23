@@ -31,8 +31,9 @@ export default function HoldingsList({ holdings, onSelect, onAddAsset, loading, 
     // Sort holdings based on selected option
     // FIAT currencies ALWAYS go to bottom regardless of sort
     const sortedHoldings = [...holdings].sort((a, b) => {
-        const aIsFiat = a.type === 'CURRENCY' || a.isBareCurrency;
-        const bIsFiat = b.type === 'CURRENCY' || b.isBareCurrency;
+        // Use isFiat flag from portfolio-logic
+        const aIsFiat = a.isFiat;
+        const bIsFiat = b.isFiat;
 
         // If one is FIAT and the other isn't, FIAT goes to bottom
         if (aIsFiat && !bIsFiat) return 1;

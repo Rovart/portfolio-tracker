@@ -161,8 +161,11 @@ export default function AssetChart({ symbol, chartSymbol, baseCurrency = 'USD', 
                             {' → '}
                             {new Date(chartData[selectionMetrics.endIdx].date).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}
                         </span>
+                        <span className="text-xs text-white/80 font-medium">
+                            {selectionMetrics.change >= 0 ? '+' : ''}{selectionMetrics.change.toLocaleString(undefined, { maximumFractionDigits: 2 })} {baseCurrency}
+                        </span>
                         <span className={`text-xs font-bold ${selectionMetrics.change >= 0 ? 'text-success' : 'text-danger'}`}>
-                            {selectionMetrics.change >= 0 ? '+' : ''}{selectionMetrics.changePercent.toFixed(2)}%
+                            ({selectionMetrics.change >= 0 ? '+' : ''}{selectionMetrics.changePercent.toFixed(2)}%)
                         </span>
                     </div>
                 )}
