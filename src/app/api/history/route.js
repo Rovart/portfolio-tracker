@@ -84,7 +84,7 @@ export async function GET(request) {
 
     let interval = '1d';
     if (range === '1D') interval = '1h';
-    if (range === '1W') interval = '4h';
+    if (range === '1W') interval = '1h';
 
     if (!symbol) {
         return NextResponse.json({ error: 'No symbol provided' }, { status: 400 });
