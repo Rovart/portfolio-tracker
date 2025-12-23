@@ -31,36 +31,36 @@ export default function FinancialInfo({ symbol, baseCurrency = 'USD' }) {
     if (loading) return <LoadingSkeleton />;
     if (error || !data) return null;
 
+    // Only show financials for stocks (EQUITY), not ETFs
+    const quoteType = data.quoteType?.quoteType;
+    if (quoteType && quoteType !== 'EQUITY') return null;
+
     // Check if there's any meaningful data
     const hasData = data.summaryDetail?.marketCap ||
         data.earningsHistory?.length > 0;
 
     if (!hasData) return null;
 
+    const hasEarnings = data.earningsHistory?.length > 0;
+    const hasRevenue = data.incomeStatement?.filter(i => i.totalRevenue).length > 1;
+    const hasBalance = data.financialData?.totalCash || data.financialData?.totalDebt;
+
     return (
         <div className="flex flex-col gap-6 pb-4">
-            {/* Key Stats */}
+            {/* Key Stats first */}
             <StatsSection data={data} />
 
-            {/* Profitability Trend */}
-            {data.incomeStatement?.filter(i => i.totalRevenue).length > 1 && (
-                <ProfitabilityTrend data={data} />
-            )}
+            {/* Quarterly EPS - important for stock analysis */}
+            {hasEarnings && <EarningsChart data={data} />}
 
-            {/* Earnings Chart */}
-            {data.earningsHistory?.length > 0 && (
-                <EarningsChart data={data} />
-            )}
+            {/* Balance Sheet - interleave with charts */}
+            {hasBalance && <FinancialHealth data={data} />}
 
             {/* Revenue Trend */}
-            {data.incomeStatement?.filter(i => i.totalRevenue).length > 1 && (
-                <RevenueTrend data={data} />
-            )}
+            {hasRevenue && <RevenueTrend data={data} />}
 
-            {/* Financial Health / Liquidity */}
-            {(data.financialData?.totalCash || data.financialData?.totalDebt) && (
-                <FinancialHealth data={data} />
-            )}
+            {/* Profitability last - comprehensive view */}
+            {hasRevenue && <ProfitabilityTrend data={data} />}
         </div>
     );
 }
