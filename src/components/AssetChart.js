@@ -1,7 +1,7 @@
 'use client';
 
-import { useEffect, useState, useMemo } from 'react';
-import { AreaChart, Area, XAxis, Tooltip, ResponsiveContainer, YAxis } from 'recharts';
+import { useEffect, useState, useMemo, useRef, useCallback } from 'react';
+import { AreaChart, Area, XAxis, Tooltip, ResponsiveContainer, YAxis, ReferenceLine } from 'recharts';
 import { getCachedFxHistory, getCachedAssetHistory } from '@/utils/fxCache';
 
 const RANGES = ['1D', '1W', '1M', '3M', '1Y', 'ALL'];
@@ -10,7 +10,32 @@ export default function AssetChart({ symbol, chartSymbol, baseCurrency = 'USD', 
     const [rawData, setRawData] = useState([]);
     const [fxHistory, setFxHistory] = useState({});
     const [loading, setLoading] = useState(true);
-    const [range, setRange] = useState('1Y');
+    const [range, setRange] = useState(() => {
+        if (typeof window !== 'undefined') {
+            return localStorage.getItem('asset_chart_timeframe') || '1Y';
+        }
+        return '1Y';
+    });
+
+    // Range selection state
+    const [rangeStart, setRangeStart] = useState(null);
+    const [rangeEnd, setRangeEnd] = useState(null);
+    const [isDragging, setIsDragging] = useState(false);
+    const chartContainerRef = useRef(null);
+
+    // Save range preference
+    const handleRangeChange = (newRange) => {
+        setRange(newRange);
+        localStorage.setItem('asset_chart_timeframe', newRange);
+        clearRangeSelection();
+    };
+
+    // Clear range selection
+    const clearRangeSelection = useCallback(() => {
+        setRangeStart(null);
+        setRangeEnd(null);
+        setIsDragging(false);
+    }, []);
 
     // Determine if we need FX conversion
     const needsFxConversion = assetCurrency && assetCurrency !== baseCurrency;
@@ -110,6 +135,47 @@ export default function AssetChart({ symbol, chartSymbol, baseCurrency = 'USD', 
         return { chartData: convertedData, offset: off, startPrice: start };
     }, [rawData, fxRate, fxHistory, needsFxConversion]);
 
+    // Calculate range selection metrics
+    const rangeMetrics = useMemo(() => {
+        if (rangeStart === null || rangeEnd === null || chartData.length === 0) return null;
+
+        const startIdx = Math.min(rangeStart, rangeEnd);
+        const endIdx = Math.max(rangeStart, rangeEnd);
+
+        if (startIdx < 0 || endIdx >= chartData.length) return null;
+
+        const startValue = chartData[startIdx].value;
+        const endValue = chartData[endIdx].value;
+        const change = endValue - startValue;
+        const changePercent = startValue !== 0 ? ((endValue - startValue) / startValue) * 100 : 0;
+
+        return {
+            startValue,
+            endValue,
+            change,
+            changePercent,
+            startDate: chartData[startIdx].date,
+            endDate: chartData[endIdx].date
+        };
+    }, [rangeStart, rangeEnd, chartData]);
+
+    // Handle chart mouse/touch events for range selection
+    const handleChartMouseDown = useCallback((e) => {
+        if (!e || !e.activeTooltipIndex) return;
+        setRangeStart(e.activeTooltipIndex);
+        setRangeEnd(e.activeTooltipIndex);
+        setIsDragging(true);
+    }, []);
+
+    const handleChartMouseMove = useCallback((e) => {
+        if (!isDragging || !e || e.activeTooltipIndex === undefined) return;
+        setRangeEnd(e.activeTooltipIndex);
+    }, [isDragging]);
+
+    const handleChartMouseUp = useCallback(() => {
+        setIsDragging(false);
+    }, []);
+
     if (loading || parentLoading) return <LoadingChart />;
     if (rawData.length === 0) return <div className="h-40 flex items-center justify-center text-muted">No chart data</div>;
 
@@ -118,9 +184,51 @@ export default function AssetChart({ symbol, chartSymbol, baseCurrency = 'USD', 
 
     return (
         <div className="flex flex-col gap-4 no-select" style={{ cursor: 'default' }}>
-            <div style={{ height: '240px', width: '100%' }}>
+            {/* Range Selection Display */}
+            {rangeMetrics && (
+                <div
+                    className="flex items-center justify-between p-3 rounded-xl animate-in fade-in"
+                    style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)' }}
+                >
+                    <div className="flex flex-col">
+                        <span className="text-[10px] text-muted uppercase tracking-wider">Range Selection</span>
+                        <span className="text-xs text-white/70">
+                            {new Date(rangeMetrics.startDate).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })} → {new Date(rangeMetrics.endDate).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}
+                        </span>
+                    </div>
+                    <div className="flex items-center gap-4">
+                        <div className="flex flex-col items-end">
+                            <span className={`text-lg font-bold ${rangeMetrics.changePercent >= 0 ? 'text-success' : 'text-danger'}`}>
+                                {rangeMetrics.changePercent >= 0 ? '+' : ''}{rangeMetrics.changePercent.toFixed(2)}%
+                            </span>
+                            <span className={`text-xs ${rangeMetrics.change >= 0 ? 'text-success' : 'text-danger'}`}>
+                                {rangeMetrics.change >= 0 ? '+' : ''}{rangeMetrics.change.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} {baseCurrency === 'USD' ? '$' : baseCurrency}
+                            </span>
+                        </div>
+                        <button
+                            onClick={clearRangeSelection}
+                            className="p-1.5 rounded-lg hover:bg-white/10 text-muted hover:text-white transition-colors"
+                            style={{ background: 'transparent', border: 'none', cursor: 'pointer' }}
+                        >
+                            ✕
+                        </button>
+                    </div>
+                </div>
+            )}
+
+            <div
+                ref={chartContainerRef}
+                style={{ height: '240px', width: '100%', touchAction: 'pan-y' }}
+            >
                 <ResponsiveContainer width="100%" height="100%" debounce={50}>
-                    <AreaChart data={chartData} margin={{ top: 0, right: 0, left: 0, bottom: 0 }}>
+                    <AreaChart
+                        data={chartData}
+                        margin={{ top: 0, right: 0, left: 0, bottom: 0 }}
+                        onMouseDown={handleChartMouseDown}
+                        onMouseMove={handleChartMouseMove}
+                        onMouseUp={handleChartMouseUp}
+                        onMouseLeave={handleChartMouseUp}
+                    >
                         <defs>
                             <linearGradient id="splitColor" x1="0" y1="0" x2="0" y2="1">
                                 <stop offset={offset} stopColor={green} stopOpacity={1} />
@@ -133,6 +241,14 @@ export default function AssetChart({ symbol, chartSymbol, baseCurrency = 'USD', 
                         </defs>
                         <XAxis dataKey="date" hide />
                         <YAxis domain={['auto', 'auto']} hide />
+                        {/* Reference lines for range selection */}
+                        {rangeStart !== null && rangeEnd !== null && chartData[Math.min(rangeStart, rangeEnd)] && (
+                            <ReferenceLine
+                                y={chartData[Math.min(rangeStart, rangeEnd)].value}
+                                stroke="rgba(255,255,255,0.3)"
+                                strokeDasharray="4 4"
+                            />
+                        )}
                         <Tooltip
                             contentStyle={{ backgroundColor: '#171717', border: '1px solid #262626', borderRadius: '12px', padding: '8px 12px' }}
                             formatter={(val) => [
@@ -161,12 +277,19 @@ export default function AssetChart({ symbol, chartSymbol, baseCurrency = 'USD', 
                 </ResponsiveContainer>
             </div>
 
+            {/* Instructions for range selection */}
+            {!rangeMetrics && (
+                <p className="text-[10px] text-muted/50 text-center">
+                    Click and drag on the chart to measure price change
+                </p>
+            )}
+
             {/* Timeframe Selector */}
             <div className="flex justify-between overflow-x-auto gap-2 no-scrollbar">
                 {RANGES.map(r => (
                     <button
                         key={r}
-                        onClick={() => setRange(r)}
+                        onClick={() => handleRangeChange(r)}
                         className={`btn ${range === r ? 'bg-white text-black' : 'btn-ghost'}`}
                         style={{
                             background: range === r ? 'var(--foreground)' : 'transparent',

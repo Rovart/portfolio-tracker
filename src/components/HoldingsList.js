@@ -1,11 +1,91 @@
+'use client';
+
+import { useState, useEffect } from 'react';
+import { ArrowUpDown } from 'lucide-react';
+
 // Toggle this to switch between Symbol and Short Name
 const DISPLAY_NAME = false; // true = Name, false = Symbol
 
+const SORT_OPTIONS = [
+    { id: 'size', label: 'Size' },
+    { id: 'gainers', label: 'Top Gainers' },
+    { id: 'losers', label: 'Top Losers' }
+];
+
 export default function HoldingsList({ holdings, onSelect, onAddAsset, loading, hideBalances, baseCurrency }) {
+    const [sortBy, setSortBy] = useState('size');
+    const [showSortMenu, setShowSortMenu] = useState(false);
+
+    // Load saved sort preference
+    useEffect(() => {
+        const saved = localStorage.getItem('holdings_sort');
+        if (saved && SORT_OPTIONS.find(o => o.id === saved)) {
+            setSortBy(saved);
+        }
+    }, []);
+
+    // Save sort preference
+    const handleSortChange = (newSort) => {
+        setSortBy(newSort);
+        localStorage.setItem('holdings_sort', newSort);
+        setShowSortMenu(false);
+    };
+
+    // Sort holdings based on selected option
+    const sortedHoldings = [...holdings].sort((a, b) => {
+        switch (sortBy) {
+            case 'gainers':
+                return b.change24h - a.change24h; // Highest gains first
+            case 'losers':
+                return a.change24h - b.change24h; // Biggest losses first
+            case 'size':
+            default:
+                return b.value - a.value; // Largest holdings first
+        }
+    });
+
     return (
         <div className="flex flex-col gap-1">
-            <h2 className="text-xl">Holdings</h2>
-            {holdings.map((holding) => (
+            <div className="flex items-center justify-between">
+                <h2 className="text-xl">Holdings</h2>
+                <div className="relative">
+                    <button
+                        onClick={() => setShowSortMenu(!showSortMenu)}
+                        className="flex items-center gap-1 px-2 py-1 text-xs text-muted hover:text-white transition-colors rounded-lg hover:bg-white/5"
+                        style={{ background: 'transparent', border: 'none', cursor: 'pointer' }}
+                    >
+                        <ArrowUpDown size={14} />
+                        <span>{SORT_OPTIONS.find(o => o.id === sortBy)?.label}</span>
+                    </button>
+                    {showSortMenu && (
+                        <>
+                            <div
+                                className="fixed inset-0 z-40"
+                                onClick={() => setShowSortMenu(false)}
+                            />
+                            <div
+                                className="absolute right-0 top-full mt-1 z-50 bg-[#171717] border border-white/10 rounded-xl overflow-hidden shadow-xl"
+                                style={{ minWidth: '120px' }}
+                            >
+                                {SORT_OPTIONS.map(option => (
+                                    <button
+                                        key={option.id}
+                                        onClick={() => handleSortChange(option.id)}
+                                        className={`w-full text-left px-3 py-2 text-xs transition-colors ${sortBy === option.id
+                                                ? 'bg-white/10 text-white'
+                                                : 'text-muted hover:bg-white/5 hover:text-white'
+                                            }`}
+                                        style={{ border: 'none', cursor: 'pointer' }}
+                                    >
+                                        {option.label}
+                                    </button>
+                                ))}
+                            </div>
+                        </>
+                    )}
+                </div>
+            </div>
+            {sortedHoldings.map((holding) => (
                 <div
                     key={holding.asset}
                     className="card flex justify-between items-center"

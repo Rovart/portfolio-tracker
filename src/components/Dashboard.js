@@ -48,7 +48,7 @@ export default function Dashboard() {
     const prevBaseCurrencyRef = useRef(baseCurrency);
     const prevBaseCurrencyQuotesRef = useRef(baseCurrency);
 
-    const CURRENCIES = ['USD', 'EUR', 'GBP', 'JPY', 'CAD', 'AUD', 'CHF', 'CNY', 'HKD', 'SGD'];
+    const CURRENCIES = ['USD', 'EUR', 'GBP', 'JPY', 'CAD', 'AUD', 'CHF', 'CNY', 'HKD', 'SGD', 'IDR'];
 
     // Load from IndexedDB
     useEffect(() => {
@@ -76,6 +76,12 @@ export default function Dashboard() {
 
                 const savedCurrency = await getSetting('base_currency', 'USD');
                 setBaseCurrency(savedCurrency);
+
+                // Load saved portfolio timeframe
+                const savedTimeframe = localStorage.getItem('portfolio_chart_timeframe');
+                if (savedTimeframe && ['1D', '1W', '1M', '1Y', 'YTD', 'ALL'].includes(savedTimeframe)) {
+                    setTimeframe(savedTimeframe);
+                }
             } catch (e) {
                 console.error('Failed to load from IndexedDB:', e);
             }
@@ -191,7 +197,13 @@ export default function Dashboard() {
                         changePercent: q.changePercent,
                         currency: q.currency,
                         name: q.name,
-                        quoteType: q.quoteType
+                        quoteType: q.quoteType,
+                        // Extended hours data
+                        preMarketPrice: q.preMarketPrice,
+                        preMarketChangePercent: q.preMarketChangePercent,
+                        postMarketPrice: q.postMarketPrice,
+                        postMarketChangePercent: q.postMarketChangePercent,
+                        marketState: q.marketState
                     };
 
                     // Auto-link bare symbol (AUD) to USD pair (AUDUSD=X)
@@ -703,7 +715,13 @@ export default function Dashboard() {
             amount: holding.amount,
             originalType: holding.originalType,
             isBareCurrencyOrigin: holding.isBareCurrencyOrigin || false,
-            currency: holding.quoteCurrency
+            currency: holding.quoteCurrency,
+            // Extended hours data
+            preMarketPrice: holding.preMarketPrice,
+            preMarketChangePercent: holding.preMarketChangePercent,
+            postMarketPrice: holding.postMarketPrice,
+            postMarketChangePercent: holding.postMarketChangePercent,
+            marketState: holding.marketState
         });
         setModalMode('MANAGE');
         setIsModalOpen(true);
@@ -904,7 +922,10 @@ export default function Dashboard() {
                                 {TIMEFRAMES.map((tf) => (
                                     <button
                                         key={tf}
-                                        onClick={() => setTimeframe(tf)}
+                                        onClick={() => {
+                                            setTimeframe(tf);
+                                            localStorage.setItem('portfolio_chart_timeframe', tf);
+                                        }}
                                         className={`btn ${timeframe === tf ? 'bg-white text-black shadow-lg' : 'btn-ghost opacity-60 hover:opacity-100'}`}
                                         style={{
                                             background: timeframe === tf ? 'var(--foreground)' : 'transparent',

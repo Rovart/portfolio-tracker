@@ -25,7 +25,13 @@ export async function GET(request) {
             name: q.shortName || q.symbol,
             currency: q.currency,
             quoteType: q.quoteType,
-            typeDisp: q.typeDisp
+            typeDisp: q.typeDisp,
+            // Extended hours data
+            preMarketPrice: q.preMarketPrice || null,
+            preMarketChangePercent: q.preMarketChangePercent || null,
+            postMarketPrice: q.postMarketPrice || null,
+            postMarketChangePercent: q.postMarketChangePercent || null,
+            marketState: q.marketState || null // PRE, REGULAR, POST, CLOSED
         }));
 
         return NextResponse.json({ data });

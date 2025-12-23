@@ -83,8 +83,8 @@ export async function GET(request) {
     }
 
     let interval = '1d';
-    if (range === '1D') interval = '15m';
-    if (range === '1W') interval = '1h';
+    if (range === '1D') interval = '1h';
+    if (range === '1W') interval = '4h';
 
     if (!symbol) {
         return NextResponse.json({ error: 'No symbol provided' }, { status: 400 });
@@ -92,13 +92,35 @@ export async function GET(request) {
 
     try {
         const queryOptions = { period1: period1.toISOString().split('T')[0], interval };
-        const result = await yahooFinance.chart(symbol, queryOptions);
+        let result = await yahooFinance.chart(symbol, queryOptions);
 
         // Extract and filter
         let history = result.quotes.map(q => ({
             date: q.date,
             price: q.close
         })).filter(q => q.price !== null && q.price !== undefined && q.price > 0);
+
+        // For 1D range, if no data (non-trading day), look back up to 5 days to find last trading day
+        if (range === '1D' && history.length === 0) {
+            let lookbackDays = 2;
+            while (history.length === 0 && lookbackDays <= 5) {
+                const extendedPeriod = new Date();
+                extendedPeriod.setDate(now.getDate() - lookbackDays);
+                const extendedOptions = { period1: extendedPeriod.toISOString().split('T')[0], interval: '1h' };
+                result = await yahooFinance.chart(symbol, extendedOptions);
+                history = result.quotes.map(q => ({
+                    date: q.date,
+                    price: q.close
+                })).filter(q => q.price !== null && q.price !== undefined && q.price > 0);
+
+                // If we found data, only keep the most recent trading day
+                if (history.length > 0) {
+                    const lastDate = new Date(history[history.length - 1].date).toDateString();
+                    history = history.filter(h => new Date(h.date).toDateString() === lastDate);
+                }
+                lookbackDays++;
+            }
+        }
 
         // Apply IQR smoothing to remove outliers (dividend spikes, splits, API errors)
         history = smoothOutliers(history);

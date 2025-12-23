@@ -285,7 +285,13 @@ export function calculateHoldings(transactions, priceMap, baseCurrency = 'USD') 
                 category,
                 // For TransactionModal to detect bare currencies
                 isBareCurrencyOrigin: isBareCurrency,
-                originalType: qt || (isFiat ? 'CURRENCY' : undefined)
+                originalType: qt || (isFiat ? 'CURRENCY' : undefined),
+                // Extended hours data
+                preMarketPrice: quote.preMarketPrice,
+                preMarketChangePercent: quote.preMarketChangePercent,
+                postMarketPrice: quote.postMarketPrice,
+                postMarketChangePercent: quote.postMarketChangePercent,
+                marketState: quote.marketState
             };
         })
         .sort((a, b) => {

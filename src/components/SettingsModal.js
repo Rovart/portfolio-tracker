@@ -407,7 +407,8 @@ export default function SettingsModal({ onClose, onPortfolioChange, currentPortf
     const tabs = [
         { id: 'portfolios', label: 'Portfolios', icon: FolderOpen },
         { id: 'export', label: 'Export/Import', icon: Download },
-        { id: 'notifications', label: 'Notifications', icon: Bell }
+        // DISABLED: Notifications tab (uncomment when live notifications are ready)
+        // { id: 'notifications', label: 'Notifications', icon: Bell }
     ];
 
     return (
