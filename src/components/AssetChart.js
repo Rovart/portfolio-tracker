@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState, useMemo, useRef, useCallback } from 'react';
-import { AreaChart, Area, XAxis, Tooltip, ResponsiveContainer, YAxis, ReferenceLine } from 'recharts';
+import { AreaChart, Area, XAxis, Tooltip, ResponsiveContainer, YAxis, ReferenceArea } from 'recharts';
 import { getCachedFxHistory, getCachedAssetHistory } from '@/utils/fxCache';
 
 const RANGES = ['1D', '1W', '1M', '3M', '1Y', 'ALL'];
@@ -18,56 +18,40 @@ export default function AssetChart({ symbol, chartSymbol, baseCurrency = 'USD', 
     });
 
     // Range selection state
-    const [rangeStart, setRangeStart] = useState(null);
-    const [rangeEnd, setRangeEnd] = useState(null);
-    const [isDragging, setIsDragging] = useState(false);
-    const chartContainerRef = useRef(null);
+    const [selectionStart, setSelectionStart] = useState(null);
+    const [selectionEnd, setSelectionEnd] = useState(null);
+    const [isSelecting, setIsSelecting] = useState(false);
 
-    // Save range preference
     const handleRangeChange = (newRange) => {
         setRange(newRange);
         localStorage.setItem('asset_chart_timeframe', newRange);
-        clearRangeSelection();
+        clearSelection();
     };
 
-    // Clear range selection
-    const clearRangeSelection = useCallback(() => {
-        setRangeStart(null);
-        setRangeEnd(null);
-        setIsDragging(false);
+    const clearSelection = useCallback(() => {
+        setSelectionStart(null);
+        setSelectionEnd(null);
+        setIsSelecting(false);
     }, []);
 
-    // Determine if we need FX conversion
     const needsFxConversion = assetCurrency && assetCurrency !== baseCurrency;
 
-    // Fetch raw prices and FX history in parallel (both use cache)
     useEffect(() => {
         async function load() {
             setLoading(true);
             try {
-                // Fetch asset history using cache
                 const targetSym = chartSymbol || symbol;
                 const pricePromise = getCachedAssetHistory(targetSym, range);
-
-                // Fetch FX history using cache
                 let fxPromise = Promise.resolve({});
                 if (needsFxConversion && assetCurrency) {
                     fxPromise = getCachedFxHistory(assetCurrency, baseCurrency, range);
                 }
-
                 const [priceData, fxData] = await Promise.all([pricePromise, fxPromise]);
-
-                // getCachedAssetHistory returns array directly: [{date, price}]
                 if (priceData && priceData.length > 0) {
-                    setRawData(priceData.map(p => ({
-                        date: p.date,
-                        rawPrice: p.price
-                    })));
+                    setRawData(priceData.map(p => ({ date: p.date, rawPrice: p.price })));
                 } else {
                     setRawData([]);
                 }
-
-                // Set FX history from cache
                 setFxHistory(fxData || {});
             } catch (e) {
                 console.error(e);
@@ -78,27 +62,20 @@ export default function AssetChart({ symbol, chartSymbol, baseCurrency = 'USD', 
         if (symbol || chartSymbol) load();
     }, [symbol, range, needsFxConversion, assetCurrency, baseCurrency, chartSymbol]);
 
-    // Optimize data & Calculate Gradient Offset - apply FX conversion here
     const { chartData, offset, startPrice } = useMemo(() => {
         if (!rawData || rawData.length === 0) return { chartData: [], offset: 0, startPrice: 0 };
-
-        // Downsample for performance (keep max ~300 points)
         let processedData = rawData;
         if (rawData.length > 300) {
             const step = Math.ceil(rawData.length / 300);
             processedData = rawData.filter((_, i) => i % step === 0);
         }
-
-        // Apply FX conversion - use historical rate if available, else current fxRate
         const convertedData = processedData.map(d => {
-            let rate = fxRate; // Default to current rate
+            let rate = fxRate;
             if (needsFxConversion && Object.keys(fxHistory).length > 0) {
                 const dateKey = d.date.split('T')[0];
-                // Try exact date, or find closest earlier date
                 if (fxHistory[dateKey]) {
                     rate = fxHistory[dateKey];
                 } else {
-                    // Find the closest earlier date
                     const sortedDates = Object.keys(fxHistory).sort();
                     for (let i = sortedDates.length - 1; i >= 0; i--) {
                         if (sortedDates[i] <= dateKey) {
@@ -108,72 +85,53 @@ export default function AssetChart({ symbol, chartSymbol, baseCurrency = 'USD', 
                     }
                 }
             }
-            return {
-                date: d.date,
-                value: d.rawPrice * rate
-            };
+            return { date: d.date, value: d.rawPrice * rate };
         });
-
         const firstRate = needsFxConversion && Object.keys(fxHistory).length > 0
-            ? (fxHistory[rawData[0].date.split('T')[0]] || fxRate)
-            : fxRate;
+            ? (fxHistory[rawData[0].date.split('T')[0]] || fxRate) : fxRate;
         const start = rawData[0].rawPrice * firstRate;
         const prices = convertedData.map(d => d.value);
         const max = Math.max(...prices);
         const min = Math.min(...prices);
-
-        // Calculate offset for split gradient (0 = top/max, 1 = bottom/min)
         let off = 0;
-        if (max === min) {
-            off = 0.5;
-        } else {
+        if (max === min) off = 0.5;
+        else {
             off = (max - start) / (max - min);
             if (isNaN(off) || !isFinite(off)) off = 0;
             off = Math.max(0, Math.min(1, off));
         }
-
         return { chartData: convertedData, offset: off, startPrice: start };
     }, [rawData, fxRate, fxHistory, needsFxConversion]);
 
-    // Calculate range selection metrics
-    const rangeMetrics = useMemo(() => {
-        if (rangeStart === null || rangeEnd === null || chartData.length === 0) return null;
+    // Selection metrics
+    const selectionMetrics = useMemo(() => {
+        if (selectionStart === null || selectionEnd === null || chartData.length === 0) return null;
+        const startIdx = Math.min(selectionStart, selectionEnd);
+        const endIdx = Math.max(selectionStart, selectionEnd);
+        if (startIdx < 0 || endIdx >= chartData.length || startIdx === endIdx) return null;
+        const startVal = chartData[startIdx].value;
+        const endVal = chartData[endIdx].value;
+        const change = endVal - startVal;
+        const changePercent = startVal !== 0 ? (change / startVal) * 100 : 0;
+        return { startIdx, endIdx, startVal, endVal, change, changePercent };
+    }, [selectionStart, selectionEnd, chartData]);
 
-        const startIdx = Math.min(rangeStart, rangeEnd);
-        const endIdx = Math.max(rangeStart, rangeEnd);
-
-        if (startIdx < 0 || endIdx >= chartData.length) return null;
-
-        const startValue = chartData[startIdx].value;
-        const endValue = chartData[endIdx].value;
-        const change = endValue - startValue;
-        const changePercent = startValue !== 0 ? ((endValue - startValue) / startValue) * 100 : 0;
-
-        return {
-            startValue,
-            endValue,
-            change,
-            changePercent,
-            startDate: chartData[startIdx].date,
-            endDate: chartData[endIdx].date
-        };
-    }, [rangeStart, rangeEnd, chartData]);
-
-    // Handle chart mouse/touch events for range selection
-    const handleChartMouseDown = useCallback((e) => {
-        if (!e || !e.activeTooltipIndex) return;
-        setRangeStart(e.activeTooltipIndex);
-        setRangeEnd(e.activeTooltipIndex);
-        setIsDragging(true);
+    const handleMouseDown = useCallback((e) => {
+        if (e && e.activeTooltipIndex !== undefined) {
+            setSelectionStart(e.activeTooltipIndex);
+            setSelectionEnd(e.activeTooltipIndex);
+            setIsSelecting(true);
+        }
     }, []);
 
-    const handleChartMouseMove = useCallback((e) => {
-        if (!isDragging || !e || e.activeTooltipIndex === undefined) return;
-        setRangeEnd(e.activeTooltipIndex);
-    }, [isDragging]);
+    const handleMouseMove = useCallback((e) => {
+        if (isSelecting && e && e.activeTooltipIndex !== undefined) {
+            setSelectionEnd(e.activeTooltipIndex);
+        }
+    }, [isSelecting]);
 
-    const handleChartMouseUp = useCallback(() => {
-        setIsDragging(false);
+    const handleMouseUp = useCallback(() => {
+        setIsSelecting(false);
     }, []);
 
     if (loading || parentLoading) return <LoadingChart />;
@@ -181,53 +139,40 @@ export default function AssetChart({ symbol, chartSymbol, baseCurrency = 'USD', 
 
     const green = "#22c55e";
     const red = "#ef4444";
+    const isPositive = selectionMetrics ? selectionMetrics.change >= 0 : chartData[chartData.length - 1].value >= startPrice;
 
     return (
         <div className="flex flex-col gap-4 no-select" style={{ cursor: 'default' }}>
-            {/* Range Selection Display */}
-            {rangeMetrics && (
+            {/* Selection overlay display */}
+            {selectionMetrics && (
                 <div
-                    className="flex items-center justify-between p-3 rounded-xl animate-in fade-in"
-                    style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)' }}
+                    className="flex items-center justify-between px-3 py-2 rounded-xl"
+                    style={{ background: 'rgba(255,255,255,0.03)' }}
+                    onClick={clearSelection}
                 >
-                    <div className="flex flex-col">
-                        <span className="text-[10px] text-muted uppercase tracking-wider">Range Selection</span>
-                        <span className="text-xs text-white/70">
-                            {new Date(rangeMetrics.startDate).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })} → {new Date(rangeMetrics.endDate).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}
+                    <span className="text-xs text-muted">
+                        {new Date(chartData[selectionMetrics.startIdx].date).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}
+                        {' → '}
+                        {new Date(chartData[selectionMetrics.endIdx].date).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}
+                    </span>
+                    <span className={`text-sm font-bold ${selectionMetrics.change >= 0 ? 'text-success' : 'text-danger'}`}>
+                        {selectionMetrics.change >= 0 ? '+' : ''}{selectionMetrics.changePercent.toFixed(2)}%
+                        <span className="font-normal text-xs ml-2">
+                            ({selectionMetrics.change >= 0 ? '+' : ''}{selectionMetrics.change.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} {baseCurrency === 'USD' ? '$' : baseCurrency})
                         </span>
-                    </div>
-                    <div className="flex items-center gap-4">
-                        <div className="flex flex-col items-end">
-                            <span className={`text-lg font-bold ${rangeMetrics.changePercent >= 0 ? 'text-success' : 'text-danger'}`}>
-                                {rangeMetrics.changePercent >= 0 ? '+' : ''}{rangeMetrics.changePercent.toFixed(2)}%
-                            </span>
-                            <span className={`text-xs ${rangeMetrics.change >= 0 ? 'text-success' : 'text-danger'}`}>
-                                {rangeMetrics.change >= 0 ? '+' : ''}{rangeMetrics.change.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} {baseCurrency === 'USD' ? '$' : baseCurrency}
-                            </span>
-                        </div>
-                        <button
-                            onClick={clearRangeSelection}
-                            className="p-1.5 rounded-lg hover:bg-white/10 text-muted hover:text-white transition-colors"
-                            style={{ background: 'transparent', border: 'none', cursor: 'pointer' }}
-                        >
-                            ✕
-                        </button>
-                    </div>
+                    </span>
                 </div>
             )}
 
-            <div
-                ref={chartContainerRef}
-                style={{ height: '240px', width: '100%', touchAction: 'pan-y' }}
-            >
+            <div style={{ height: '240px', width: '100%' }}>
                 <ResponsiveContainer width="100%" height="100%" debounce={50}>
                     <AreaChart
                         data={chartData}
                         margin={{ top: 0, right: 0, left: 0, bottom: 0 }}
-                        onMouseDown={handleChartMouseDown}
-                        onMouseMove={handleChartMouseMove}
-                        onMouseUp={handleChartMouseUp}
-                        onMouseLeave={handleChartMouseUp}
+                        onMouseDown={handleMouseDown}
+                        onMouseMove={handleMouseMove}
+                        onMouseUp={handleMouseUp}
+                        onMouseLeave={handleMouseUp}
                     >
                         <defs>
                             <linearGradient id="splitColor" x1="0" y1="0" x2="0" y2="1">
@@ -238,29 +183,42 @@ export default function AssetChart({ symbol, chartSymbol, baseCurrency = 'USD', 
                                 <stop offset={offset} stopColor={green} stopOpacity={0.2} />
                                 <stop offset={offset} stopColor={red} stopOpacity={0.2} />
                             </linearGradient>
+                            {/* Dimmed gradient for unselected areas */}
+                            <linearGradient id="dimmedFill" x1="0" y1="0" x2="0" y2="1">
+                                <stop offset="0%" stopColor="#525252" stopOpacity={0.1} />
+                                <stop offset="100%" stopColor="#525252" stopOpacity={0.05} />
+                            </linearGradient>
                         </defs>
                         <XAxis dataKey="date" hide />
                         <YAxis domain={['auto', 'auto']} hide />
-                        {/* Reference lines for range selection */}
-                        {rangeStart !== null && rangeEnd !== null && chartData[Math.min(rangeStart, rangeEnd)] && (
-                            <ReferenceLine
-                                y={chartData[Math.min(rangeStart, rangeEnd)].value}
-                                stroke="rgba(255,255,255,0.3)"
-                                strokeDasharray="4 4"
-                            />
+
+                        {/* Gray overlay for areas outside selection */}
+                        {selectionMetrics && (
+                            <>
+                                <ReferenceArea
+                                    x1={chartData[0].date}
+                                    x2={chartData[selectionMetrics.startIdx].date}
+                                    fill="rgba(0,0,0,0.5)"
+                                    fillOpacity={1}
+                                />
+                                <ReferenceArea
+                                    x1={chartData[selectionMetrics.endIdx].date}
+                                    x2={chartData[chartData.length - 1].date}
+                                    fill="rgba(0,0,0,0.5)"
+                                    fillOpacity={1}
+                                />
+                            </>
                         )}
+
                         <Tooltip
                             contentStyle={{ backgroundColor: '#171717', border: '1px solid #262626', borderRadius: '12px', padding: '8px 12px' }}
                             formatter={(val) => [
-                                <span style={{ color: val >= startPrice ? green : red }}>
+                                <span key="price" style={{ color: val >= startPrice ? green : red }}>
                                     {val.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} {baseCurrency === 'USD' ? '$' : baseCurrency}
                                 </span>,
                                 'Price'
                             ]}
-                            labelFormatter={(label) => {
-                                const date = new Date(label);
-                                return date.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' });
-                            }}
+                            labelFormatter={(label) => new Date(label).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
                             labelStyle={{ color: '#a1a1aa', fontSize: '0.75rem', marginBottom: '4px' }}
                             cursor={{ stroke: '#525252', strokeWidth: 1 }}
                             isAnimationActive={false}
@@ -276,13 +234,6 @@ export default function AssetChart({ symbol, chartSymbol, baseCurrency = 'USD', 
                     </AreaChart>
                 </ResponsiveContainer>
             </div>
-
-            {/* Instructions for range selection */}
-            {!rangeMetrics && (
-                <p className="text-[10px] text-muted/50 text-center">
-                    Click and drag on the chart to measure price change
-                </p>
-            )}
 
             {/* Timeframe Selector */}
             <div className="flex justify-between overflow-x-auto gap-2 no-scrollbar">

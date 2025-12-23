@@ -1,20 +1,18 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { ArrowUpDown } from 'lucide-react';
 
 // Toggle this to switch between Symbol and Short Name
 const DISPLAY_NAME = false; // true = Name, false = Symbol
 
 const SORT_OPTIONS = [
     { id: 'size', label: 'Size' },
-    { id: 'gainers', label: 'Top Gainers' },
-    { id: 'losers', label: 'Top Losers' }
+    { id: 'gainers', label: 'Gainers' },
+    { id: 'losers', label: 'Losers' }
 ];
 
 export default function HoldingsList({ holdings, onSelect, onAddAsset, loading, hideBalances, baseCurrency }) {
     const [sortBy, setSortBy] = useState('size');
-    const [showSortMenu, setShowSortMenu] = useState(false);
 
     // Load saved sort preference
     useEffect(() => {
@@ -28,62 +26,47 @@ export default function HoldingsList({ holdings, onSelect, onAddAsset, loading, 
     const handleSortChange = (newSort) => {
         setSortBy(newSort);
         localStorage.setItem('holdings_sort', newSort);
-        setShowSortMenu(false);
     };
 
     // Sort holdings based on selected option
     const sortedHoldings = [...holdings].sort((a, b) => {
         switch (sortBy) {
             case 'gainers':
-                return b.change24h - a.change24h; // Highest gains first
+                return b.change24h - a.change24h;
             case 'losers':
-                return a.change24h - b.change24h; // Biggest losses first
+                return a.change24h - b.change24h;
             case 'size':
             default:
-                return b.value - a.value; // Largest holdings first
+                return b.value - a.value;
         }
     });
 
     return (
         <div className="flex flex-col gap-1">
-            <div className="flex items-center justify-between">
+            <div className="flex items-center justify-between mb-1">
                 <h2 className="text-xl">Holdings</h2>
-                <div className="relative">
-                    <button
-                        onClick={() => setShowSortMenu(!showSortMenu)}
-                        className="flex items-center gap-1 px-2 py-1 text-xs text-muted hover:text-white transition-colors rounded-lg hover:bg-white/5"
-                        style={{ background: 'transparent', border: 'none', cursor: 'pointer' }}
+                {holdings.length > 1 && (
+                    <select
+                        value={sortBy}
+                        onChange={(e) => handleSortChange(e.target.value)}
+                        className="bg-white-5 hover:bg-white-10 border border-white-10 text-white text-xs font-medium rounded-full cursor-pointer transition-all focus:outline-none"
+                        style={{
+                            appearance: 'none',
+                            WebkitAppearance: 'none',
+                            MozAppearance: 'none',
+                            padding: '4px 24px 4px 10px',
+                            backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='10' viewBox='0 0 24 24' fill='none' stroke='white' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E")`,
+                            backgroundRepeat: 'no-repeat',
+                            backgroundPosition: 'right 8px center'
+                        }}
                     >
-                        <ArrowUpDown size={14} />
-                        <span>{SORT_OPTIONS.find(o => o.id === sortBy)?.label}</span>
-                    </button>
-                    {showSortMenu && (
-                        <>
-                            <div
-                                className="fixed inset-0 z-40"
-                                onClick={() => setShowSortMenu(false)}
-                            />
-                            <div
-                                className="absolute right-0 top-full mt-1 z-50 bg-[#171717] border border-white/10 rounded-xl overflow-hidden shadow-xl"
-                                style={{ minWidth: '120px' }}
-                            >
-                                {SORT_OPTIONS.map(option => (
-                                    <button
-                                        key={option.id}
-                                        onClick={() => handleSortChange(option.id)}
-                                        className={`w-full text-left px-3 py-2 text-xs transition-colors ${sortBy === option.id
-                                                ? 'bg-white/10 text-white'
-                                                : 'text-muted hover:bg-white/5 hover:text-white'
-                                            }`}
-                                        style={{ border: 'none', cursor: 'pointer' }}
-                                    >
-                                        {option.label}
-                                    </button>
-                                ))}
-                            </div>
-                        </>
-                    )}
-                </div>
+                        {SORT_OPTIONS.map(o => (
+                            <option key={o.id} value={o.id} style={{ backgroundColor: '#171717', color: 'white' }}>
+                                {o.label}
+                            </option>
+                        ))}
+                    </select>
+                )}
             </div>
             {sortedHoldings.map((holding) => (
                 <div

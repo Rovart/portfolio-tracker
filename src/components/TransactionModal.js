@@ -474,39 +474,33 @@ export default function TransactionModal({ mode, holding, transactions, onClose,
                             <div className="flex flex-col gap-2">
                                 <div className="flex justify-between items-start mb-4 gap-4">
                                     <div className="flex flex-col flex-1 items-start">
-                                        {/* Show extended hours label if applicable */}
-                                        {selectedAsset?.marketState && selectedAsset.marketState !== 'REGULAR' && (selectedAsset.preMarketPrice || selectedAsset.postMarketPrice) ? (
-                                            <>
-                                                <span className="text-xs sm:text-sm text-muted uppercase tracking-wider">
-                                                    {selectedAsset.marketState === 'PRE' ? 'Pre-Market' : selectedAsset.marketState === 'POST' ? 'After-Hours' : 'Current Price'}
+                                        <span className="text-xs sm:text-sm text-muted uppercase tracking-wider">
+                                            Current Price
+                                            {selectedAsset?.marketState && selectedAsset.marketState !== 'REGULAR' && selectedAsset.marketState !== 'CLOSED' && (
+                                                <span className="ml-1 text-[10px] opacity-60">
+                                                    ({selectedAsset.marketState === 'PRE' ? 'Pre' : 'After'})
                                                 </span>
-                                                {loadingPrice ? (
-                                                    <div className="h-7 w-24 bg-white-10 rounded animate-pulse mt-1" />
-                                                ) : (
-                                                    <>
-                                                        <span className={`text sm:text-2xl ${(selectedAsset.marketState === 'PRE' ? selectedAsset.preMarketChangePercent : selectedAsset.postMarketChangePercent) >= 0
-                                                                ? 'text-success' : 'text-danger'
-                                                            }`}>
-                                                            {((selectedAsset.marketState === 'PRE' ? selectedAsset.preMarketPrice : selectedAsset.postMarketPrice) * fxRate).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} {baseCurrency === 'USD' ? '$' : baseCurrency}
-                                                        </span>
-                                                        <span className="text-[10px] text-muted mt-1">
-                                                            Last Close: {(assetPrice * fxRate).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} {baseCurrency === 'USD' ? '$' : baseCurrency}
-                                                        </span>
-                                                    </>
-                                                )}
-                                            </>
-                                        ) : (
-                                            <>
-                                                <span className="text-xs sm:text-sm text-muted uppercase tracking-wider">Current Price</span>
-                                                {loadingPrice || !assetPrice ? (
-                                                    <div className="h-7 w-24 bg-white-10 rounded animate-pulse mt-1" />
-                                                ) : (
-                                                    <span className={`text sm:text-2xl ${(changePercent || 0) >= 0 ? 'text-success' : 'text-danger'}`}>
-                                                        {(assetPrice * fxRate).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} {baseCurrency === 'USD' ? '$' : baseCurrency}
-                                                    </span>
-                                                )}
-                                            </>
-                                        )}
+                                            )}
+                                        </span>
+                                        {loadingPrice || !assetPrice ? (
+                                            <div className="h-7 w-24 bg-white-10 rounded animate-pulse mt-1" />
+                                        ) : (() => {
+                                            // Use best available price
+                                            let displayPrice = assetPrice;
+                                            let displayChange = changePercent || 0;
+                                            if (selectedAsset?.marketState === 'PRE' && selectedAsset.preMarketPrice) {
+                                                displayPrice = selectedAsset.preMarketPrice;
+                                                displayChange = selectedAsset.preMarketChangePercent || 0;
+                                            } else if ((selectedAsset?.marketState === 'POST' || selectedAsset?.marketState === 'POSTPOST') && selectedAsset.postMarketPrice) {
+                                                displayPrice = selectedAsset.postMarketPrice;
+                                                displayChange = selectedAsset.postMarketChangePercent || 0;
+                                            }
+                                            return (
+                                                <span className={`text sm:text-2xl ${displayChange >= 0 ? 'text-success' : 'text-danger'}`}>
+                                                    {(displayPrice * fxRate).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} {baseCurrency === 'USD' ? '$' : baseCurrency}
+                                                </span>
+                                            );
+                                        })()}
                                     </div>
                                     {/* Only show Avg Purchase if there are BUY transactions (avgPrice > 0) */}
                                     {averagePurchasePrice > 0 && (

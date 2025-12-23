@@ -150,7 +150,15 @@ export function calculateHoldings(transactions, priceMap, baseCurrency = 'USD') 
 
             // If the asset IS its own quote currency (e.g. EUR holding from EUR=X, or USD)
             // then the local price is 1. We then multiply by the FX rate to base.
-            let localPrice = parseFloat(quote.price) || 0;
+            // Use best available price: extended hours price when market is in that state
+            let basePrice = parseFloat(quote.price) || 0;
+            if (quote.marketState === 'PRE' && quote.preMarketPrice) {
+                basePrice = quote.preMarketPrice;
+            } else if ((quote.marketState === 'POST' || quote.marketState === 'POSTPOST') && quote.postMarketPrice) {
+                basePrice = quote.postMarketPrice;
+            }
+
+            let localPrice = basePrice;
             if (asset.toUpperCase() === quoteCurr) {
                 localPrice = 1;
                 quoteCurr = asset.toUpperCase(); // Ensure it's set for FX lookup
