@@ -47,7 +47,10 @@ export default function FinancialInfo({ symbol, baseCurrency = 'USD' }) {
 
     return (
         <div className="flex flex-col gap-6 pb-4">
-            {/* Key Stats first */}
+            {/* Profitability last - comprehensive view */}
+            {hasRevenue && <ProfitabilityTrend data={data} />}
+
+            {/* Key Stats */}
             <StatsSection data={data} />
 
             {/* Quarterly EPS - important for stock analysis */}
@@ -57,10 +60,9 @@ export default function FinancialInfo({ symbol, baseCurrency = 'USD' }) {
             {hasBalance && <FinancialHealth data={data} />}
 
             {/* Revenue Trend */}
-            {hasRevenue && <RevenueTrend data={data} />}
+            {/*hasRevenue && <RevenueTrend data={data} />*/}
 
-            {/* Profitability last - comprehensive view */}
-            {hasRevenue && <ProfitabilityTrend data={data} />}
+
         </div>
     );
 }
@@ -208,18 +210,18 @@ function FinancialHealth({ data }) {
                         style={{ width: `${Math.max(cashPct, 1)}%`, background: '#22c55e' }}
                         className="flex items-center justify-center transition-all"
                     >
-                        {cashPct > 20 && <span className="text-[10px] font-bold text-white">{formatNum(cash)}</span>}
+                        {cashPct > 20 && <span className="text-sm text-white">{formatNum(cash)}</span>}
                     </div>
                     <div
                         style={{ width: `${Math.max(100 - cashPct, 1)}%`, background: '#dc2626' }}
                         className="flex items-center justify-center transition-all"
                     >
-                        {(100 - cashPct) > 20 && <span className="text-[10px] font-bold text-white">{formatNum(debt)}</span>}
+                        {(100 - cashPct) > 20 && <span className="text-sm text-white">{formatNum(debt)}</span>}
                     </div>
                 </div>
                 <div className="flex justify-between mt-2 px-1">
-                    <span className="text-[10px] text-success font-medium">Cash {cashPct.toFixed(0)}%</span>
-                    <span className="text-[10px] text-danger font-medium">Debt {(100 - cashPct).toFixed(0)}%</span>
+                    <span className="text-sm text-success font-medium">Cash {cashPct.toFixed(0)}%</span>
+                    <span className="text-sm text-danger font-medium">Debt {(100 - cashPct).toFixed(0)}%</span>
                 </div>
             </div>
 
