@@ -1,10 +1,9 @@
 'use client';
 
 import { useMemo, useState, useCallback } from 'react';
-import { AreaChart, Area, XAxis, Tooltip, ResponsiveContainer, YAxis, ReferenceArea } from 'recharts';
+import { AreaChart, Area, XAxis, Tooltip, ResponsiveContainer, YAxis, ReferenceArea, ReferenceLine } from 'recharts';
 
 export default function ProfitChart({ data, baseCurrency, hideBalances, loading }) {
-    // Range selection state
     const [selectionStart, setSelectionStart] = useState(null);
     const [selectionEnd, setSelectionEnd] = useState(null);
     const [isSelecting, setIsSelecting] = useState(false);
@@ -36,7 +35,6 @@ export default function ProfitChart({ data, baseCurrency, hideBalances, loading 
         return { chartData: processedData, offset: off, startValue: start };
     }, [data]);
 
-    // Selection metrics
     const selectionMetrics = useMemo(() => {
         if (selectionStart === null || selectionEnd === null || chartData.length === 0) return null;
         const startIdx = Math.min(selectionStart, selectionEnd);
@@ -71,31 +69,29 @@ export default function ProfitChart({ data, baseCurrency, hideBalances, loading 
 
     const green = "#22c55e";
     const red = "#ef4444";
+    const hasSelection = selectionMetrics !== null;
 
     return (
         <div className="flex flex-col gap-2 no-select" style={{ cursor: 'default' }}>
-            {/* Selection display */}
-            {selectionMetrics && !hideBalances && (
-                <div
-                    className="flex items-center justify-between px-3 py-2 rounded-xl"
-                    style={{ background: 'rgba(255,255,255,0.03)' }}
-                    onClick={clearSelection}
-                >
-                    <span className="text-xs text-muted">
-                        {new Date(chartData[selectionMetrics.startIdx].date).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}
-                        {' → '}
-                        {new Date(chartData[selectionMetrics.endIdx].date).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}
-                    </span>
-                    <span className={`text-sm font-bold ${selectionMetrics.change >= 0 ? 'text-success' : 'text-danger'}`}>
-                        {selectionMetrics.change >= 0 ? '+' : ''}{selectionMetrics.changePercent.toFixed(2)}%
-                        <span className="font-normal text-xs ml-2">
-                            ({selectionMetrics.change >= 0 ? '+' : ''}{selectionMetrics.change.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} {baseCurrency === 'USD' ? '$' : baseCurrency})
+            <div style={{ height: '300px', width: '100%', position: 'relative' }}>
+                {/* Selection metrics overlay on chart */}
+                {selectionMetrics && !hideBalances && (
+                    <div
+                        className="absolute top-2 left-1/2 transform -translate-x-1/2 z-10 flex items-center gap-2 px-3 py-1.5 rounded-full"
+                        style={{ background: 'rgba(0,0,0,0.8)', backdropFilter: 'blur(8px)' }}
+                        onClick={clearSelection}
+                    >
+                        <span className="text-[10px] text-white/60">
+                            {new Date(chartData[selectionMetrics.startIdx].date).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}
+                            {' → '}
+                            {new Date(chartData[selectionMetrics.endIdx].date).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}
                         </span>
-                    </span>
-                </div>
-            )}
+                        <span className={`text-xs font-bold ${selectionMetrics.change >= 0 ? 'text-success' : 'text-danger'}`}>
+                            {selectionMetrics.change >= 0 ? '+' : ''}{selectionMetrics.changePercent.toFixed(2)}%
+                        </span>
+                    </div>
+                )}
 
-            <div style={{ height: '300px', width: '100%' }}>
                 <ResponsiveContainer width="100%" height="100%" debounce={50}>
                     <AreaChart
                         data={chartData}
@@ -111,26 +107,34 @@ export default function ProfitChart({ data, baseCurrency, hideBalances, loading 
                                 <stop offset={offset} stopColor={red} stopOpacity={1} />
                             </linearGradient>
                             <linearGradient id="splitFillProfit" x1="0" y1="0" x2="0" y2="1">
-                                <stop offset={offset} stopColor={green} stopOpacity={0.2} />
-                                <stop offset={offset} stopColor={red} stopOpacity={0.2} />
+                                <stop offset={offset} stopColor={green} stopOpacity={hasSelection ? 0.05 : 0.2} />
+                                <stop offset={offset} stopColor={red} stopOpacity={hasSelection ? 0.05 : 0.2} />
+                            </linearGradient>
+                            <linearGradient id="selectedFillProfit" x1="0" y1="0" x2="0" y2="1">
+                                <stop offset="0%" stopColor="#ffffff" stopOpacity={0.15} />
+                                <stop offset="100%" stopColor="#ffffff" stopOpacity={0.02} />
                             </linearGradient>
                         </defs>
                         <XAxis dataKey="date" hide axisLine={false} tickLine={false} />
                         <YAxis hide domain={['auto', 'auto']} />
 
-                        {/* Gray overlay for areas outside selection */}
+                        {/* Vertical lines at selection boundaries */}
                         {selectionMetrics && (
                             <>
-                                <ReferenceArea
-                                    x1={chartData[0].date}
-                                    x2={chartData[selectionMetrics.startIdx].date}
-                                    fill="rgba(0,0,0,0.5)"
-                                    fillOpacity={1}
+                                <ReferenceLine
+                                    x={chartData[selectionMetrics.startIdx].date}
+                                    stroke="rgba(255,255,255,0.4)"
+                                    strokeWidth={1}
+                                />
+                                <ReferenceLine
+                                    x={chartData[selectionMetrics.endIdx].date}
+                                    stroke="rgba(255,255,255,0.4)"
+                                    strokeWidth={1}
                                 />
                                 <ReferenceArea
-                                    x1={chartData[selectionMetrics.endIdx].date}
-                                    x2={chartData[chartData.length - 1].date}
-                                    fill="rgba(0,0,0,0.5)"
+                                    x1={chartData[selectionMetrics.startIdx].date}
+                                    x2={chartData[selectionMetrics.endIdx].date}
+                                    fill="url(#selectedFillProfit)"
                                     fillOpacity={1}
                                 />
                             </>
@@ -152,12 +156,23 @@ export default function ProfitChart({ data, baseCurrency, hideBalances, loading 
                         <Area
                             type="monotone"
                             dataKey="value"
-                            stroke="url(#splitColorProfit)"
+                            stroke={hasSelection ? "rgba(255,255,255,0.3)" : "url(#splitColorProfit)"}
                             fill="url(#splitFillProfit)"
-                            strokeWidth={2}
+                            strokeWidth={hasSelection ? 1 : 2}
                             fillOpacity={1}
                             baseValue={startValue}
                         />
+                        {selectionMetrics && (
+                            <Area
+                                type="monotone"
+                                dataKey="value"
+                                stroke="#ffffff"
+                                fill="transparent"
+                                strokeWidth={2}
+                                baseValue={startValue}
+                                data={chartData.slice(selectionMetrics.startIdx, selectionMetrics.endIdx + 1)}
+                            />
+                        )}
                     </AreaChart>
                 </ResponsiveContainer>
             </div>

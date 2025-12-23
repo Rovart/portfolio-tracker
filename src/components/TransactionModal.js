@@ -3,8 +3,9 @@
 import { useState, useEffect, useMemo, useRef } from 'react';
 import AssetSearch from './AssetSearch';
 import AssetChart from './AssetChart';
+import FinancialInfo from './FinancialInfo';
 import ConfirmModal from './ConfirmModal';
-import { Trash2, Edit2, X, Plus, ChevronLeft, ArrowLeft } from 'lucide-react';
+import { Trash2, Edit2, X, Plus, ChevronLeft, ArrowLeft, Moon, Sun } from 'lucide-react';
 import { normalizeAsset } from '@/utils/portfolio-logic';
 
 const DISPLAY_NAME = true; // true = Name, false = Symbol
@@ -28,6 +29,7 @@ export default function TransactionModal({ mode, holding, transactions, onClose,
     } : null);
     const [editingTx, setEditingTx] = useState(null);
     const [deleteConfirm, setDeleteConfirm] = useState(null); // { id, type, date }
+    const [assetTab, setAssetTab] = useState('overview'); // 'overview' | 'financials'
 
     // Consolidated price data - updated atomically to guarantee single render
     // Always start loading to prevent showing cached USD price before FX conversion
@@ -470,212 +472,245 @@ export default function TransactionModal({ mode, holding, transactions, onClose,
 
                     {currentView === 'LIST' && selectedAsset && (
                         <div className="flex flex-col gap-4">
-                            {/* Chart Section */}
-                            <div className="flex flex-col gap-2">
-                                <div className="flex justify-between items-start mb-4 gap-4">
-                                    <div className="flex flex-col flex-1 items-start">
-                                        <span className="text-xs sm:text-sm text-muted uppercase tracking-wider">
-                                            Current Price
-                                            {selectedAsset?.marketState && selectedAsset.marketState !== 'REGULAR' && selectedAsset.marketState !== 'CLOSED' && (
-                                                <span className="ml-1 text-[10px] opacity-60">
-                                                    ({selectedAsset.marketState === 'PRE' ? 'Pre' : 'After'})
-                                                </span>
-                                            )}
-                                        </span>
-                                        {loadingPrice || !assetPrice ? (
-                                            <div className="h-7 w-24 bg-white-10 rounded animate-pulse mt-1" />
-                                        ) : (() => {
-                                            // Use best available price
-                                            let displayPrice = assetPrice;
-                                            let displayChange = changePercent || 0;
-                                            if (selectedAsset?.marketState === 'PRE' && selectedAsset.preMarketPrice) {
-                                                displayPrice = selectedAsset.preMarketPrice;
-                                                displayChange = selectedAsset.preMarketChangePercent || 0;
-                                            } else if ((selectedAsset?.marketState === 'POST' || selectedAsset?.marketState === 'POSTPOST') && selectedAsset.postMarketPrice) {
-                                                displayPrice = selectedAsset.postMarketPrice;
-                                                displayChange = selectedAsset.postMarketChangePercent || 0;
-                                            }
-                                            return (
-                                                <span className={`text sm:text-2xl ${displayChange >= 0 ? 'text-success' : 'text-danger'}`}>
-                                                    {(displayPrice * fxRate).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} {baseCurrency === 'USD' ? '$' : baseCurrency}
-                                                </span>
-                                            );
-                                        })()}
-                                    </div>
-                                    {/* Only show Avg Purchase if there are BUY transactions (avgPrice > 0) */}
-                                    {averagePurchasePrice > 0 && (
-                                        <div className="flex flex-col flex-1 items-center">
-                                            <span className="text-xs sm:text-sm text-muted uppercase tracking-wider text-center">Avg Purchase</span>
-                                            {loadingPrice ? (
-                                                <div className="h-7 w-24 bg-white-10 rounded animate-pulse mt-1" />
-                                            ) : (
-                                                <span className="text sm:text-2xl text-center">
-                                                    {averagePurchasePrice.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} {baseCurrency === 'USD' ? '$' : baseCurrency}
-                                                </span>
-                                            )}
-                                        </div>
-                                    )}
-                                    <div className="flex flex-col flex-1 items-end">
-                                        <span className="text-xs sm:text-sm text-muted uppercase tracking-wider text-right">Total Value</span>
-                                        {loadingPrice || !assetPrice ? (
-                                            <div className="h-7 w-32 bg-white-10 rounded animate-pulse mt-1" />
-                                        ) : (
-                                            <span className="text sm:text-2xl text-success text-right">{hideBalances ? '••••••' : `${(currentBalance * assetPrice * fxRate).toLocaleString(undefined, { maximumFractionDigits: 2 })} ${baseCurrency === 'USD' ? '$' : baseCurrency}`}</span>
-                                        )}
-                                    </div>
-                                </div>
-                                <div className="w-full">
-                                    <AssetChart
-                                        symbol={selectedAsset.symbol}
-                                        baseCurrency={baseCurrency}
-                                        fxRate={fxRate}
-                                        parentLoading={loadingPrice}
-                                        assetCurrency={selectedAsset.currency || priceData.currency}
-                                        // If it's a currency not equal to base, pass the constructed pair (e.g. AUDUSD=X)
-                                        // otherwise pass null to let AssetChart decide or use default logic
-                                        // Improved logic: Anchored to USD
-                                        chartSymbol={(() => {
-                                            const s = selectedAsset.symbol;
-                                            // Only treat as currency if explicitly marked - don't assume based on length
-                                            const isBare = selectedAsset.isBareCurrencyOrigin ||
-                                                selectedAsset.originalType === 'CURRENCY';
-
-                                            if (isBare && !s.includes('=X') && !s.includes('-')) {
-                                                // Always use USD pair (AUD -> AUDUSD=X)
-                                                // If the asset is 'USD', it's special (handled by AssetChart or no chart)
-                                                if (s === 'USD') return s;
-                                                return `${s}USD=X`;
-                                            }
-                                            return s;
-                                        })()}
-                                    />
-                                </div>
+                            {/* Tab Navigation */}
+                            <div className="flex gap-1 p-1 rounded-xl" style={{ background: 'rgba(255,255,255,0.03)' }}>
+                                <button
+                                    onClick={() => setAssetTab('overview')}
+                                    className="flex-1 py-2 px-4 rounded-lg text-sm font-medium transition-all"
+                                    style={{
+                                        background: assetTab === 'overview' ? 'rgba(255,255,255,0.1)' : 'transparent',
+                                        color: assetTab === 'overview' ? '#fff' : 'rgba(255,255,255,0.5)',
+                                        border: 'none',
+                                        cursor: 'pointer'
+                                    }}
+                                >
+                                    Overview
+                                </button>
+                                <button
+                                    onClick={() => setAssetTab('financials')}
+                                    className="flex-1 py-2 px-4 rounded-lg text-sm font-medium transition-all"
+                                    style={{
+                                        background: assetTab === 'financials' ? 'rgba(255,255,255,0.1)' : 'transparent',
+                                        color: assetTab === 'financials' ? '#fff' : 'rgba(255,255,255,0.5)',
+                                        border: 'none',
+                                        cursor: 'pointer'
+                                    }}
+                                >
+                                    Financials
+                                </button>
                             </div>
 
-                            {/* Transactions List */}
-                            <div>
-                                <h3 className="text-xl text-muted" style={{ marginBottom: '1rem' }}>History</h3>
+                            {/* Overview Tab */}
+                            {assetTab === 'overview' && (
                                 <div className="flex flex-col gap-2">
-                                    {assetTransactions.length === 0 ? (
-                                        <p className="text-muted py-10 text-center">No transactions recorded.</p>
-                                    ) : (
-                                        assetTransactions.map(tx => (
-                                            <div key={tx.id} className="flex justify-between items-center p-4 rounded-2xl hover-bg-surface transition-all" style={{ border: '1px solid transparent' }}>
-                                                <div className="flex items-center gap-4">
-                                                    <div style={{ width: 8, height: 8, borderRadius: '50%', backgroundColor: tx.isReverse ? (tx.type === 'BUY' ? '#ef4444' : '#22c55e') : (['BUY', 'DEPOSIT'].includes(tx.type) ? '#22c55e' : '#ef4444') }} />
-                                                    <div className="flex flex-col">
-                                                        <span className="font-bold" style={{ fontSize: '1rem' }}>
-                                                            {tx.isReverse ? (tx.type === 'BUY' ? 'SPENT' : 'RECEIVED') : tx.type}
-                                                        </span>
-                                                        <span className="text-sm text-muted">
-                                                            {tx.isReverse ? `${tx.type === 'BUY' ? 'Purchased' : 'Sold'} ${tx.baseCurrency} | ` : ''}
-                                                            {new Date(tx.date).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' })}
-                                                        </span>
-                                                        {tx.notes && (
-                                                            <span className="text-xs text-muted" style={{ fontStyle: 'italic', marginTop: '2px', opacity: 0.7 }}>
-                                                                {tx.notes}
-                                                            </span>
+                                    <div className="flex justify-between items-start mb-4 gap-4">
+                                        <div className="flex flex-col flex-1 items-start">
+                                            <span className="text-xs sm:text-sm text-muted uppercase tracking-wider flex items-center gap-1.5">
+                                                Current Price
+                                                {selectedAsset?.marketState && selectedAsset.marketState !== 'REGULAR' && selectedAsset.marketState !== 'CLOSED' && (
+                                                    <span className="inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded-full" style={{ background: 'rgba(255,255,255,0.1)' }}>
+                                                        {selectedAsset.marketState === 'PRE' ? (
+                                                            <Sun size={10} className="text-amber-400" />
+                                                        ) : (
+                                                            <Moon size={10} className="text-blue-400" />
                                                         )}
-                                                    </div>
-                                                </div>
+                                                        <span className="opacity-80">{selectedAsset.marketState === 'PRE' ? 'Pre' : 'After'}</span>
+                                                    </span>
+                                                )}
+                                            </span>
+                                            {loadingPrice || !assetPrice ? (
+                                                <div className="h-7 w-24 bg-white-10 rounded animate-pulse mt-1" />
+                                            ) : (() => {
+                                                // Use best available price
+                                                let displayPrice = assetPrice;
+                                                let displayChange = changePercent || 0;
+                                                if (selectedAsset?.marketState === 'PRE' && selectedAsset.preMarketPrice) {
+                                                    displayPrice = selectedAsset.preMarketPrice;
+                                                    displayChange = selectedAsset.preMarketChangePercent || 0;
+                                                } else if ((selectedAsset?.marketState === 'POST' || selectedAsset?.marketState === 'POSTPOST') && selectedAsset.postMarketPrice) {
+                                                    displayPrice = selectedAsset.postMarketPrice;
+                                                    displayChange = selectedAsset.postMarketChangePercent || 0;
+                                                }
+                                                return (
+                                                    <span className={`text sm:text-2xl ${displayChange >= 0 ? 'text-success' : 'text-danger'}`}>
+                                                        {(displayPrice * fxRate).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} {baseCurrency === 'USD' ? '$' : baseCurrency}
+                                                    </span>
+                                                );
+                                            })()}
+                                        </div>
+                                        {/* Only show Avg Purchase if there are BUY transactions (avgPrice > 0) */}
+                                        {averagePurchasePrice > 0 && (
+                                            <div className="flex flex-col flex-1 items-center">
+                                                <span className="text-xs sm:text-sm text-muted uppercase tracking-wider text-center">Avg Purchase</span>
+                                                {loadingPrice ? (
+                                                    <div className="h-7 w-24 bg-white-10 rounded animate-pulse mt-1" />
+                                                ) : (
+                                                    <span className="text sm:text-2xl text-center">
+                                                        {averagePurchasePrice.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} {baseCurrency === 'USD' ? '$' : baseCurrency}
+                                                    </span>
+                                                )}
+                                            </div>
+                                        )}
+                                        <div className="flex flex-col flex-1 items-end">
+                                            <span className="text-xs sm:text-sm text-muted uppercase tracking-wider text-right">Total Value</span>
+                                            {loadingPrice || !assetPrice ? (
+                                                <div className="h-7 w-32 bg-white-10 rounded animate-pulse mt-1" />
+                                            ) : (
+                                                <span className="text sm:text-2xl text-success text-right">{hideBalances ? '••••••' : `${(currentBalance * assetPrice * fxRate).toLocaleString(undefined, { maximumFractionDigits: 2 })} ${baseCurrency === 'USD' ? '$' : baseCurrency}`}</span>
+                                            )}
+                                        </div>
+                                    </div>
+                                    <div className="w-full">
+                                        <AssetChart
+                                            symbol={selectedAsset.symbol}
+                                            baseCurrency={baseCurrency}
+                                            fxRate={fxRate}
+                                            parentLoading={loadingPrice}
+                                            assetCurrency={selectedAsset.currency || priceData.currency}
+                                            // If it's a currency not equal to base, pass the constructed pair (e.g. AUDUSD=X)
+                                            // otherwise pass null to let AssetChart decide or use default logic
+                                            // Improved logic: Anchored to USD
+                                            chartSymbol={(() => {
+                                                const s = selectedAsset.symbol;
+                                                // Only treat as currency if explicitly marked - don't assume based on length
+                                                const isBare = selectedAsset.isBareCurrencyOrigin ||
+                                                    selectedAsset.originalType === 'CURRENCY';
 
-                                                <div className="flex-1 flex flex-col items-end">
-                                                    {tx.type === 'BUY' && !tx.isReverse && (
-                                                        <>
-                                                            {loadingPrice || !assetPrice ? (
-                                                                <div className="h-5 w-20 bg-white-10 rounded animate-pulse ml-auto" style={{ marginRight: '10px' }} />
-                                                            ) : (
-                                                                (() => {
-                                                                    const dateStr = tx.date.split('T')[0];
-                                                                    // Use the ASSET's currency, not the tx quote currency
-                                                                    // Use asset's currency as fallback when tx has no quoteCurrency
-                                                                    const txQuoteCurrency = (tx.quoteCurrency || selectedAsset.currency || 'USD').toUpperCase();
+                                                if (isBare && !s.includes('=X') && !s.includes('-')) {
+                                                    // Always use USD pair (AUD -> AUDUSD=X)
+                                                    // If the asset is 'USD', it's special (handled by AssetChart or no chart)
+                                                    if (s === 'USD') return s;
+                                                    return `${s}USD=X`;
+                                                }
+                                                return s;
+                                            })()}
+                                        />
+                                    </div>
 
-                                                                    // FX for cost: convert tx quote currency to base currency
-                                                                    let costFx = 1;
-                                                                    if (txQuoteCurrency !== baseCurrency) {
-                                                                        costFx = historicalFx[dateStr] || fxRate || 1;
-                                                                    }
-                                                                    const costBase = tx.quoteAmount * costFx;
+                                    {/* Transactions List */}
+                                    <div>
+                                        <h3 className="text-xl text-muted" style={{ marginBottom: '1rem' }}>History</h3>
+                                        <div className="flex flex-col gap-2">
+                                            {assetTransactions.length === 0 ? (
+                                                <p className="text-muted py-10 text-center">No transactions recorded.</p>
+                                            ) : (
+                                                assetTransactions.map(tx => (
+                                                    <div key={tx.id} className="flex justify-between items-center p-4 rounded-2xl hover-bg-surface transition-all" style={{ border: '1px solid transparent' }}>
+                                                        <div className="flex items-center gap-4">
+                                                            <div style={{ width: 8, height: 8, borderRadius: '50%', backgroundColor: tx.isReverse ? (tx.type === 'BUY' ? '#ef4444' : '#22c55e') : (['BUY', 'DEPOSIT'].includes(tx.type) ? '#22c55e' : '#ef4444') }} />
+                                                            <div className="flex flex-col">
+                                                                <span className="font-bold" style={{ fontSize: '1rem' }}>
+                                                                    {tx.isReverse ? (tx.type === 'BUY' ? 'SPENT' : 'RECEIVED') : tx.type}
+                                                                </span>
+                                                                <span className="text-sm text-muted">
+                                                                    {tx.isReverse ? `${tx.type === 'BUY' ? 'Purchased' : 'Sold'} ${tx.baseCurrency} | ` : ''}
+                                                                    {new Date(tx.date).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' })}
+                                                                </span>
+                                                                {tx.notes && (
+                                                                    <span className="text-xs text-muted" style={{ fontStyle: 'italic', marginTop: '2px', opacity: 0.7 }}>
+                                                                        {tx.notes}
+                                                                    </span>
+                                                                )}
+                                                            </div>
+                                                        </div>
 
-                                                                    // Current value uses fxRate (asset to base)
-                                                                    const currentValBase = tx.baseAmount * assetPrice * fxRate;
-                                                                    const pnlBase = currentValBase - costBase;
-                                                                    const pnlPercent = (pnlBase / costBase) * 100;
-
-                                                                    return (
-                                                                        <span style={{ textAlign: 'right', marginRight: '10px' }} className={`text-sm font-bold ${pnlBase >= 0 ? 'text-success' : 'text-danger'}`}>
-                                                                            {hideBalances ? '' : `${pnlBase >= 0 ? '+' : '-'}${Math.abs(pnlBase).toLocaleString(undefined, { maximumFractionDigits: 2 })} ${baseCurrency === 'USD' ? '$' : baseCurrency} `}
-                                                                            ({pnlPercent >= 0 ? '+' : ''}{pnlPercent.toFixed(2)}%)
-                                                                        </span>
-                                                                    );
-                                                                })()
-                                                            )}
-                                                        </>
-                                                    )}
-                                                </div>
-
-                                                <div className="flex items-center gap-4">
-                                                    <div className="flex flex-col items-end">
-                                                        <span className="font-mono font-medium" style={{ fontSize: '1rem' }}>
-                                                            {hideBalances ? '••••' : (tx.isReverse ? tx.quoteAmount : tx.baseAmount).toLocaleString()} {tx.isReverse ? tx.quoteCurrency : tx.baseCurrency}
-                                                        </span>
-                                                        {(tx.quoteAmount > 0 && !tx.isReverse) && (
-                                                            <div className="flex items-center gap-1">
-                                                                {loadingPrice ? (
-                                                                    <div className="h-3 w-12 bg-white-10 rounded animate-pulse ml-auto" />
-                                                                ) : (
-                                                                    <span className="text-xs text-muted">
-                                                                        {(() => {
+                                                        <div className="flex-1 flex flex-col items-end">
+                                                            {tx.type === 'BUY' && !tx.isReverse && (
+                                                                <>
+                                                                    {loadingPrice || !assetPrice ? (
+                                                                        <div className="h-5 w-20 bg-white-10 rounded animate-pulse ml-auto" style={{ marginRight: '10px' }} />
+                                                                    ) : (
+                                                                        (() => {
                                                                             const dateStr = tx.date.split('T')[0];
-                                                                            // Use asset's currency as fallback when tx has no quoteCurrency
                                                                             const txQuoteCurrency = (tx.quoteCurrency || selectedAsset.currency || 'USD').toUpperCase();
-                                                                            // FX for cost: convert tx quote currency to base currency
                                                                             let costFx = 1;
                                                                             if (txQuoteCurrency !== baseCurrency) {
                                                                                 costFx = historicalFx[dateStr] || fxRate || 1;
                                                                             }
-                                                                            return `${((tx.quoteAmount / tx.baseAmount) * costFx).toLocaleString(undefined, { maximumFractionDigits: 2 })} ${baseCurrency === 'USD' ? '$' : baseCurrency}`;
-                                                                        })()}
-                                                                    </span>
-                                                                )}
-                                                                {tx.type === 'BUY' && (
-                                                                    loadingPrice || !assetPrice ? (
-                                                                        <div className="h-3 w-8 bg-white-10 rounded animate-pulse ml-auto" style={{ marginLeft: '5px' }} />
-                                                                    ) : (
-                                                                        <span className={`text-xs text-[10px] ${tx.affectsFiatBalance === false ? 'text-muted/50 decoration-line-through' : 'text-muted'}`} title={tx.affectsFiatBalance === false ? "Did not deduct from balance" : "Deducted from balance"}>
-                                                                            | {hideBalances ? '••••••' : (() => {
-                                                                                const dateStr = tx.date.split('T')[0];
-                                                                                // Use asset's currency as fallback when tx has no quoteCurrency
-                                                                                const txQuoteCurrency = (tx.quoteCurrency || selectedAsset.currency || 'USD').toUpperCase();
-                                                                                const hFx = txQuoteCurrency !== baseCurrency ? (historicalFx[dateStr] || fxRate || 1) : 1;
-                                                                                return `${(tx.quoteAmount * hFx).toLocaleString(undefined, { maximumFractionDigits: 2 })} ${baseCurrency === 'USD' ? '$' : baseCurrency}`;
-                                                                            })()}
-                                                                        </span>
-                                                                    )
+                                                                            const costBase = tx.quoteAmount * costFx;
+                                                                            const currentValBase = tx.baseAmount * assetPrice * fxRate;
+                                                                            const pnlBase = currentValBase - costBase;
+                                                                            const pnlPercent = (pnlBase / costBase) * 100;
+                                                                            return (
+                                                                                <span style={{ textAlign: 'right', marginRight: '10px' }} className={`text-sm font-bold ${pnlBase >= 0 ? 'text-success' : 'text-danger'}`}>
+                                                                                    {hideBalances ? '' : `${pnlBase >= 0 ? '+' : '-'}${Math.abs(pnlBase).toLocaleString(undefined, { maximumFractionDigits: 2 })} ${baseCurrency === 'USD' ? '$' : baseCurrency} `}
+                                                                                    ({pnlPercent >= 0 ? '+' : ''}{pnlPercent.toFixed(2)}%)
+                                                                                </span>
+                                                                            );
+                                                                        })()
+                                                                    )}
+                                                                </>
+                                                            )}
+                                                        </div>
+
+                                                        <div className="flex items-center gap-4">
+                                                            <div className="flex flex-col items-end">
+                                                                <span className="font-mono font-medium" style={{ fontSize: '1rem' }}>
+                                                                    {hideBalances ? '••••' : (tx.isReverse ? tx.quoteAmount : tx.baseAmount).toLocaleString()} {tx.isReverse ? tx.quoteCurrency : tx.baseCurrency}
+                                                                </span>
+                                                                {(tx.quoteAmount > 0 && !tx.isReverse) && (
+                                                                    <div className="flex items-center gap-1">
+                                                                        {loadingPrice ? (
+                                                                            <div className="h-3 w-12 bg-white-10 rounded animate-pulse ml-auto" />
+                                                                        ) : (
+                                                                            <span className="text-xs text-muted">
+                                                                                {(() => {
+                                                                                    const dateStr = tx.date.split('T')[0];
+                                                                                    const txQuoteCurrency = (tx.quoteCurrency || selectedAsset.currency || 'USD').toUpperCase();
+                                                                                    let costFx = 1;
+                                                                                    if (txQuoteCurrency !== baseCurrency) {
+                                                                                        costFx = historicalFx[dateStr] || fxRate || 1;
+                                                                                    }
+                                                                                    return `${((tx.quoteAmount / tx.baseAmount) * costFx).toLocaleString(undefined, { maximumFractionDigits: 2 })} ${baseCurrency === 'USD' ? '$' : baseCurrency}`;
+                                                                                })()}
+                                                                            </span>
+                                                                        )}
+                                                                        {tx.type === 'BUY' && (
+                                                                            loadingPrice || !assetPrice ? (
+                                                                                <div className="h-3 w-8 bg-white-10 rounded animate-pulse ml-auto" style={{ marginLeft: '5px' }} />
+                                                                            ) : (
+                                                                                <span className={`text-xs text-[10px] ${tx.affectsFiatBalance === false ? 'text-muted/50 decoration-line-through' : 'text-muted'}`} title={tx.affectsFiatBalance === false ? "Did not deduct from balance" : "Deducted from balance"}>
+                                                                                    | {hideBalances ? '••••••' : (() => {
+                                                                                        const dateStr = tx.date.split('T')[0];
+                                                                                        const txQuoteCurrency = (tx.quoteCurrency || selectedAsset.currency || 'USD').toUpperCase();
+                                                                                        const hFx = txQuoteCurrency !== baseCurrency ? (historicalFx[dateStr] || fxRate || 1) : 1;
+                                                                                        return `${(tx.quoteAmount * hFx).toLocaleString(undefined, { maximumFractionDigits: 2 })} ${baseCurrency === 'USD' ? '$' : baseCurrency}`;
+                                                                                    })()}
+                                                                                </span>
+                                                                            )
+                                                                        )}
+                                                                    </div>
                                                                 )}
                                                             </div>
-                                                        )}
-                                                    </div>
 
-                                                    <div className="flex flex-col">
-                                                        {!tx.isReverse && (
-                                                            <>
-                                                                <button onClick={() => handleEdit(tx)} className="p-1 text-muted hover:text-white hover-bg-surface rounded-full transition-all" style={{ background: 'transparent', border: 'none', cursor: 'pointer' }}>
-                                                                    <Edit2 size={16} />
-                                                                </button>
-                                                                <button onClick={() => setDeleteConfirm({ id: tx.id, type: tx.type, date: tx.date })} className="p-1 text-danger hover-bg-surface rounded-full transition-all" style={{ background: 'transparent', border: 'none', cursor: 'pointer' }}>
-                                                                    <Trash2 size={16} />
-                                                                </button>
-                                                            </>
-                                                        )}
+                                                            <div className="flex flex-col">
+                                                                {!tx.isReverse && (
+                                                                    <>
+                                                                        <button onClick={() => handleEdit(tx)} className="p-1 text-muted hover:text-white hover-bg-surface rounded-full transition-all" style={{ background: 'transparent', border: 'none', cursor: 'pointer' }}>
+                                                                            <Edit2 size={16} />
+                                                                        </button>
+                                                                        <button onClick={() => setDeleteConfirm({ id: tx.id, type: tx.type, date: tx.date })} className="p-1 text-danger hover-bg-surface rounded-full transition-all" style={{ background: 'transparent', border: 'none', cursor: 'pointer' }}>
+                                                                            <Trash2 size={16} />
+                                                                        </button>
+                                                                    </>
+                                                                )}
+                                                            </div>
+                                                        </div>
                                                     </div>
-                                                </div>
-                                            </div>
-                                        ))
-                                    )}
+                                                ))
+                                            )}
+                                        </div>
+                                    </div>
                                 </div>
-                            </div>
+                            )}
+
+                            {/* Financials Tab */}
+                            {assetTab === 'financials' && (
+                                <FinancialInfo
+                                    symbol={selectedAsset.symbol}
+                                    baseCurrency={baseCurrency}
+                                />
+                            )}
                         </div>
                     )}
 
