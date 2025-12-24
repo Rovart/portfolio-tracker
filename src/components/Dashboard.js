@@ -126,12 +126,21 @@ export default function Dashboard() {
     };
 
     // Handle portfolio change
-    const handlePortfolioChange = async (portfolioId) => {
+    const handlePortfolioChange = async (portfolioId, updatedPortfolios = null) => {
+        // Immediate clear to prevent stale data/charts
+        setPricesLoading(true);
+        setHistoryLoading(true);
+        setPrices({});
+        setRawHistory([]);
+        setHistory([]);
+        setLoading(true);
+
         setCurrentPortfolioId(portfolioId);
         await setSetting('current_portfolio', portfolioId);
 
-        // Check if this is a watchlist
-        const portfolio = portfolios.find(p => p.id === portfolioId);
+        // Check if this is a watchlist - use updated list if provided, otherwise state
+        const sourcePortfolios = updatedPortfolios || portfolios;
+        const portfolio = sourcePortfolios.find(p => p.id === portfolioId);
         const isWatchlist = portfolio?.isWatchlist || false;
         setIsWatchlistView(isWatchlist);
 
@@ -149,11 +158,8 @@ export default function Dashboard() {
             setTransactions(newTransactions || []);
         }
 
-        // Trigger data refresh
-        setPricesLoading(true);
-        setHistoryLoading(true);
-        setPrices({});
-        setRawHistory([]);
+        // Trigger data refresh logic
+        setLoading(false);
         setRefreshTrigger(prev => prev + 1);
     };
 
@@ -165,7 +171,7 @@ export default function Dashboard() {
         // If the current portfolio's watchlist status changed, we need to refresh the view
         const current = allPortfolios.find(p => p.id === currentPortfolioId);
         if (current && current.isWatchlist !== isWatchlistView) {
-            handlePortfolioChange(currentPortfolioId);
+            handlePortfolioChange(currentPortfolioId, allPortfolios);
         }
     };
 
@@ -209,40 +215,49 @@ export default function Dashboard() {
             return;
         }
 
+        // Cancellation flag to prevent race conditions during portfolio switching
+        let isCancelled = false;
+
         // 2. Fetch prices
         let isInitialFetch = Object.keys(prices).length === 0;
+
         async function fetchQuotes() {
+            if (isCancelled) return;
+
             // Only show skeletons on the VERY FIRST load or explicit currency change, never on background refresh
+            // But if we just switched portfolios (prices empty), we definitely want loading state.
             const currencyChanged = prevBaseCurrencyQuotesRef.current !== baseCurrency;
-            if (isInitialFetch || currencyChanged) {
+
+            // If prices are empty (portfolio switch) or currency changed, show loading
+            if ((Object.keys(prices).length === 0) || currencyChanged) {
                 setPricesLoading(true);
-                isInitialFetch = false;
             }
             prevBaseCurrencyQuotesRef.current = baseCurrency;
 
             try {
                 // Pass 1: Fetch asset prices and discover currencies
-                // For 3-letter symbols, fetch BOTH the original (might be stock like TLT) AND the USD pair (might be currency like AUD)
-                // The response quoteType will determine how to link them
                 const fetchList = [...baseAssets];
                 baseAssets.forEach(asset => {
                     const s = asset.toUpperCase();
-                    // For 3-letter symbols that might be currencies, also fetch their USD pair
                     if (s.length === 3 && /^[A-Z]{3}$/.test(s) && s !== 'USD') {
                         fetchList.push(`${s}USD=X`);
                     }
                 });
 
-                // Always ensure we have the pivot from USD to Base if Base is not USD
-                // We need {Base}USD=X (e.g. EURUSD=X) to calculate USD/EUR = 1 / EURUSD
                 if (baseCurrency !== 'USD') {
                     fetchList.push(`${baseCurrency}USD=X`);
                 }
 
                 const res = await fetch(`/api/quote?symbols=${[...new Set(fetchList)].join(',')}`);
-                const result = await res.json();
+                if (isCancelled) return;
 
-                if (!result.data) return;
+                const result = await res.json();
+                if (isCancelled) return;
+
+                if (!result.data) {
+                    setPricesLoading(false);
+                    return;
+                }
 
                 const pxMap = {};
                 const discoveredCurrencies = new Set(initialQuoteAssets);
@@ -254,7 +269,6 @@ export default function Dashboard() {
                         currency: q.currency,
                         name: q.name,
                         quoteType: q.quoteType,
-                        // Extended hours data
                         preMarketPrice: q.preMarketPrice,
                         preMarketChangePercent: q.preMarketChangePercent,
                         postMarketPrice: q.postMarketPrice,
@@ -262,13 +276,9 @@ export default function Dashboard() {
                         marketState: q.marketState
                     };
 
-                    // Auto-link bare symbol (AUD) to USD pair (AUDUSD=X)
-                    // ONLY when the USD pair is actually a currency (quoteType === 'CURRENCY')
-                    // This prevents linking stock tickers like TLT to TLTUSD=X
                     if (q.quoteType === 'CURRENCY' && q.symbol.endsWith('USD=X')) {
                         const bare = q.symbol.replace('USD=X', '');
                         if (bare.length === 3 && !pxMap[bare]) {
-                            // Only link if we don't already have a quote for the bare symbol
                             pxMap[bare] = { ...pxMap[q.symbol], currency: 'USD' };
                         }
                     }
@@ -277,10 +287,8 @@ export default function Dashboard() {
                         discoveredCurrencies.add(q.currency.toUpperCase());
                     }
 
-                    // Detect bare currencies (e.g., EUR=X) and add them to discovered currencies
                     if (q.symbol && (q.symbol.endsWith('=X') || q.quoteType === 'CURRENCY')) {
                         let base = q.symbol.replace('=X', '');
-                        // If it's a USD pair (AUDUSD), the base is AUD
                         if (base.endsWith('USD') && base.length === 6) {
                             base = base.substring(0, 3);
                         }
@@ -290,20 +298,19 @@ export default function Dashboard() {
                     }
                 });
 
-                // Pass 2: Fetch any missing exchange rates (always in USD pairs)
-                // We need {Currency}USD=X so that portfolio-logic can pivot correctly
+                // Pass 2: Fetch any missing exchange rates
                 const fxToFetch = [...discoveredCurrencies].filter(c => c !== 'USD' && c !== baseCurrency);
                 if (fxToFetch.length > 0) {
                     const fxSymbols = fxToFetch.map(c => `${c}USD=X`);
                     const fxRes = await fetch(`/api/quote?symbols=${fxSymbols.join(',')}`);
+                    if (isCancelled) return;
+
                     const fxResult = await fxRes.json();
+                    if (isCancelled) return;
 
                     if (fxResult.data) {
                         fxResult.data.forEach(q => {
-                            // Store the full symbol
                             pxMap[q.symbol] = { price: q.price, changePercent: q.changePercent, currency: 'USD', quoteType: 'CURRENCY' };
-
-                            // Also store by bare currency
                             const bare = q.symbol.replace('USD=X', '');
                             if (bare.length === 3) {
                                 pxMap[bare] = { price: q.price, changePercent: q.changePercent, currency: 'USD', quoteType: 'CURRENCY' };
@@ -312,11 +319,14 @@ export default function Dashboard() {
                     }
                 }
 
-                // Ensure we have the base currency to USD rate for pivot calculations
-                // portfolio-logic expects {baseCurrency}USD=X to exist
+                // Ensure we have the base currency to USD rate
                 if (baseCurrency !== 'USD' && !pxMap[`${baseCurrency}USD=X`]) {
                     const usdRes = await fetch(`/api/quote?symbols=${baseCurrency}USD=X`);
+                    if (isCancelled) return;
+
                     const usdResult = await usdRes.json();
+                    if (isCancelled) return;
+
                     if (usdResult.data && usdResult.data[0]) {
                         const q = usdResult.data[0];
                         pxMap[`${baseCurrency}USD=X`] = { price: q.price, changePercent: q.changePercent, currency: 'USD', quoteType: 'CURRENCY' };
@@ -328,14 +338,17 @@ export default function Dashboard() {
                 setPricesLoading(false);
             } catch (e) {
                 console.error('Failed to fetch quotes', e);
-                setPricesLoading(false);
+                if (!isCancelled) setPricesLoading(false);
             }
         }
 
         fetchQuotes();
         // Refresh prices every 30s in the background
         const interval = setInterval(fetchQuotes, 30000);
-        return () => clearInterval(interval);
+        return () => {
+            isCancelled = true;
+            clearInterval(interval);
+        };
 
     }, [transactions, loading, baseCurrency, refreshTrigger, isWatchlistView, watchlistAssets]);
 
@@ -586,7 +599,10 @@ export default function Dashboard() {
     // NOTE: We no longer append a "real-time" point as it was causing value mismatches.
     // The chart shows historical performance; the header shows the live total.
     useEffect(() => {
-        if (!rawHistory.length) return;
+        if (!rawHistory.length) {
+            setHistory([]);
+            return;
+        }
 
         // Apply Timeframe Cutoff
         const now = new Date();

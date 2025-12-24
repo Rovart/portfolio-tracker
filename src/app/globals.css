@@ -76,6 +76,7 @@ a {
 @media (max-width: 380px) {
   .container {
     padding: 12px;
+    padding-top: calc(12px + env(safe-area-inset-top, 0px));
   }
 }
 
