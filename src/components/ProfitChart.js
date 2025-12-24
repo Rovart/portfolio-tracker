@@ -140,7 +140,7 @@ export default function ProfitChart({ data, baseCurrency, hideBalances, loading 
                 {/* Selection metrics overlay on chart */}
                 {selectionMetrics && !hideBalances && (
                     <div
-                        className="absolute top-2 left-1/2 transform -translate-x-1/2 z-10 flex items-center gap-2 px-3 py-1.5 rounded-full cursor-pointer"
+                        className="absolute top-2 left-1/2 transform -translate-x-1/2 z-50 flex items-center gap-2 px-3 py-1.5 rounded-full cursor-pointer"
                         style={{ background: 'rgba(0,0,0,0.85)', backdropFilter: 'blur(8px)' }}
                         onClick={clearSelection}
                     >
