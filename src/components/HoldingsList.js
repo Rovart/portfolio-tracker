@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { GripVertical } from 'lucide-react';
 import { updateWatchlistAssetPositions } from '@/utils/db';
+import AssetIcon from './AssetIcon';
 
 // Toggle this to switch between Symbol and Short Name
 const DISPLAY_NAME = false; // true = Name, false = Symbol
@@ -175,6 +176,14 @@ export default function HoldingsList({ holdings, onSelect, onAddAsset, loading, 
                             <GripVertical size={16} />
                         </div>
                     )}
+
+                    <AssetIcon
+                        symbol={holding.asset}
+                        type={holding.originalType}
+                        size={40}
+                        className="mr-3"
+                    />
+
                     <div
                         className="flex-1 flex flex-col min-w-0 pr-2"
                         style={isDraggable ? { cursor: 'pointer' } : {}}
