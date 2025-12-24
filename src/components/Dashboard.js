@@ -4,7 +4,7 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { Eye, EyeOff, Search, Settings } from 'lucide-react';
 import ProfitChart from './ProfitChart';
 import CompositionChart from './CompositionChart';
-import HoldingsList from './HoldingsList';
+import HoldingsList, { WATCHLIST_SORT_OPTIONS } from './HoldingsList';
 import TransactionModal from './TransactionModal';
 import SettingsModal from './SettingsModal';
 import PullToRefresh from './PullToRefresh';
@@ -47,6 +47,7 @@ export default function Dashboard() {
     const [currentPortfolioId, setCurrentPortfolioId] = useState('all'); // 'all' or portfolio id
     const [isWatchlistView, setIsWatchlistView] = useState(false);
     const [watchlistAssets, setWatchlistAssets] = useState([]);
+    const [watchlistSort, setWatchlistSort] = useState('custom');
     const prevTimeframeRef = useRef(timeframe);
     const prevBaseCurrencyRef = useRef(baseCurrency);
     const prevBaseCurrencyQuotesRef = useRef(baseCurrency);
@@ -96,6 +97,12 @@ export default function Dashboard() {
                 const savedTimeframe = localStorage.getItem('portfolio_chart_timeframe');
                 if (savedTimeframe && ['1D', '1W', '1M', '3M', '1Y', 'YTD', 'ALL'].includes(savedTimeframe)) {
                     setTimeframe(savedTimeframe);
+                }
+
+                // Load saved watchlist sort preference
+                const savedWatchlistSort = localStorage.getItem('watchlist_sort');
+                if (savedWatchlistSort && WATCHLIST_SORT_OPTIONS.find(o => o.id === savedWatchlistSort)) {
+                    setWatchlistSort(savedWatchlistSort);
                 }
             } catch (e) {
                 console.error('Failed to load from IndexedDB:', e);
@@ -927,6 +934,32 @@ export default function Dashboard() {
                                                 ))}
                                             </select>
                                         </div>
+                                        {/* Watchlist Sort - only show for watchlists with multiple items */}
+                                        {isWatchlistView && holdings.length > 1 && (
+                                            <select
+                                                value={watchlistSort}
+                                                onChange={(e) => {
+                                                    setWatchlistSort(e.target.value);
+                                                    localStorage.setItem('watchlist_sort', e.target.value);
+                                                }}
+                                                className="bg-white-5 hover:bg-white-10 border border-white-10 text-white text-xs font-bold rounded-full cursor-pointer transition-all focus:outline-none"
+                                                style={{
+                                                    appearance: 'none',
+                                                    WebkitAppearance: 'none',
+                                                    MozAppearance: 'none',
+                                                    padding: '6px 28px 6px 12px',
+                                                    backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='white' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E")`,
+                                                    backgroundRepeat: 'no-repeat',
+                                                    backgroundPosition: 'right 10px center'
+                                                }}
+                                            >
+                                                {WATCHLIST_SORT_OPTIONS.map(o => (
+                                                    <option key={o.id} value={o.id} style={{ backgroundColor: '#171717', color: 'white' }}>
+                                                        {o.label}
+                                                    </option>
+                                                ))}
+                                            </select>
+                                        )}
                                         <button
                                             onClick={() => setIsSettingsModalOpen(true)}
                                             className="p-2 text-muted hover:text-white transition-colors rounded-full hover:bg-white-5"
@@ -1057,6 +1090,11 @@ export default function Dashboard() {
                                 isWatchlist={isWatchlistView}
                                 currentPortfolioId={currentPortfolioId}
                                 onWatchlistReorder={() => setRefreshTrigger(prev => prev + 1)}
+                                externalSort={watchlistSort}
+                                onExternalSortChange={(newSort) => {
+                                    setWatchlistSort(newSort);
+                                    localStorage.setItem('watchlist_sort', newSort);
+                                }}
                             />
                         </div>
                     </div>

@@ -14,15 +14,18 @@ const SORT_OPTIONS = [
     { id: 'alphabetical', label: 'Name' }
 ];
 
-const WATCHLIST_SORT_OPTIONS = [
+export const WATCHLIST_SORT_OPTIONS = [
     { id: 'custom', label: 'Custom' },
     { id: 'gainers', label: 'Gainers' },
     { id: 'losers', label: 'Losers' },
     { id: 'alphabetical', label: 'Name' }
 ];
 
-export default function HoldingsList({ holdings, onSelect, onAddAsset, loading, hideBalances, baseCurrency, isWatchlist = false, currentPortfolioId, onWatchlistReorder }) {
-    const [sortBy, setSortBy] = useState(isWatchlist ? 'custom' : 'size');
+export default function HoldingsList({ holdings, onSelect, onAddAsset, loading, hideBalances, baseCurrency, isWatchlist = false, currentPortfolioId, onWatchlistReorder, externalSort, onExternalSortChange }) {
+    // Use external sort control for watchlists if provided
+    const [internalSortBy, setInternalSortBy] = useState(isWatchlist ? 'custom' : 'size');
+    const sortBy = (isWatchlist && externalSort !== undefined) ? externalSort : internalSortBy;
+    const setSortBy = (isWatchlist && onExternalSortChange) ? onExternalSortChange : setInternalSortBy;
     const [draggedIndex, setDraggedIndex] = useState(null);
     const [dragOverIndex, setDragOverIndex] = useState(null);
     const dragItemRef = useRef(null);
@@ -127,31 +130,34 @@ export default function HoldingsList({ holdings, onSelect, onAddAsset, loading, 
 
     return (
         <div className="flex flex-col gap-1">
-            <div className="flex items-center justify-between mb-1">
-                <h2 className="text-xl">Holdings</h2>
-                {holdings.length > 1 && (
-                    <select
-                        value={sortBy}
-                        onChange={(e) => handleSortChange(e.target.value)}
-                        className="bg-white-5 hover:bg-white-10 border border-white-10 text-white text-xs font-medium rounded-full cursor-pointer transition-all focus:outline-none"
-                        style={{
-                            appearance: 'none',
-                            WebkitAppearance: 'none',
-                            MozAppearance: 'none',
-                            padding: '4px 24px 4px 10px',
-                            backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='10' viewBox='0 0 24 24' fill='none' stroke='white' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E")`,
-                            backgroundRepeat: 'no-repeat',
-                            backgroundPosition: 'right 8px center'
-                        }}
-                    >
-                        {activeOptions.map(o => (
-                            <option key={o.id} value={o.id} style={{ backgroundColor: '#171717', color: 'white' }}>
-                                {o.label}
-                            </option>
-                        ))}
-                    </select>
-                )}
-            </div>
+            {/* Only show header for regular portfolios - watchlist sort is in the top bar */}
+            {!isWatchlist && (
+                <div className="flex items-center justify-between mb-1">
+                    <h2 className="text-xl">Holdings</h2>
+                    {holdings.length > 1 && (
+                        <select
+                            value={sortBy}
+                            onChange={(e) => handleSortChange(e.target.value)}
+                            className="bg-white-5 hover:bg-white-10 border border-white-10 text-white text-xs font-medium rounded-full cursor-pointer transition-all focus:outline-none"
+                            style={{
+                                appearance: 'none',
+                                WebkitAppearance: 'none',
+                                MozAppearance: 'none',
+                                padding: '4px 24px 4px 10px',
+                                backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='10' viewBox='0 0 24 24' fill='none' stroke='white' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E")`,
+                                backgroundRepeat: 'no-repeat',
+                                backgroundPosition: 'right 8px center'
+                            }}
+                        >
+                            {activeOptions.map(o => (
+                                <option key={o.id} value={o.id} style={{ backgroundColor: '#171717', color: 'white' }}>
+                                    {o.label}
+                                </option>
+                            ))}
+                        </select>
+                    )}
+                </div>
+            )}
             {sortedHoldings.map((holding, index) => (
                 <div
                     key={holding.asset}
