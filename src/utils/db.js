@@ -35,15 +35,58 @@ db.version(3).stores({
     watchlistAssets: '++id, portfolioId, symbol, addedAt'
 });
 
+// Version 4: Add position fields for custom ordering
+db.version(4).stores({
+    transactions: '++id, date, type, baseCurrency, quoteCurrency, portfolioId',
+    settings: 'key',
+    portfolios: '++id, name, createdAt, isWatchlist, position',
+    watchlistAssets: '++id, portfolioId, symbol, addedAt, position'
+}).upgrade(async tx => {
+    // Set initial positions for existing portfolios based on createdAt
+    const portfolios = await tx.table('portfolios').toArray();
+    portfolios.sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt));
+    for (let i = 0; i < portfolios.length; i++) {
+        await tx.table('portfolios').update(portfolios[i].id, { position: i });
+    }
+
+    // Set initial positions for existing watchlist assets based on addedAt
+    const assets = await tx.table('watchlistAssets').toArray();
+    // Group by portfolioId
+    const grouped = assets.reduce((acc, a) => {
+        if (!acc[a.portfolioId]) acc[a.portfolioId] = [];
+        acc[a.portfolioId].push(a);
+        return acc;
+    }, {});
+
+    for (const portfolioId of Object.keys(grouped)) {
+        grouped[portfolioId].sort((a, b) => new Date(a.addedAt) - new Date(b.addedAt));
+        for (let i = 0; i < grouped[portfolioId].length; i++) {
+            await tx.table('watchlistAssets').update(grouped[portfolioId][i].id, { position: i });
+        }
+    }
+});
+
 // Portfolio helpers
 export async function getAllPortfolios() {
-    return await db.portfolios.orderBy('createdAt').toArray();
+    const portfolios = await db.portfolios.toArray();
+    // Sort by position, fallback to createdAt if position is undefined
+    return portfolios.sort((a, b) => {
+        if (a.position !== undefined && b.position !== undefined) {
+            return a.position - b.position;
+        }
+        return new Date(a.createdAt) - new Date(b.createdAt);
+    });
 }
 
 export async function addPortfolio(name) {
+    // Get next position
+    const portfolios = await db.portfolios.toArray();
+    const maxPos = portfolios.reduce((max, p) => Math.max(max, p.position || 0), -1);
+
     const id = await db.portfolios.add({
         name,
-        createdAt: new Date().toISOString()
+        createdAt: new Date().toISOString(),
+        position: maxPos + 1
     });
     return id;
 }
@@ -171,7 +214,14 @@ export async function ensureDefaultPortfolio() {
 
 // Watchlist asset helpers
 export async function getWatchlistAssets(portfolioId) {
-    return await db.watchlistAssets.where('portfolioId').equals(portfolioId).toArray();
+    const assets = await db.watchlistAssets.where('portfolioId').equals(portfolioId).toArray();
+    // Sort by position, fallback to addedAt if position is undefined
+    return assets.sort((a, b) => {
+        if (a.position !== undefined && b.position !== undefined) {
+            return a.position - b.position;
+        }
+        return new Date(a.addedAt) - new Date(b.addedAt);
+    });
 }
 
 export async function addWatchlistAsset(portfolioId, asset) {
@@ -181,13 +231,18 @@ export async function addWatchlistAsset(portfolioId, asset) {
         .first();
     if (existing) return existing.id;
 
+    // Get next position
+    const assets = await db.watchlistAssets.where('portfolioId').equals(portfolioId).toArray();
+    const maxPos = assets.reduce((max, a) => Math.max(max, a.position || 0), -1);
+
     const id = await db.watchlistAssets.add({
         portfolioId,
         symbol: asset.symbol,
         name: asset.name || asset.shortname || asset.symbol,
         type: asset.type || asset.originalType || 'EQUITY',
         currency: asset.currency || 'USD',
-        addedAt: new Date().toISOString()
+        addedAt: new Date().toISOString(),
+        position: maxPos + 1
     });
     return id;
 }
@@ -205,6 +260,27 @@ export async function isSymbolInWatchlist(portfolioId, symbol) {
 
 export async function getAllWatchlistAssets() {
     return await db.watchlistAssets.toArray();
+}
+
+// Bulk position update functions
+export async function updatePortfolioPositions(orderedIds) {
+    // orderedIds is an array of portfolio IDs in the desired order
+    for (let i = 0; i < orderedIds.length; i++) {
+        await db.portfolios.update(orderedIds[i], { position: i });
+    }
+}
+
+export async function updateWatchlistAssetPositions(portfolioId, orderedSymbols) {
+    // orderedSymbols is an array of symbols in the desired order
+    const assets = await db.watchlistAssets.where('portfolioId').equals(portfolioId).toArray();
+    const symbolToId = assets.reduce((acc, a) => ({ ...acc, [a.symbol]: a.id }), {});
+
+    for (let i = 0; i < orderedSymbols.length; i++) {
+        const id = symbolToId[orderedSymbols[i]];
+        if (id) {
+            await db.watchlistAssets.update(id, { position: i });
+        }
+    }
 }
 
 export { db };

@@ -21,6 +21,7 @@ export async function GET(request) {
         const data = (Array.isArray(quotes) ? quotes : [quotes]).map(q => ({
             symbol: q.symbol,
             price: q.regularMarketPrice,
+            change: q.regularMarketChange,
             changePercent: q.regularMarketChangePercent,
             name: q.shortName || q.symbol,
             currency: q.currency,

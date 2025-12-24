@@ -65,14 +65,26 @@ export default function Dashboard() {
                 // 1. Check for a portfolio marked as default (isDefault: true)
                 // 2. If no favorite, always default to 'all'
                 const favPortfolio = allPortfolios.find(p => p.isDefault);
-                const initialPortfolioId = favPortfolio ? favPortfolio.id : 'all';
+                const savedPortfolioId = await getSetting('current_portfolio');
+                const initialPortfolioId = favPortfolio ? favPortfolio.id : (savedPortfolioId || 'all');
                 setCurrentPortfolioId(initialPortfolioId);
 
-                // Load transactions for current portfolio
-                const savedTransactions = initialPortfolioId === 'all'
-                    ? await getAllTransactions()
-                    : await getTransactionsByPortfolio(initialPortfolioId);
-                setTransactions(savedTransactions || []);
+                // Check if this is a watchlist
+                const currentPortfolio = allPortfolios.find(p => p.id === initialPortfolioId);
+                const isWatchlist = currentPortfolio?.isWatchlist || false;
+                setIsWatchlistView(isWatchlist);
+
+                if (isWatchlist) {
+                    const assets = await getWatchlistAssets(initialPortfolioId);
+                    setWatchlistAssets(assets);
+                    setTransactions([]);
+                } else {
+                    // Load transactions for current portfolio
+                    const savedTransactions = initialPortfolioId === 'all'
+                        ? await getAllTransactions()
+                        : await getTransactionsByPortfolio(initialPortfolioId);
+                    setTransactions(savedTransactions || []);
+                }
 
                 const savedPrivacy = await getSetting('hide_balances', false);
                 setHideBalances(savedPrivacy);
@@ -142,7 +154,24 @@ export default function Dashboard() {
     const reloadPortfolios = async () => {
         const allPortfolios = await getAllPortfolios();
         setPortfolios(allPortfolios);
+
+        // If the current portfolio's watchlist status changed, we need to refresh the view
+        const current = allPortfolios.find(p => p.id === currentPortfolioId);
+        if (current && current.isWatchlist !== isWatchlistView) {
+            handlePortfolioChange(currentPortfolioId);
+        }
     };
+
+    // Reload watchlist assets when refreshTrigger changes (e.g., after reordering)
+    useEffect(() => {
+        if (!isWatchlistView || currentPortfolioId === 'all' || loading) return;
+
+        async function reloadWatchlistAssets() {
+            const assets = await getWatchlistAssets(currentPortfolioId);
+            setWatchlistAssets(assets);
+        }
+        reloadWatchlistAssets();
+    }, [refreshTrigger, isWatchlistView, currentPortfolioId, loading]);
 
     // Pull-to-refresh handler - forces a full data reload
     const handleRefresh = useCallback(async () => {
@@ -311,6 +340,13 @@ export default function Dashboard() {
                 const priceData = prices[asset.symbol] || {};
                 const price = priceData.price || 0;
                 const change24h = priceData.changePercent || 0;
+                // Nominal change (dailyPnl for watchlist items)
+                let change = priceData.change;
+                if (change === undefined || change === null) {
+                    // Fallback calculation if nominal change is missing
+                    change = price - (price / (1 + change24h / 100));
+                }
+
                 return {
                     asset: asset.symbol,
                     name: asset.name || asset.symbol,
@@ -319,7 +355,7 @@ export default function Dashboard() {
                     price: price,
                     value: price, // Value = price * 1
                     change24h: change24h,
-                    dailyPnl: 0, // No P&L for watchlist
+                    dailyPnl: change || 0, // Use price change as P&L for watchlist
                     originalType: asset.type,
                     currency: asset.currency,
                     isFiat: false, // Watchlists don't have fiat treatment
@@ -835,7 +871,7 @@ export default function Dashboard() {
                                 className={`pill ${currentPortfolioId === p.id ? 'active' : ''} ${p.isWatchlist ? 'watchlist' : ''}`}
                                 style={{ flexShrink: 0 }}
                             >
-                                {p.isWatchlist && <Eye size={12} className="inline mr-1" />}
+                                {p.isWatchlist && <Eye size={12} style={{ marginRight: '5px', verticalAlign: 'text-top' }} />}
                                 {p.name}
                             </button>
                         ))}
@@ -844,25 +880,27 @@ export default function Dashboard() {
             )}
 
             <PullToRefresh onRefresh={handleRefresh} disabled={holdings.length === 0}>
-                <div className="container animate-enter" style={portfolios.length > 1 ? { paddingTop: 0 } : {}}>
-                    <div className="grid-desktop">
+                <div className={`container animate-enter ${isWatchlistView ? 'is-watchlist' : ''}`} style={portfolios.length > 1 ? { paddingTop: 0 } : {}}>
+                    <div className={`grid-desktop ${isWatchlistView ? 'is-watchlist' : ''}`}>
                         {/* Main Content: Charts & Performance */}
                         <div className="main-content">
 
-                            <header className="flex flex-col items-start px-1 pb-8 gap-4 w-full">
+                            <header className={`flex flex-col items-start px-1 ${isWatchlistView ? 'pb-4' : 'pb-8'} gap-4 w-full text-white`}>
                                 <div className="flex items-center justify-between w-full gap-2">
                                     <div className="flex items-center gap-2 min-w-0">
                                         <span className="text-muted text-xs sm:text-sm uppercase tracking-wider font-bold truncate">
                                             {isWatchlistView ? 'Watchlist' : 'Portfolio Performance'}
                                         </span>
-                                        <button
-                                            onClick={togglePrivacy}
-                                            className="p-1 text-muted hover:text-white transition-colors shrink-0"
-                                            style={{ background: 'transparent', border: 'none', cursor: 'pointer' }}
-                                            title={hideBalances ? "Show Balances" : "Hide Balances"}
-                                        >
-                                            {hideBalances ? <EyeOff size={16} /> : <Eye size={16} />}
-                                        </button>
+                                        {!isWatchlistView && (
+                                            <button
+                                                onClick={togglePrivacy}
+                                                className="p-1 text-muted hover:text-white transition-colors shrink-0"
+                                                style={{ background: 'transparent', border: 'none', cursor: 'pointer' }}
+                                                title={hideBalances ? "Show Balances" : "Hide Balances"}
+                                            >
+                                                {hideBalances ? <EyeOff size={16} /> : <Eye size={16} />}
+                                            </button>
+                                        )}
                                     </div>
                                     <div className="flex items-center gap-2 sm:gap-3 shrink-0">
                                         <div className="relative">
@@ -901,24 +939,25 @@ export default function Dashboard() {
                                 </div>
                                 {pricesLoading || (historyLoading && timeframe !== '1D') ? (
                                     <div className="flex flex-col gap-2">
-                                        {/* Consolidated loading state: only show skeletons for what's missing */}
                                         {pricesLoading ? (
                                             <>
-                                                <div className="h-10 w-48 bg-white-10 rounded animate-pulse" />
-                                                <div className="flex gap-4">
-                                                    <div className="h-6 w-32 bg-white-10 rounded animate-pulse" />
-                                                    <div className="h-6 w-40 bg-white-10 rounded animate-pulse" />
-                                                </div>
+                                                {!isWatchlistView && <div className="h-10 w-48 bg-white-10 rounded animate-pulse" />}
+                                                {!isWatchlistView && (
+                                                    <div className="flex gap-4">
+                                                        <div className="h-6 w-32 bg-white-10 rounded animate-pulse" />
+                                                        <div className="h-6 w-40 bg-white-10 rounded animate-pulse" />
+                                                    </div>
+                                                )}
                                             </>
                                         ) : (
                                             <>
-                                                <div className="flex flex-wrap items-center gap-3">
-                                                    <div className="text-2xl font-bold tracking-tight">
-                                                        {isWatchlistView
-                                                            ? `${holdings.length} assets`
-                                                            : (hideBalances ? '••••••' : `${totalValue.toLocaleString(undefined, { maximumFractionDigits: 2 })} ${baseCurrency === 'USD' ? '$' : baseCurrency}`)}
+                                                {!isWatchlistView && (
+                                                    <div className="flex flex-wrap items-center gap-3">
+                                                        <div className="text-2xl font-bold tracking-tight">
+                                                            {hideBalances ? '••••••' : `${totalValue.toLocaleString(undefined, { maximumFractionDigits: 2 })} ${baseCurrency === 'USD' ? '$' : baseCurrency}`}
+                                                        </div>
                                                     </div>
-                                                </div>
+                                                )}
                                                 {!isWatchlistView && (
                                                     <div className="flex gap-4">
                                                         <div className="h-6 w-32 bg-white-10 rounded animate-pulse" />
@@ -930,34 +969,34 @@ export default function Dashboard() {
                                     </div>
                                 ) : (
                                     <div className="flex flex-col gap-1">
-                                        <div className="flex flex-wrap items-center gap-3">
-                                            <div className="text-2xl font-bold tracking-tight">
-                                                {isWatchlistView
-                                                    ? `${holdings.length} assets`
-                                                    : (hideBalances ? '••••••' : `${totalValue.toLocaleString(undefined, { maximumFractionDigits: 2 })} ${baseCurrency === 'USD' ? '$' : baseCurrency}`)}
-                                            </div>
-                                            {!isWatchlistView && timeframe !== '1D' && (
-                                                <div style={{ marginLeft: '5px' }} className={`text-xs px-2 py-0.5 rounded-md font-medium ${displayDiffDay >= 0 ? 'bg-success/10 text-success' : 'bg-danger/10 text-danger'}`}>
-                                                    {hideBalances ? (
-                                                        `(${displayPercentDay >= 0 ? '+' : ''}${displayPercentDay.toFixed(2)}%)`
-                                                    ) : (
-                                                        `${displayDiffDay >= 0 ? '+' : '-'}${Math.abs(displayDiffDay).toLocaleString(undefined, { maximumFractionDigits: 0 })} ${baseCurrency === 'USD' ? '$' : baseCurrency} (${displayPercentDay >= 0 ? '+' : ''}${displayPercentDay.toFixed(2)}%)`
-                                                    )}
-                                                </div>
-                                            )}
-                                        </div>
                                         {!isWatchlistView && (
-                                            <div className={`text font-medium flex flex-wrap items-center gap-x-3`}>
-                                                <div className={safeDiff >= 0 ? 'text-success' : 'text-danger'}>
-                                                    {hideBalances ? (
-                                                        <span className="flex items-center gap-1">
-                                                            {safePercent >= 0 ? '+' : ''}{safePercent.toFixed(2)}%
-                                                        </span>
-                                                    ) : (
-                                                        <span>{safeDiff >= 0 ? '+' : '-'}{Math.abs(safeDiff).toLocaleString(undefined, { maximumFractionDigits: 2 })} {baseCurrency === 'USD' ? '$' : baseCurrency} ({safePercent >= 0 ? '+' : ''}{safePercent.toFixed(2)}%)</span>
+                                            <>
+                                                <div className="flex flex-wrap items-center gap-3">
+                                                    <div className="text-2xl font-bold tracking-tight">
+                                                        {hideBalances ? '••••••' : `${totalValue.toLocaleString(undefined, { maximumFractionDigits: 2 })} ${baseCurrency === 'USD' ? '$' : baseCurrency}`}
+                                                    </div>
+                                                    {timeframe !== '1D' && (
+                                                        <div style={{ marginLeft: '5px' }} className={`text-xs px-2 py-0.5 rounded-md font-medium ${displayDiffDay >= 0 ? 'bg-success/10 text-success' : 'bg-danger/10 text-danger'}`}>
+                                                            {hideBalances ? (
+                                                                `(${displayPercentDay >= 0 ? '+' : ''}${displayPercentDay.toFixed(2)}%)`
+                                                            ) : (
+                                                                `${displayDiffDay >= 0 ? '+' : '-'}${Math.abs(displayDiffDay).toLocaleString(undefined, { maximumFractionDigits: 0 })} ${baseCurrency === 'USD' ? '$' : baseCurrency} (${displayPercentDay >= 0 ? '+' : ''}${displayPercentDay.toFixed(2)}%)`
+                                                            )}
+                                                        </div>
                                                     )}
                                                 </div>
-                                            </div>
+                                                <div className={`text font-medium flex flex-wrap items-center gap-x-3`}>
+                                                    <div className={safeDiff >= 0 ? 'text-success' : 'text-danger'}>
+                                                        {hideBalances ? (
+                                                            <span className="flex items-center gap-1">
+                                                                {safePercent >= 0 ? '+' : ''}{safePercent.toFixed(2)}%
+                                                            </span>
+                                                        ) : (
+                                                            <span>{safeDiff >= 0 ? '+' : '-'}{Math.abs(safeDiff).toLocaleString(undefined, { maximumFractionDigits: 2 })} {baseCurrency === 'USD' ? '$' : baseCurrency} ({safePercent >= 0 ? '+' : ''}{safePercent.toFixed(2)}%)</span>
+                                                        )}
+                                                    </div>
+                                                </div>
+                                            </>
                                         )}
                                     </div>
                                 )}
@@ -1016,6 +1055,8 @@ export default function Dashboard() {
                                 hideBalances={hideBalances}
                                 baseCurrency={baseCurrency}
                                 isWatchlist={isWatchlistView}
+                                currentPortfolioId={currentPortfolioId}
+                                onWatchlistReorder={() => setRefreshTrigger(prev => prev + 1)}
                             />
                         </div>
                     </div>

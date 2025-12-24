@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
-import { ArrowLeft, Plus, Trash2, Edit2, Check, X, Upload, Download, FolderOpen, ChevronDown, Star, Bell, Eye } from 'lucide-react';
+import { ArrowLeft, Plus, Trash2, Edit2, Check, X, Upload, Download, FolderOpen, ChevronDown, Star, Bell, Eye, GripVertical } from 'lucide-react';
 import ConfirmModal from './ConfirmModal';
 import {
     getAllPortfolios,
@@ -11,7 +11,9 @@ import {
     exportToCsv,
     importTransactions,
     clearAllTransactions,
-    getTransactionsByPortfolio
+    getTransactionsByPortfolio,
+    getWatchlistAssets,
+    updatePortfolioPositions
 } from '@/utils/db';
 import { checkPermissions, requestPermissions, scheduleDailyNotifications, cancelAllNotifications, scheduleTestNotification } from '@/utils/notifications';
 
@@ -25,6 +27,12 @@ export default function SettingsModal({ onClose, onPortfolioChange, currentPortf
     const [loading, setLoading] = useState(true);
     const [ioPortfolioId, setIoPortfolioId] = useState(currentPortfolioId);
     const fileInputRef = useRef(null);
+
+    // Drag and drop state for portfolio reordering
+    const [draggedIndex, setDraggedIndex] = useState(null);
+    const [dragOverIndex, setDragOverIndex] = useState(null);
+    const dragItemRef = useRef(null);
+    const dragOverItemRef = useRef(null);
 
     // Import conflict dialog state
     const [importConflict, setImportConflict] = useState(null);
@@ -111,7 +119,20 @@ export default function SettingsModal({ onClose, onPortfolioChange, currentPortf
     const loadPortfolios = async () => {
         setLoading(true);
         const p = await getAllPortfolios();
-        setPortfolios(p);
+
+        // Fetch transaction and watchlist asset counts for each portfolio
+        // to know which can be toggled (only empty portfolios can change status)
+        const portfoliosWithCounts = await Promise.all(p.map(async (portfolio) => {
+            const txs = await getTransactionsByPortfolio(portfolio.id);
+            const wAssets = await getWatchlistAssets(portfolio.id);
+
+            return {
+                ...portfolio,
+                isEmpty: (!txs || txs.length === 0) && (!wAssets || wAssets.length === 0)
+            };
+        }));
+
+        setPortfolios(portfoliosWithCounts);
         setLoading(false);
     };
 
@@ -176,15 +197,55 @@ export default function SettingsModal({ onClose, onPortfolioChange, currentPortf
     };
 
     const handleToggleWatchlist = async (portfolio) => {
-        // Check if portfolio has any transactions
+        // Check if portfolio has any transactions or watchlist assets
         const txs = await getTransactionsByPortfolio(portfolio.id);
-        if (txs && txs.length > 0) {
-            // Portfolio has transactions - cannot toggle watchlist
+        const wAssets = await getWatchlistAssets(portfolio.id);
+
+        if ((txs && txs.length > 0) || (wAssets && wAssets.length > 0)) {
+            // Portfolio has assets - cannot toggle status
             return;
         }
         // Toggle isWatchlist
         await updatePortfolio(portfolio.id, { isWatchlist: !portfolio.isWatchlist });
         loadPortfolios();
+    };
+
+    // Portfolio drag and drop handlers
+    const handlePortfolioDragStart = (e, index) => {
+        dragItemRef.current = index;
+        setDraggedIndex(index);
+        e.dataTransfer.effectAllowed = 'move';
+    };
+
+    const handlePortfolioDragOver = (e, index) => {
+        e.preventDefault();
+        if (dragItemRef.current === index) return;
+        dragOverItemRef.current = index;
+        setDragOverIndex(index);
+    };
+
+    const handlePortfolioDragEnd = async () => {
+        if (dragItemRef.current !== null && dragOverItemRef.current !== null && dragItemRef.current !== dragOverItemRef.current) {
+            // Reorder the portfolios
+            const items = [...portfolios];
+            const draggedItem = items[dragItemRef.current];
+            items.splice(dragItemRef.current, 1);
+            items.splice(dragOverItemRef.current, 0, draggedItem);
+
+            // Get new order of IDs
+            const orderedIds = items.map(p => p.id);
+
+            // Save to database
+            await updatePortfolioPositions(orderedIds);
+
+            // Refresh list
+            loadPortfolios();
+        }
+
+        dragItemRef.current = null;
+        dragOverItemRef.current = null;
+        setDraggedIndex(null);
+        setDragOverIndex(null);
     };
 
     const handleExportCsv = async () => {
@@ -484,13 +545,26 @@ export default function SettingsModal({ onClose, onPortfolioChange, currentPortf
                             </p>
 
                             {/* Portfolio List */}
-                            <div className="flex flex-col gap-3">
-                                {portfolios.map(portfolio => (
+                            <div className="flex flex-col gap-2">
+                                {portfolios.map((portfolio, index) => (
                                     <div
                                         key={portfolio.id}
-                                        className="flex items-center justify-between p-4 rounded-xl"
-                                        style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)' }}
+                                        className={`flex items-center justify-between p-4 rounded-xl ${draggedIndex === index ? 'opacity-50' : ''}`}
+                                        style={{
+                                            background: 'rgba(255,255,255,0.03)',
+                                            border: dragOverIndex === index ? '1px solid rgba(59, 130, 246, 0.5)' : '1px solid rgba(255,255,255,0.08)',
+                                            cursor: 'grab',
+                                            transition: 'border-color 0.15s, opacity 0.15s'
+                                        }}
+                                        draggable={editingId !== portfolio.id}
+                                        onDragStart={(e) => editingId !== portfolio.id && handlePortfolioDragStart(e, index)}
+                                        onDragOver={(e) => handlePortfolioDragOver(e, index)}
+                                        onDragEnd={handlePortfolioDragEnd}
                                     >
+                                        {/* Drag Handle */}
+                                        <div className="pr-3 text-muted cursor-grab" style={{ touchAction: 'none', marginRight: '10px' }}>
+                                            <GripVertical size={16} />
+                                        </div>
                                         {editingId === portfolio.id ? (
                                             <div className="flex items-center gap-2 flex-1">
                                                 <input
@@ -549,29 +623,31 @@ export default function SettingsModal({ onClose, onPortfolioChange, currentPortf
                                             </div>
                                         ) : (
                                             <>
-                                                <div className="flex items-center gap-2">
-                                                    <span className="font-medium">{portfolio.name}</span>
+                                                <div className="flex items-center gap-2 flex-1">
+                                                    <span className="font-medium text-sm">{portfolio.name}</span>
                                                     {portfolio.isWatchlist && (
-                                                        <span className="text-[10px] px-2 py-0.5 rounded-full bg-cyan-500/20 text-cyan-400 font-medium">
+                                                        <span className="pill text-[10px] px-2 py-0.5 rounded-full font-medium tracking-wide">
                                                             Watchlist
                                                         </span>
                                                     )}
                                                 </div>
                                                 <div className="flex items-center gap-1">
-                                                    {/* Watchlist toggle */}
-                                                    <button
-                                                        onClick={() => handleToggleWatchlist(portfolio)}
-                                                        className="p-2 rounded-full hover:bg-cyan-500/20 transition-all"
-                                                        style={{ background: 'transparent', border: 'none', cursor: 'pointer' }}
-                                                        title={portfolio.isWatchlist ? 'Convert to portfolio' : 'Convert to watchlist'}
-                                                    >
-                                                        <Eye
-                                                            size={16}
-                                                            className={portfolio.isWatchlist ? 'text-cyan-400' : 'text-white/40'}
-                                                        />
-                                                    </button>
-                                                    {/* Default star - only show when multiple portfolios and not a watchlist */}
-                                                    {portfolios.length > 1 && !portfolio.isWatchlist && (
+                                                    {/* Watchlist toggle - only show if empty */}
+                                                    {portfolio.isEmpty && (
+                                                        <button
+                                                            onClick={(e) => { e.stopPropagation(); handleToggleWatchlist(portfolio); }}
+                                                            className="p-2 rounded-full hover:bg-white/10 transition-all"
+                                                            style={{ background: 'transparent', border: 'none', cursor: 'pointer' }}
+                                                            title={portfolio.isWatchlist ? 'Convert to portfolio' : 'Convert to watchlist'}
+                                                        >
+                                                            <Eye
+                                                                size={16}
+                                                                className={portfolio.isWatchlist ? 'text-white' : 'text-white/40'}
+                                                            />
+                                                        </button>
+                                                    )}
+                                                    {/* Default star - only show when multiple portfolios */}
+                                                    {portfolios.length > 1 && (
                                                         <button
                                                             onClick={() => handleSetDefault(portfolio.id)}
                                                             className="p-2 rounded-full hover:bg-yellow-500/20 transition-all"
@@ -609,73 +685,74 @@ export default function SettingsModal({ onClose, onPortfolioChange, currentPortf
                             </div>
 
                             {/* Add New Portfolio */}
-                            {showAddForm ? (
-                                <div className="flex items-center gap-2 p-3 rounded-xl" style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)' }}>
-                                    <input
-                                        type="text"
-                                        value={newPortfolioName}
-                                        onChange={e => setNewPortfolioName(e.target.value)}
-                                        placeholder="Portfolio name..."
-                                        className="flex-1 text-white text-sm font-medium"
-                                        style={{
-                                            background: 'rgba(255, 255, 255, 0.08)',
-                                            border: '1px solid rgba(255, 255, 255, 0.15)',
-                                            borderRadius: '12px',
-                                            padding: '10px 14px',
-                                            outline: 'none',
-                                            transition: 'all 0.2s ease'
-                                        }}
-                                        onFocus={(e) => e.target.style.borderColor = 'rgba(255, 255, 255, 0.3)'}
-                                        onBlur={(e) => e.target.style.borderColor = 'rgba(255, 255, 255, 0.15)'}
-                                        autoFocus
-                                    />
-                                    <div className="flex items-center gap-2">
-                                        <button
-                                            onClick={handleAddPortfolio}
-                                            className="transition-all"
+                            {
+                                showAddForm ? (
+                                    <div className="flex items-center gap-2 p-3 rounded-xl" style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)' }} >
+                                        <input
+                                            type="text"
+                                            value={newPortfolioName}
+                                            onChange={e => setNewPortfolioName(e.target.value)}
+                                            placeholder="Portfolio name..."
+                                            className="flex-1 text-white text-sm font-medium"
                                             style={{
-                                                background: 'rgba(34, 197, 94, 0.15)',
-                                                border: '1px solid rgba(34, 197, 94, 0.25)',
-                                                color: '#4ade80',
-                                                borderRadius: '10px',
-                                                padding: '8px 12px',
-                                                cursor: 'pointer',
-                                                display: 'flex',
-                                                alignItems: 'center',
-                                                justifyContent: 'center'
+                                                background: 'rgba(255, 255, 255, 0.08)',
+                                                border: '1px solid rgba(255, 255, 255, 0.15)',
+                                                borderRadius: '12px',
+                                                padding: '10px 14px',
+                                                outline: 'none',
+                                                transition: 'all 0.2s ease'
                                             }}
-                                        >
-                                            <Check size={18} strokeWidth={2.5} />
-                                        </button>
-                                        <button
-                                            onClick={() => { setShowAddForm(false); setNewPortfolioName(''); }}
-                                            className="transition-all"
-                                            style={{
-                                                background: 'rgba(255, 255, 255, 0.06)',
-                                                border: '1px solid rgba(255, 255, 255, 0.12)',
-                                                color: 'rgba(255, 255, 255, 0.6)',
-                                                borderRadius: '10px',
-                                                padding: '8px 12px',
-                                                cursor: 'pointer',
-                                                display: 'flex',
-                                                alignItems: 'center',
-                                                justifyContent: 'center'
-                                            }}
-                                        >
-                                            <X size={18} strokeWidth={2.5} />
-                                        </button>
+                                            onFocus={(e) => e.target.style.borderColor = 'rgba(255, 255, 255, 0.3)'}
+                                            onBlur={(e) => e.target.style.borderColor = 'rgba(255, 255, 255, 0.15)'}
+                                            autoFocus
+                                        />
+                                        <div className="flex items-center gap-2">
+                                            <button
+                                                onClick={handleAddPortfolio}
+                                                className="transition-all"
+                                                style={{
+                                                    background: 'rgba(34, 197, 94, 0.15)',
+                                                    border: '1px solid rgba(34, 197, 94, 0.25)',
+                                                    color: '#4ade80',
+                                                    borderRadius: '10px',
+                                                    padding: '8px 12px',
+                                                    cursor: 'pointer',
+                                                    display: 'flex',
+                                                    alignItems: 'center',
+                                                    justifyContent: 'center'
+                                                }}
+                                            >
+                                                <Check size={18} strokeWidth={2.5} />
+                                            </button>
+                                            <button
+                                                onClick={() => { setShowAddForm(false); setNewPortfolioName(''); }}
+                                                className="transition-all"
+                                                style={{
+                                                    background: 'rgba(255, 255, 255, 0.06)',
+                                                    border: '1px solid rgba(255, 255, 255, 0.12)',
+                                                    color: 'rgba(255, 255, 255, 0.6)',
+                                                    borderRadius: '10px',
+                                                    padding: '8px 12px',
+                                                    cursor: 'pointer',
+                                                    display: 'flex',
+                                                    alignItems: 'center',
+                                                    justifyContent: 'center'
+                                                }}
+                                            >
+                                                <X size={18} strokeWidth={2.5} />
+                                            </button>
+                                        </div>
                                     </div>
-                                </div>
-                            ) : (
-                                <button
-                                    onClick={() => setShowAddForm(true)}
-                                    className="flex items-center justify-center gap-2 p-4 rounded-xl text-muted hover:text-white transition-all"
-                                    style={{ cursor: 'pointer', background: 'transparent', border: '1px dashed rgba(255,255,255,0.15)' }}
-                                >
-                                    <Plus size={20} />
-                                    <span>Add Portfolio</span>
-                                </button>
-                            )}
+                                ) : (
+                                    <button
+                                        onClick={() => setShowAddForm(true)}
+                                        className="flex items-center justify-center gap-2 p-4 rounded-xl text-muted hover:text-white transition-all"
+                                        style={{ cursor: 'pointer', background: 'transparent', border: '1px dashed rgba(255,255,255,0.15)' }}
+                                    >
+                                        <Plus size={20} />
+                                        <span>Add Portfolio</span>
+                                    </button>
+                                )}
                         </div>
                     )}
 

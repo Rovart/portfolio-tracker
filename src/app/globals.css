@@ -236,10 +236,19 @@ a {
   gap: 32px;
 }
 
+.grid-desktop.is-watchlist {
+  gap: 16px;
+}
+
 @media (min-width: 1024px) {
   .grid-desktop {
     flex-direction: row;
     align-items: flex-start;
+  }
+
+  .grid-desktop.is-watchlist {
+    flex-direction: column;
+    gap: 16px;
   }
 
   .main-content {
@@ -248,10 +257,25 @@ a {
     top: 24px;
   }
 
+  /* When in watchlist mode, main content (header) takes full width but stays on top */
+  .grid-desktop.is-watchlist .main-content {
+    flex: none;
+    width: 100%;
+    position: static;
+    min-width: 0;
+  }
+
   .sidebar {
     flex: 1;
     position: sticky;
     top: 24px;
+  }
+
+  /* Full width sidebar for watchlists */
+  .grid-desktop.is-watchlist .sidebar {
+    flex: none;
+    width: 100%;
+    position: static;
   }
 }
 

@@ -503,19 +503,31 @@ export default function TransactionModal({
                             <button
                                 onClick={handleRemoveFromWatchlist}
                                 className="btn flex items-center gap-2"
-                                style={{ padding: '10px 20px', background: 'rgba(239, 68, 68, 0.2)', border: '1px solid rgba(239, 68, 68, 0.4)' }}
+                                style={{
+                                    padding: '10px 20px',
+                                    background: '#ef4444',
+                                    color: 'white',
+                                    border: 'none',
+                                    fontWeight: '700'
+                                }}
                             >
-                                <EyeOff size={18} className="text-red-400" />
-                                <span className="hidden sm:inline text-red-400">Remove</span>
+                                <EyeOff size={18} />
+                                <span className="hidden sm:inline">Remove</span>
                             </button>
                         ) : (
                             <button
                                 onClick={handleAddToWatchlist}
                                 className="btn flex items-center gap-2"
-                                style={{ padding: '10px 20px', background: 'rgba(34, 211, 238, 0.15)', border: '1px solid rgba(34, 211, 238, 0.3)' }}
+                                style={{
+                                    padding: '10px 20px',
+                                    background: 'white',
+                                    color: 'black',
+                                    border: 'none',
+                                    fontWeight: '700'
+                                }}
                             >
-                                <Eye size={18} className="text-cyan-400" />
-                                <span className="hidden sm:inline text-cyan-400">Add to Watchlist</span>
+                                <Eye size={18} />
+                                <span className="hidden sm:inline">Add to Watchlist</span>
                             </button>
                         )
                     ) : (
@@ -621,27 +633,32 @@ export default function TransactionModal({
                                                 );
                                             })()}
                                         </div>
-                                        {/* Only show Avg Purchase if there are BUY transactions (avgPrice > 0) */}
-                                        {averagePurchasePrice > 0 && (
-                                            <div className="flex flex-col flex-1 items-center">
-                                                <span className="text-xs sm:text-sm text-muted uppercase tracking-wider text-center">Avg Purchase</span>
-                                                {loadingPrice ? (
-                                                    <div className="h-7 w-24 bg-white-10 rounded animate-pulse mt-1" />
-                                                ) : (
-                                                    <span className="text sm:text-2xl text-center">
-                                                        {averagePurchasePrice.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} {baseCurrency === 'USD' ? '$' : baseCurrency}
-                                                    </span>
+                                        {/* Hide Avg Purchase and Total Value for Watchlists */}
+                                        {!isWatchlist && (
+                                            <>
+                                                {/* Only show Avg Purchase if there are BUY transactions (avgPrice > 0) */}
+                                                {averagePurchasePrice > 0 && (
+                                                    <div className="flex flex-col flex-1 items-center">
+                                                        <span className="text-xs sm:text-sm text-muted uppercase tracking-wider text-center">Avg Purchase</span>
+                                                        {loadingPrice ? (
+                                                            <div className="h-7 w-24 bg-white-10 rounded animate-pulse mt-1" />
+                                                        ) : (
+                                                            <span className="text sm:text-2xl text-center">
+                                                                {averagePurchasePrice.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} {baseCurrency === 'USD' ? '$' : baseCurrency}
+                                                            </span>
+                                                        )}
+                                                    </div>
                                                 )}
-                                            </div>
+                                                <div className="flex flex-col flex-1 items-end">
+                                                    <span className="text-xs sm:text-sm text-muted uppercase tracking-wider text-right">Total Value</span>
+                                                    {loadingPrice || !assetPrice ? (
+                                                        <div className="h-7 w-32 bg-white-10 rounded animate-pulse mt-1" />
+                                                    ) : (
+                                                        <span className="text sm:text-2xl text-success text-right">{hideBalances ? '••••••' : `${(currentBalance * assetPrice * fxRate).toLocaleString(undefined, { maximumFractionDigits: 2 })} ${baseCurrency === 'USD' ? '$' : baseCurrency}`}</span>
+                                                    )}
+                                                </div>
+                                            </>
                                         )}
-                                        <div className="flex flex-col flex-1 items-end">
-                                            <span className="text-xs sm:text-sm text-muted uppercase tracking-wider text-right">Total Value</span>
-                                            {loadingPrice || !assetPrice ? (
-                                                <div className="h-7 w-32 bg-white-10 rounded animate-pulse mt-1" />
-                                            ) : (
-                                                <span className="text sm:text-2xl text-success text-right">{hideBalances ? '••••••' : `${(currentBalance * assetPrice * fxRate).toLocaleString(undefined, { maximumFractionDigits: 2 })} ${baseCurrency === 'USD' ? '$' : baseCurrency}`}</span>
-                                            )}
-                                        </div>
                                     </div>
                                     <div className="w-full">
                                         <AssetChart

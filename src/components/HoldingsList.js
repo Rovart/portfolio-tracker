@@ -1,6 +1,8 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
+import { GripVertical } from 'lucide-react';
+import { updateWatchlistAssetPositions } from '@/utils/db';
 
 // Toggle this to switch between Symbol and Short Name
 const DISPLAY_NAME = false; // true = Name, false = Symbol
@@ -12,51 +14,116 @@ const SORT_OPTIONS = [
     { id: 'alphabetical', label: 'Name' }
 ];
 
-export default function HoldingsList({ holdings, onSelect, onAddAsset, loading, hideBalances, baseCurrency, isWatchlist = false }) {
-    const [sortBy, setSortBy] = useState('size');
+const WATCHLIST_SORT_OPTIONS = [
+    { id: 'custom', label: 'Custom' },
+    { id: 'gainers', label: 'Gainers' },
+    { id: 'losers', label: 'Losers' },
+    { id: 'alphabetical', label: 'Name' }
+];
 
-    // Load saved sort preference
+export default function HoldingsList({ holdings, onSelect, onAddAsset, loading, hideBalances, baseCurrency, isWatchlist = false, currentPortfolioId, onWatchlistReorder }) {
+    const [sortBy, setSortBy] = useState(isWatchlist ? 'custom' : 'size');
+    const [draggedIndex, setDraggedIndex] = useState(null);
+    const [dragOverIndex, setDragOverIndex] = useState(null);
+    const dragItemRef = useRef(null);
+    const dragOverItemRef = useRef(null);
+
+    // Load saved sort preference OR reset when switching portfolio types
     useEffect(() => {
-        const saved = localStorage.getItem('holdings_sort');
-        if (saved && SORT_OPTIONS.find(o => o.id === saved)) {
+        const storageKey = isWatchlist ? 'watchlist_sort' : 'holdings_sort';
+        const saved = localStorage.getItem(storageKey);
+        const options = isWatchlist ? WATCHLIST_SORT_OPTIONS : SORT_OPTIONS;
+
+        if (saved && options.find(o => o.id === saved)) {
             setSortBy(saved);
+        } else {
+            // Set default based on type
+            setSortBy(isWatchlist ? 'custom' : 'size');
         }
-    }, []);
+    }, [isWatchlist, currentPortfolioId]); // Also reset when portfolio changes
 
     // Save sort preference
     const handleSortChange = (newSort) => {
         setSortBy(newSort);
-        localStorage.setItem('holdings_sort', newSort);
+        const storageKey = isWatchlist ? 'watchlist_sort' : 'holdings_sort';
+        localStorage.setItem(storageKey, newSort);
+    };
+
+    // Drag and drop handlers
+    const handleDragStart = (e, index) => {
+        dragItemRef.current = index;
+        setDraggedIndex(index);
+        e.dataTransfer.effectAllowed = 'move';
+    };
+
+    const handleDragOver = (e, index) => {
+        e.preventDefault();
+        if (dragItemRef.current === index) return;
+        dragOverItemRef.current = index;
+        setDragOverIndex(index);
+    };
+
+    const handleDragEnd = async () => {
+        if (dragItemRef.current !== null && dragOverItemRef.current !== null && dragItemRef.current !== dragOverItemRef.current) {
+            // Reorder the holdings
+            const items = [...holdings];
+            const draggedItem = items[dragItemRef.current];
+            items.splice(dragItemRef.current, 1);
+            items.splice(dragOverItemRef.current, 0, draggedItem);
+
+            // Get new order of symbols
+            const orderedSymbols = items.map(h => h.symbol || h.asset);
+
+            // Save to database
+            if (currentPortfolioId && currentPortfolioId !== 'all') {
+                await updateWatchlistAssetPositions(currentPortfolioId, orderedSymbols);
+            }
+
+            // Notify parent to refresh
+            if (onWatchlistReorder) {
+                onWatchlistReorder(orderedSymbols);
+            }
+        }
+
+        dragItemRef.current = null;
+        dragOverItemRef.current = null;
+        setDraggedIndex(null);
+        setDragOverIndex(null);
     };
 
     // Sort holdings based on selected option
     // FIAT currencies go to bottom for regular portfolios (not watchlists)
-    const sortedHoldings = [...holdings].sort((a, b) => {
-        // Use isFiat flag from portfolio-logic - but only for non-watchlist views
-        if (!isWatchlist) {
-            const aIsFiat = a.isFiat;
-            const bIsFiat = b.isFiat;
+    const sortedHoldings = sortBy === 'custom'
+        ? holdings // Custom order respects original array order (from DB)
+        : [...holdings].sort((a, b) => {
+            // Use isFiat flag from portfolio-logic - but only for non-watchlist views
+            if (!isWatchlist) {
+                const aIsFiat = a.isFiat;
+                const bIsFiat = b.isFiat;
 
-            // If one is FIAT and the other isn't, FIAT goes to bottom
-            if (aIsFiat && !bIsFiat) return 1;
-            if (!aIsFiat && bIsFiat) return -1;
-        }
+                // If one is FIAT and the other isn't, FIAT goes to bottom
+                if (aIsFiat && !bIsFiat) return 1;
+                if (!aIsFiat && bIsFiat) return -1;
+            }
 
-        // Both are FIAT or both are not FIAT - apply normal sorting
-        switch (sortBy) {
-            case 'gainers':
-                return b.change24h - a.change24h;
-            case 'losers':
-                return a.change24h - b.change24h;
-            case 'alphabetical':
-                const nameA = DISPLAY_NAME ? a.name : a.asset;
-                const nameB = DISPLAY_NAME ? b.name : b.asset;
-                return nameA.localeCompare(nameB);
-            case 'size':
-            default:
-                return b.value - a.value;
-        }
-    });
+            // Both are FIAT or both are not FIAT - apply normal sorting
+            switch (sortBy) {
+                case 'gainers':
+                    return b.change24h - a.change24h;
+                case 'losers':
+                    return a.change24h - b.change24h;
+                case 'alphabetical':
+                    const nameA = DISPLAY_NAME ? a.name : a.asset;
+                    const nameB = DISPLAY_NAME ? b.name : b.asset;
+                    return nameA.localeCompare(nameB);
+                case 'size':
+                default:
+                    return b.value - a.value;
+            }
+        });
+
+    const activeOptions = isWatchlist ? WATCHLIST_SORT_OPTIONS : SORT_OPTIONS;
+    const isDraggable = isWatchlist && sortBy === 'custom';
 
     return (
         <div className="flex flex-col gap-1">
@@ -77,7 +144,7 @@ export default function HoldingsList({ holdings, onSelect, onAddAsset, loading, 
                             backgroundPosition: 'right 8px center'
                         }}
                     >
-                        {SORT_OPTIONS.map(o => (
+                        {activeOptions.map(o => (
                             <option key={o.id} value={o.id} style={{ backgroundColor: '#171717', color: 'white' }}>
                                 {o.label}
                             </option>
@@ -85,14 +152,28 @@ export default function HoldingsList({ holdings, onSelect, onAddAsset, loading, 
                     </select>
                 )}
             </div>
-            {sortedHoldings.map((holding) => (
+            {sortedHoldings.map((holding, index) => (
                 <div
                     key={holding.asset}
-                    className="card flex justify-between items-center"
-                    style={{ cursor: 'pointer' }}
-                    onClick={() => onSelect(holding)}
+                    className={`card flex justify-between items-center ${draggedIndex === index ? 'opacity-50' : ''} ${dragOverIndex === index ? 'border-primary' : ''}`}
+                    style={{ cursor: isDraggable ? 'grab' : 'pointer', transition: 'opacity 0.15s, border-color 0.15s, margin-right 10px' }}
+                    onClick={() => !isDraggable && onSelect(holding)}
+                    draggable={isDraggable}
+                    onDragStart={(e) => isDraggable && handleDragStart(e, index)}
+                    onDragOver={(e) => { if (isDraggable && dragItemRef.current !== null) handleDragOver(e, index); }}
+                    onDragEnd={isDraggable ? handleDragEnd : undefined}
+                    onDrop={(e) => e.preventDefault()}
                 >
-                    <div className="flex-1 flex flex-col min-w-0 pr-2">
+                    {isDraggable && (
+                        <div className="pr-2 text-muted cursor-grab" style={{ touchAction: 'none', marginRight: '10px' }}>
+                            <GripVertical size={16} />
+                        </div>
+                    )}
+                    <div
+                        className="flex-1 flex flex-col min-w-0 pr-2"
+                        style={isDraggable ? { cursor: 'pointer' } : {}}
+                        onClick={(e) => { if (isDraggable) { e.stopPropagation(); onSelect(holding); } }}
+                    >
                         <span className="text-base sm:text-lg font-bold truncate">
                             {DISPLAY_NAME ? holding.name : holding.asset}
                         </span>
@@ -101,7 +182,13 @@ export default function HoldingsList({ holdings, onSelect, onAddAsset, loading, 
                                 <span className="inline-block w-24 h-3 bg-white-10 rounded animate-pulse" />
                             ) : (
                                 <>
-                                    {hideBalances ? '••••' : holding.amount.toLocaleString(undefined, { maximumFractionDigits: 4 })} | {holding.price.toLocaleString(undefined, { maximumFractionDigits: 2 })} {baseCurrency === 'USD' ? '$' : baseCurrency}
+                                    {isWatchlist ? (
+                                        // Watchlist: Just show price
+                                        `${holding.price.toLocaleString(undefined, { maximumFractionDigits: 2 })} ${baseCurrency === 'USD' ? '$' : baseCurrency}`
+                                    ) : (
+                                        // Regular: Show Amount | Price
+                                        `${hideBalances ? '••••' : holding.amount.toLocaleString(undefined, { maximumFractionDigits: 4 })} | ${holding.price.toLocaleString(undefined, { maximumFractionDigits: 2 })} ${baseCurrency === 'USD' ? '$' : baseCurrency}`
+                                    )}
                                 </>
                             )}
                         </span>
@@ -112,7 +199,8 @@ export default function HoldingsList({ holdings, onSelect, onAddAsset, loading, 
                             {loading ? (
                                 <div className="w-24 sm:w-32 h-6 bg-white-10 rounded animate-pulse ml-auto" />
                             ) : (
-                                hideBalances ? '••••••' : `${holding.value.toLocaleString(undefined, { maximumFractionDigits: 2 })} ${baseCurrency === 'USD' ? '$' : baseCurrency}`
+                                // For watchlists, 'value' is just the price (since amount is 1)
+                                ((hideBalances && !isWatchlist) ? '••••••' : `${holding.value.toLocaleString(undefined, { maximumFractionDigits: 2 })} ${baseCurrency === 'USD' ? '$' : baseCurrency}`)
                             )}
                         </span>
                         <span className={`text-[10px] sm:text-sm font-medium ${holding.change24h >= 0 ? 'text-success' : 'text-danger'}`}>
@@ -120,7 +208,9 @@ export default function HoldingsList({ holdings, onSelect, onAddAsset, loading, 
                                 <div className="w-16 sm:w-20 h-4 bg-white-10 rounded animate-pulse mt-1 ml-auto" />
                             ) : (
                                 <>
-                                    {hideBalances ? '' : `${holding.dailyPnl >= 0 ? '+' : '-'}${Math.abs(holding.dailyPnl).toLocaleString(undefined, { maximumFractionDigits: 0 })} ${baseCurrency === 'USD' ? '$' : baseCurrency} `}
+                                    {/* Always show nominal change unless hidden by privacy on regular portfolios */}
+                                    {/* Always show nominal change unless hidden by privacy on regular portfolios */}
+                                    {(!hideBalances || isWatchlist) && `${holding.dailyPnl >= 0 ? '+' : '-'}${Math.abs(holding.dailyPnl).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ${baseCurrency === 'USD' ? '$' : baseCurrency} `}
                                     ({holding.change24h >= 0 ? '+' : ''}{holding.change24h.toFixed(2)}%)
                                 </>
                             )}
