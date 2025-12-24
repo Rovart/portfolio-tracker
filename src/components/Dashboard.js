@@ -221,7 +221,7 @@ export default function Dashboard() {
         // 2. Fetch prices
         let isInitialFetch = Object.keys(prices).length === 0;
 
-        async function fetchQuotes() {
+        async function fetchQuotes(isBackground = false) {
             if (isCancelled) return;
 
             // Only show skeletons on the VERY FIRST load or explicit currency change, never on background refresh
@@ -229,7 +229,8 @@ export default function Dashboard() {
             const currencyChanged = prevBaseCurrencyQuotesRef.current !== baseCurrency;
 
             // If prices are empty (portfolio switch) or currency changed, show loading
-            if ((Object.keys(prices).length === 0) || currencyChanged) {
+            // Prevent loading state on background refreshes to avoid UI flash
+            if (!isBackground && ((Object.keys(prices).length === 0) || currencyChanged)) {
                 setPricesLoading(true);
             }
             prevBaseCurrencyQuotesRef.current = baseCurrency;
@@ -342,9 +343,9 @@ export default function Dashboard() {
             }
         }
 
-        fetchQuotes();
+        fetchQuotes(false);
         // Refresh prices every 30s in the background
-        const interval = setInterval(fetchQuotes, 30000);
+        const interval = setInterval(() => fetchQuotes(true), 30000);
         return () => {
             isCancelled = true;
             clearInterval(interval);
