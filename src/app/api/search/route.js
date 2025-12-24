@@ -17,7 +17,7 @@ export async function GET(request) {
         // Filter for relevant types (Equity, Crypto, ETF, Currency)
         let filtered = results.quotes.filter(item =>
             item.isYahooFinance &&
-            (item.quoteType === 'EQUITY' || item.quoteType === 'CRYPTOCURRENCY' || item.quoteType === 'ETF' || item.quoteType === 'MUTUALFUND' || item.quoteType === 'CURRENCY')
+            (item.quoteType === 'EQUITY' || item.quoteType === 'CRYPTOCURRENCY' || item.quoteType === 'ETF' || item.quoteType === 'MUTUALFUND' || item.quoteType === 'CURRENCY' || item.quoteType === 'COMMODITY' || item.quoteType === 'FUTURE')
         ).map(item => {
             // Clean up symbol for display - remove =X suffix
             let displaySymbol = item.symbol;

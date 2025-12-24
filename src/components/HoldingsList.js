@@ -8,7 +8,8 @@ const DISPLAY_NAME = false; // true = Name, false = Symbol
 const SORT_OPTIONS = [
     { id: 'size', label: 'Size' },
     { id: 'gainers', label: 'Gainers' },
-    { id: 'losers', label: 'Losers' }
+    { id: 'losers', label: 'Losers' },
+    { id: 'alphabetical', label: 'Name' }
 ];
 
 export default function HoldingsList({ holdings, onSelect, onAddAsset, loading, hideBalances, baseCurrency }) {
@@ -45,6 +46,10 @@ export default function HoldingsList({ holdings, onSelect, onAddAsset, loading, 
                 return b.change24h - a.change24h;
             case 'losers':
                 return a.change24h - b.change24h;
+            case 'alphabetical':
+                const nameA = DISPLAY_NAME ? a.name : a.asset;
+                const nameB = DISPLAY_NAME ? b.name : b.asset;
+                return nameA.localeCompare(nameB);
             case 'size':
             default:
                 return b.value - a.value;
