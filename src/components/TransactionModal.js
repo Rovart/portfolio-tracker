@@ -384,6 +384,7 @@ export default function TransactionModal({ mode, holding, transactions, onClose,
             isBareCurrencyOrigin: asset.isBareCurrencyOrigin || false
         });
         setCurrentView('LIST');
+        setAssetTab('overview');
         setEditingTx(null);
     };
 
@@ -472,8 +473,8 @@ export default function TransactionModal({ mode, holding, transactions, onClose,
 
                     {currentView === 'LIST' && selectedAsset && (
                         <div className="flex flex-col gap-4">
-                            {/* Tab Navigation - only show for stocks/ETFs that have financials */}
-                            {selectedAsset.type !== 'CURRENCY' && !selectedAsset.isBareCurrency && selectedAsset.type !== 'CRYPTOCURRENCY' && (
+                            {/* Tab Navigation - only show for individual stocks (EQUITY) */}
+                            {selectedAsset.originalType === 'EQUITY' && (
                                 <div className="flex gap-2 p-1 rounded-full" style={{ background: '#171717' }}>
                                     <button
                                         onClick={() => setAssetTab('overview')}
