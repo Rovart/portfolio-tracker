@@ -113,7 +113,8 @@ export default function AssetIcon({ symbol, type, isFiat, size = 40, className =
                 <img
                     src={iconSrc}
                     alt={cleanSym}
-                    className="w-full h-full object-contain p-1"
+                    className="w-full h-full"
+                    style={{ objectFit: 'contain', padding: '10%' }}
                     onError={() => setImageError(true)}
                 />
             </div>
