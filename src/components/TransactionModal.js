@@ -9,7 +9,7 @@ import { Trash2, Edit2, X, Plus, ChevronLeft, ArrowLeft, Moon, Sun, Eye, EyeOff 
 import { normalizeAsset } from '@/utils/portfolio-logic';
 import { addWatchlistAsset, removeWatchlistAsset, isSymbolInWatchlist } from '@/utils/db';
 
-const DISPLAY_NAME = true; // true = Name, false = Symbol
+// Header display logic: Title = Name, Subtitle = Symbol
 
 export default function TransactionModal({
     mode,
@@ -46,6 +46,25 @@ export default function TransactionModal({
     const [deleteConfirm, setDeleteConfirm] = useState(null); // { id, type, date }
     const [assetTab, setAssetTab] = useState('overview'); // 'overview' | 'financials'
     const [isInWatchlist, setIsInWatchlist] = useState(false);
+
+    // Sync selectedAsset when holding prop changes (e.g. if name is loaded late in Dashboard)
+    useEffect(() => {
+        if (holding) {
+            setSelectedAsset({
+                symbol: holding.symbol || holding.asset,
+                amount: holding.amount,
+                originalType: holding.originalType,
+                currency: holding.currency,
+                name: holding.name,
+                isBareCurrencyOrigin: holding.isBareCurrencyOrigin || false,
+                preMarketPrice: holding.preMarketPrice,
+                preMarketChangePercent: holding.preMarketChangePercent,
+                postMarketPrice: holding.postMarketPrice,
+                postMarketChangePercent: holding.postMarketChangePercent,
+                marketState: holding.marketState
+            });
+        }
+    }, [holding]);
 
     // Consolidated price data - updated atomically to guarantee single render
     // Always start loading to prevent showing cached USD price before FX conversion
@@ -289,6 +308,14 @@ export default function TransactionModal({
                 if (fetchedCurrency !== selectedAsset.currency) {
                     setSelectedAsset(prev => prev ? { ...prev, currency: fetchedCurrency } : prev);
                 }
+                // Update name if we don't have a descriptive one yet (missing or same as symbol)
+                setSelectedAsset(prev => {
+                    if (!prev) return null;
+                    const isGenericName = !prev.name || prev.name === prev.symbol;
+                    // Find the assetQuote again to get the name
+                    const assetQuote = json.data.find(q => q.symbol === fetchSym);
+                    return { ...prev, name: isGenericName ? (assetQuote?.name || prev.name) : prev.name };
+                });
 
                 // SINGLE atomic update - guarantees exactly one render
                 setPriceData({
@@ -490,11 +517,16 @@ export default function TransactionModal({
                     >
                         <ArrowLeft size={24} />
                     </button>
-                    <h2 className="text-xl sm:text-2xl font-bold tracking-tight" style={{ margin: 0 }}>
-                        {currentView === 'SEARCH' ? 'Add Asset' : (
-                            DISPLAY_NAME ? (selectedAsset?.name || selectedAsset?.symbol) : selectedAsset?.symbol || 'Details'
+                    <div className="flex flex-col min-w-0">
+                        <h2 className="text-xl sm:text-2xl font-bold tracking-tight truncate" style={{ margin: 0 }}>
+                            {currentView === 'SEARCH' ? 'Add Asset' : (selectedAsset?.name || selectedAsset?.symbol || 'Details')}
+                        </h2>
+                        {currentView === 'LIST' && selectedAsset?.symbol && selectedAsset.name && selectedAsset.name !== selectedAsset.symbol && (
+                            <span className="text-[10px] sm:text-xs text-muted font-bold truncate uppercase tracking-widest opacity-80">
+                                {selectedAsset.symbol}
+                            </span>
                         )}
-                    </h2>
+                    </div>
                 </div>
                 {currentView === 'LIST' && selectedAsset && (
                     isWatchlist ? (
