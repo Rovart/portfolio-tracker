@@ -12,7 +12,7 @@ const SORT_OPTIONS = [
     { id: 'alphabetical', label: 'Name' }
 ];
 
-export default function HoldingsList({ holdings, onSelect, onAddAsset, loading, hideBalances, baseCurrency }) {
+export default function HoldingsList({ holdings, onSelect, onAddAsset, loading, hideBalances, baseCurrency, isWatchlist = false }) {
     const [sortBy, setSortBy] = useState('size');
 
     // Load saved sort preference
@@ -30,15 +30,17 @@ export default function HoldingsList({ holdings, onSelect, onAddAsset, loading, 
     };
 
     // Sort holdings based on selected option
-    // FIAT currencies ALWAYS go to bottom regardless of sort
+    // FIAT currencies go to bottom for regular portfolios (not watchlists)
     const sortedHoldings = [...holdings].sort((a, b) => {
-        // Use isFiat flag from portfolio-logic
-        const aIsFiat = a.isFiat;
-        const bIsFiat = b.isFiat;
+        // Use isFiat flag from portfolio-logic - but only for non-watchlist views
+        if (!isWatchlist) {
+            const aIsFiat = a.isFiat;
+            const bIsFiat = b.isFiat;
 
-        // If one is FIAT and the other isn't, FIAT goes to bottom
-        if (aIsFiat && !bIsFiat) return 1;
-        if (!aIsFiat && bIsFiat) return -1;
+            // If one is FIAT and the other isn't, FIAT goes to bottom
+            if (aIsFiat && !bIsFiat) return 1;
+            if (!aIsFiat && bIsFiat) return -1;
+        }
 
         // Both are FIAT or both are not FIAT - apply normal sorting
         switch (sortBy) {

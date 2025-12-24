@@ -27,6 +27,14 @@ db.version(2).stores({
     });
 });
 
+// Version 3: Add watchlist support
+db.version(3).stores({
+    transactions: '++id, date, type, baseCurrency, quoteCurrency, portfolioId',
+    settings: 'key',
+    portfolios: '++id, name, createdAt, isWatchlist',
+    watchlistAssets: '++id, portfolioId, symbol, addedAt'
+});
+
 // Portfolio helpers
 export async function getAllPortfolios() {
     return await db.portfolios.orderBy('createdAt').toArray();
@@ -47,6 +55,8 @@ export async function updatePortfolio(id, updates) {
 export async function deletePortfolio(id) {
     // Delete all transactions in this portfolio
     await db.transactions.where('portfolioId').equals(id).delete();
+    // Delete all watchlist assets in this portfolio
+    await db.watchlistAssets.where('portfolioId').equals(id).delete();
     // Delete the portfolio
     await db.portfolios.delete(id);
 }
@@ -157,6 +167,44 @@ export async function ensureDefaultPortfolio() {
         await addPortfolio('Default');
     }
     return await getAllPortfolios();
+}
+
+// Watchlist asset helpers
+export async function getWatchlistAssets(portfolioId) {
+    return await db.watchlistAssets.where('portfolioId').equals(portfolioId).toArray();
+}
+
+export async function addWatchlistAsset(portfolioId, asset) {
+    // Check if already exists
+    const existing = await db.watchlistAssets
+        .where({ portfolioId, symbol: asset.symbol })
+        .first();
+    if (existing) return existing.id;
+
+    const id = await db.watchlistAssets.add({
+        portfolioId,
+        symbol: asset.symbol,
+        name: asset.name || asset.shortname || asset.symbol,
+        type: asset.type || asset.originalType || 'EQUITY',
+        currency: asset.currency || 'USD',
+        addedAt: new Date().toISOString()
+    });
+    return id;
+}
+
+export async function removeWatchlistAsset(portfolioId, symbol) {
+    await db.watchlistAssets.where({ portfolioId, symbol }).delete();
+}
+
+export async function isSymbolInWatchlist(portfolioId, symbol) {
+    const existing = await db.watchlistAssets
+        .where({ portfolioId, symbol })
+        .first();
+    return !!existing;
+}
+
+export async function getAllWatchlistAssets() {
+    return await db.watchlistAssets.toArray();
 }
 
 export { db };

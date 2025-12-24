@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
-import { ArrowLeft, Plus, Trash2, Edit2, Check, X, Upload, Download, FolderOpen, ChevronDown, Star, Bell } from 'lucide-react';
+import { ArrowLeft, Plus, Trash2, Edit2, Check, X, Upload, Download, FolderOpen, ChevronDown, Star, Bell, Eye } from 'lucide-react';
 import ConfirmModal from './ConfirmModal';
 import {
     getAllPortfolios,
@@ -10,7 +10,8 @@ import {
     deletePortfolio,
     exportToCsv,
     importTransactions,
-    clearAllTransactions
+    clearAllTransactions,
+    getTransactionsByPortfolio
 } from '@/utils/db';
 import { checkPermissions, requestPermissions, scheduleDailyNotifications, cancelAllNotifications, scheduleTestNotification } from '@/utils/notifications';
 
@@ -171,6 +172,18 @@ export default function SettingsModal({ onClose, onPortfolioChange, currentPortf
         if (currentDefault?.id !== id) {
             await updatePortfolio(id, { isDefault: true });
         }
+        loadPortfolios();
+    };
+
+    const handleToggleWatchlist = async (portfolio) => {
+        // Check if portfolio has any transactions
+        const txs = await getTransactionsByPortfolio(portfolio.id);
+        if (txs && txs.length > 0) {
+            // Portfolio has transactions - cannot toggle watchlist
+            return;
+        }
+        // Toggle isWatchlist
+        await updatePortfolio(portfolio.id, { isWatchlist: !portfolio.isWatchlist });
         loadPortfolios();
     };
 
@@ -536,10 +549,29 @@ export default function SettingsModal({ onClose, onPortfolioChange, currentPortf
                                             </div>
                                         ) : (
                                             <>
-                                                <span className="font-medium">{portfolio.name}</span>
+                                                <div className="flex items-center gap-2">
+                                                    <span className="font-medium">{portfolio.name}</span>
+                                                    {portfolio.isWatchlist && (
+                                                        <span className="text-[10px] px-2 py-0.5 rounded-full bg-cyan-500/20 text-cyan-400 font-medium">
+                                                            Watchlist
+                                                        </span>
+                                                    )}
+                                                </div>
                                                 <div className="flex items-center gap-1">
-                                                    {/* Default star - only show when multiple portfolios */}
-                                                    {portfolios.length > 1 && (
+                                                    {/* Watchlist toggle */}
+                                                    <button
+                                                        onClick={() => handleToggleWatchlist(portfolio)}
+                                                        className="p-2 rounded-full hover:bg-cyan-500/20 transition-all"
+                                                        style={{ background: 'transparent', border: 'none', cursor: 'pointer' }}
+                                                        title={portfolio.isWatchlist ? 'Convert to portfolio' : 'Convert to watchlist'}
+                                                    >
+                                                        <Eye
+                                                            size={16}
+                                                            className={portfolio.isWatchlist ? 'text-cyan-400' : 'text-white/40'}
+                                                        />
+                                                    </button>
+                                                    {/* Default star - only show when multiple portfolios and not a watchlist */}
+                                                    {portfolios.length > 1 && !portfolio.isWatchlist && (
                                                         <button
                                                             onClick={() => handleSetDefault(portfolio.id)}
                                                             className="p-2 rounded-full hover:bg-yellow-500/20 transition-all"

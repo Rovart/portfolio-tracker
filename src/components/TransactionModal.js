@@ -5,12 +5,27 @@ import AssetSearch from './AssetSearch';
 import AssetChart from './AssetChart';
 import FinancialInfo from './FinancialInfo';
 import ConfirmModal from './ConfirmModal';
-import { Trash2, Edit2, X, Plus, ChevronLeft, ArrowLeft, Moon, Sun } from 'lucide-react';
+import { Trash2, Edit2, X, Plus, ChevronLeft, ArrowLeft, Moon, Sun, Eye, EyeOff } from 'lucide-react';
 import { normalizeAsset } from '@/utils/portfolio-logic';
+import { addWatchlistAsset, removeWatchlistAsset, isSymbolInWatchlist } from '@/utils/db';
 
 const DISPLAY_NAME = true; // true = Name, false = Symbol
 
-export default function TransactionModal({ mode, holding, transactions, onClose, onSave, onDelete, hideBalances, baseCurrency, portfolios = [], currentPortfolioId = 'all' }) {
+export default function TransactionModal({
+    mode,
+    holding,
+    transactions,
+    onClose,
+    onSave,
+    onDelete,
+    hideBalances,
+    baseCurrency,
+    portfolios = [],
+    currentPortfolioId = 'all',
+    isWatchlist = false,
+    watchlistAssets = [],
+    onWatchlistUpdate
+}) {
     const modalRef = useRef(null);
     const [currentView, setCurrentView] = useState(mode === 'ADD' ? 'SEARCH' : 'LIST');
     const [selectedAsset, setSelectedAsset] = useState(holding ? {
@@ -30,6 +45,7 @@ export default function TransactionModal({ mode, holding, transactions, onClose,
     const [editingTx, setEditingTx] = useState(null);
     const [deleteConfirm, setDeleteConfirm] = useState(null); // { id, type, date }
     const [assetTab, setAssetTab] = useState('overview'); // 'overview' | 'financials'
+    const [isInWatchlist, setIsInWatchlist] = useState(false);
 
     // Consolidated price data - updated atomically to guarantee single render
     // Always start loading to prevent showing cached USD price before FX conversion
@@ -93,6 +109,20 @@ export default function TransactionModal({ mode, holding, transactions, onClose,
         }, 10); // Small delay to beat browser's auto-focus scroll
         return () => clearTimeout(timer);
     }, [currentView, selectedAsset?.symbol, editingTx?.id]);
+
+    // 3. Check if asset is in watchlist (for watchlist mode)
+    useEffect(() => {
+        if (!isWatchlist || !selectedAsset?.symbol || currentPortfolioId === 'all') {
+            setIsInWatchlist(false);
+            return;
+        }
+
+        async function checkWatchlist() {
+            const inWatchlist = await isSymbolInWatchlist(currentPortfolioId, selectedAsset.symbol);
+            setIsInWatchlist(inWatchlist);
+        }
+        checkWatchlist();
+    }, [isWatchlist, selectedAsset?.symbol, currentPortfolioId, watchlistAssets]);
 
     useEffect(() => {
         if (!selectedAsset) return;
@@ -377,6 +407,7 @@ export default function TransactionModal({ mode, holding, transactions, onClose,
 
         setSelectedAsset({
             symbol: asset.symbol,
+            name: asset.name || asset.shortname || asset.symbol,
             price: null,
             amount: balance,
             originalType: asset.type,
@@ -386,6 +417,27 @@ export default function TransactionModal({ mode, holding, transactions, onClose,
         setCurrentView('LIST');
         setAssetTab('overview');
         setEditingTx(null);
+    };
+
+    // Watchlist handlers
+    const handleAddToWatchlist = async () => {
+        if (!selectedAsset || currentPortfolioId === 'all') return;
+        await addWatchlistAsset(currentPortfolioId, {
+            symbol: selectedAsset.symbol,
+            name: selectedAsset.name || selectedAsset.symbol,
+            type: selectedAsset.originalType || 'EQUITY',
+            currency: selectedAsset.currency || 'USD'
+        });
+        setIsInWatchlist(true);
+        if (onWatchlistUpdate) await onWatchlistUpdate();
+    };
+
+    const handleRemoveFromWatchlist = async () => {
+        if (!selectedAsset || currentPortfolioId === 'all') return;
+        await removeWatchlistAsset(currentPortfolioId, selectedAsset.symbol);
+        setIsInWatchlist(false);
+        if (onWatchlistUpdate) await onWatchlistUpdate();
+        onClose(); // Close after removing
     };
 
     const handleEdit = (tx) => {
@@ -445,14 +497,38 @@ export default function TransactionModal({ mode, holding, transactions, onClose,
                     </h2>
                 </div>
                 {currentView === 'LIST' && selectedAsset && (
-                    <button
-                        onClick={() => { setEditingTx(null); setCurrentView('FORM'); }}
-                        className="btn flex items-center gap-2"
-                        style={{ padding: '10px 20px' }}
-                    >
-                        <Plus size={18} />
-                        <span className="hidden sm:inline">Add Transaction</span>
-                    </button>
+                    isWatchlist ? (
+                        // Watchlist mode - show add/remove button
+                        isInWatchlist ? (
+                            <button
+                                onClick={handleRemoveFromWatchlist}
+                                className="btn flex items-center gap-2"
+                                style={{ padding: '10px 20px', background: 'rgba(239, 68, 68, 0.2)', border: '1px solid rgba(239, 68, 68, 0.4)' }}
+                            >
+                                <EyeOff size={18} className="text-red-400" />
+                                <span className="hidden sm:inline text-red-400">Remove</span>
+                            </button>
+                        ) : (
+                            <button
+                                onClick={handleAddToWatchlist}
+                                className="btn flex items-center gap-2"
+                                style={{ padding: '10px 20px', background: 'rgba(34, 211, 238, 0.15)', border: '1px solid rgba(34, 211, 238, 0.3)' }}
+                            >
+                                <Eye size={18} className="text-cyan-400" />
+                                <span className="hidden sm:inline text-cyan-400">Add to Watchlist</span>
+                            </button>
+                        )
+                    ) : (
+                        // Regular portfolio mode - show add transaction button
+                        <button
+                            onClick={() => { setEditingTx(null); setCurrentView('FORM'); }}
+                            className="btn flex items-center gap-2"
+                            style={{ padding: '10px 20px' }}
+                        >
+                            <Plus size={18} />
+                            <span className="hidden sm:inline">Add Transaction</span>
+                        </button>
+                    )
                 )}
             </div>
 
@@ -594,120 +670,122 @@ export default function TransactionModal({ mode, holding, transactions, onClose,
                                         />
                                     </div>
 
-                                    {/* Transactions List */}
-                                    <div>
-                                        <h3 className="text-xl text-muted" style={{ marginBottom: '1rem' }}>History</h3>
-                                        <div className="flex flex-col gap-2">
-                                            {assetTransactions.length === 0 ? (
-                                                <p className="text-muted py-10 text-center">No transactions recorded.</p>
-                                            ) : (
-                                                assetTransactions.map(tx => (
-                                                    <div key={tx.id} className="flex justify-between items-center p-4 rounded-2xl hover-bg-surface transition-all" style={{ border: '1px solid transparent' }}>
-                                                        <div className="flex items-center gap-4">
-                                                            <div style={{ width: 8, height: 8, borderRadius: '50%', backgroundColor: tx.isReverse ? (tx.type === 'BUY' ? '#ef4444' : '#22c55e') : (['BUY', 'DEPOSIT'].includes(tx.type) ? '#22c55e' : '#ef4444') }} />
-                                                            <div className="flex flex-col">
-                                                                <span className="font-bold" style={{ fontSize: '1rem' }}>
-                                                                    {tx.isReverse ? (tx.type === 'BUY' ? 'SPENT' : 'RECEIVED') : tx.type}
-                                                                </span>
-                                                                <span className="text-sm text-muted">
-                                                                    {tx.isReverse ? `${tx.type === 'BUY' ? 'Purchased' : 'Sold'} ${tx.baseCurrency} | ` : ''}
-                                                                    {new Date(tx.date).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' })}
-                                                                </span>
-                                                                {tx.notes && (
-                                                                    <span className="text-xs text-muted" style={{ fontStyle: 'italic', marginTop: '2px', opacity: 0.7 }}>
-                                                                        {tx.notes}
+                                    {/* Transactions List - hidden for watchlists */}
+                                    {!isWatchlist && (
+                                        <div>
+                                            <h3 className="text-xl text-muted" style={{ marginBottom: '1rem' }}>History</h3>
+                                            <div className="flex flex-col gap-2">
+                                                {assetTransactions.length === 0 ? (
+                                                    <p className="text-muted py-10 text-center">No transactions recorded.</p>
+                                                ) : (
+                                                    assetTransactions.map(tx => (
+                                                        <div key={tx.id} className="flex justify-between items-center p-4 rounded-2xl hover-bg-surface transition-all" style={{ border: '1px solid transparent' }}>
+                                                            <div className="flex items-center gap-4">
+                                                                <div style={{ width: 8, height: 8, borderRadius: '50%', backgroundColor: tx.isReverse ? (tx.type === 'BUY' ? '#ef4444' : '#22c55e') : (['BUY', 'DEPOSIT'].includes(tx.type) ? '#22c55e' : '#ef4444') }} />
+                                                                <div className="flex flex-col">
+                                                                    <span className="font-bold" style={{ fontSize: '1rem' }}>
+                                                                        {tx.isReverse ? (tx.type === 'BUY' ? 'SPENT' : 'RECEIVED') : tx.type}
                                                                     </span>
-                                                                )}
-                                                            </div>
-                                                        </div>
-
-                                                        <div className="flex-1 flex flex-col items-end">
-                                                            {tx.type === 'BUY' && !tx.isReverse && (
-                                                                <>
-                                                                    {loadingPrice || !assetPrice ? (
-                                                                        <div className="h-5 w-20 bg-white-10 rounded animate-pulse ml-auto" style={{ marginRight: '10px' }} />
-                                                                    ) : (
-                                                                        (() => {
-                                                                            const dateStr = tx.date.split('T')[0];
-                                                                            const txQuoteCurrency = (tx.quoteCurrency || selectedAsset.currency || 'USD').toUpperCase();
-                                                                            let costFx = 1;
-                                                                            if (txQuoteCurrency !== baseCurrency) {
-                                                                                costFx = historicalFx[dateStr] || fxRate || 1;
-                                                                            }
-                                                                            const costBase = tx.quoteAmount * costFx;
-                                                                            const currentValBase = tx.baseAmount * assetPrice * fxRate;
-                                                                            const pnlBase = currentValBase - costBase;
-                                                                            const pnlPercent = (pnlBase / costBase) * 100;
-                                                                            return (
-                                                                                <span style={{ textAlign: 'right', marginRight: '10px' }} className={`text-sm font-bold ${pnlBase >= 0 ? 'text-success' : 'text-danger'}`}>
-                                                                                    {hideBalances ? '' : `${pnlBase >= 0 ? '+' : '-'}${Math.abs(pnlBase).toLocaleString(undefined, { maximumFractionDigits: 2 })} ${baseCurrency === 'USD' ? '$' : baseCurrency} `}
-                                                                                    ({pnlPercent >= 0 ? '+' : ''}{pnlPercent.toFixed(2)}%)
-                                                                                </span>
-                                                                            );
-                                                                        })()
+                                                                    <span className="text-sm text-muted">
+                                                                        {tx.isReverse ? `${tx.type === 'BUY' ? 'Purchased' : 'Sold'} ${tx.baseCurrency} | ` : ''}
+                                                                        {new Date(tx.date).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' })}
+                                                                    </span>
+                                                                    {tx.notes && (
+                                                                        <span className="text-xs text-muted" style={{ fontStyle: 'italic', marginTop: '2px', opacity: 0.7 }}>
+                                                                            {tx.notes}
+                                                                        </span>
                                                                     )}
-                                                                </>
-                                                            )}
-                                                        </div>
-
-                                                        <div className="flex items-center gap-4">
-                                                            <div className="flex flex-col items-end">
-                                                                <span className="font-mono font-medium" style={{ fontSize: '1rem' }}>
-                                                                    {hideBalances ? '••••' : (tx.isReverse ? tx.quoteAmount : tx.baseAmount).toLocaleString()} {tx.isReverse ? tx.quoteCurrency : tx.baseCurrency}
-                                                                </span>
-                                                                {(tx.quoteAmount > 0 && !tx.isReverse) && (
-                                                                    <div className="flex items-center gap-1">
-                                                                        {loadingPrice ? (
-                                                                            <div className="h-3 w-12 bg-white-10 rounded animate-pulse ml-auto" />
-                                                                        ) : (
-                                                                            <span className="text-xs text-muted">
-                                                                                {(() => {
-                                                                                    const dateStr = tx.date.split('T')[0];
-                                                                                    const txQuoteCurrency = (tx.quoteCurrency || selectedAsset.currency || 'USD').toUpperCase();
-                                                                                    let costFx = 1;
-                                                                                    if (txQuoteCurrency !== baseCurrency) {
-                                                                                        costFx = historicalFx[dateStr] || fxRate || 1;
-                                                                                    }
-                                                                                    return `${((tx.quoteAmount / tx.baseAmount) * costFx).toLocaleString(undefined, { maximumFractionDigits: 2 })} ${baseCurrency === 'USD' ? '$' : baseCurrency}`;
-                                                                                })()}
-                                                                            </span>
-                                                                        )}
-                                                                        {tx.type === 'BUY' && (
-                                                                            loadingPrice || !assetPrice ? (
-                                                                                <div className="h-3 w-8 bg-white-10 rounded animate-pulse ml-auto" style={{ marginLeft: '5px' }} />
-                                                                            ) : (
-                                                                                <span className={`text-xs text-[10px] ${tx.affectsFiatBalance === false ? 'text-muted/50 decoration-line-through' : 'text-muted'}`} title={tx.affectsFiatBalance === false ? "Did not deduct from balance" : "Deducted from balance"}>
-                                                                                    | {hideBalances ? '••••••' : (() => {
-                                                                                        const dateStr = tx.date.split('T')[0];
-                                                                                        const txQuoteCurrency = (tx.quoteCurrency || selectedAsset.currency || 'USD').toUpperCase();
-                                                                                        const hFx = txQuoteCurrency !== baseCurrency ? (historicalFx[dateStr] || fxRate || 1) : 1;
-                                                                                        return `${(tx.quoteAmount * hFx).toLocaleString(undefined, { maximumFractionDigits: 2 })} ${baseCurrency === 'USD' ? '$' : baseCurrency}`;
-                                                                                    })()}
-                                                                                </span>
-                                                                            )
-                                                                        )}
-                                                                    </div>
-                                                                )}
+                                                                </div>
                                                             </div>
 
-                                                            <div className="flex flex-col">
-                                                                {!tx.isReverse && (
+                                                            <div className="flex-1 flex flex-col items-end">
+                                                                {tx.type === 'BUY' && !tx.isReverse && (
                                                                     <>
-                                                                        <button onClick={() => handleEdit(tx)} className="p-1 text-muted hover:text-white hover-bg-surface rounded-full transition-all" style={{ background: 'transparent', border: 'none', cursor: 'pointer' }}>
-                                                                            <Edit2 size={16} />
-                                                                        </button>
-                                                                        <button onClick={() => setDeleteConfirm({ id: tx.id, type: tx.type, date: tx.date })} className="p-1 text-danger hover-bg-surface rounded-full transition-all" style={{ background: 'transparent', border: 'none', cursor: 'pointer' }}>
-                                                                            <Trash2 size={16} />
-                                                                        </button>
+                                                                        {loadingPrice || !assetPrice ? (
+                                                                            <div className="h-5 w-20 bg-white-10 rounded animate-pulse ml-auto" style={{ marginRight: '10px' }} />
+                                                                        ) : (
+                                                                            (() => {
+                                                                                const dateStr = tx.date.split('T')[0];
+                                                                                const txQuoteCurrency = (tx.quoteCurrency || selectedAsset.currency || 'USD').toUpperCase();
+                                                                                let costFx = 1;
+                                                                                if (txQuoteCurrency !== baseCurrency) {
+                                                                                    costFx = historicalFx[dateStr] || fxRate || 1;
+                                                                                }
+                                                                                const costBase = tx.quoteAmount * costFx;
+                                                                                const currentValBase = tx.baseAmount * assetPrice * fxRate;
+                                                                                const pnlBase = currentValBase - costBase;
+                                                                                const pnlPercent = (pnlBase / costBase) * 100;
+                                                                                return (
+                                                                                    <span style={{ textAlign: 'right', marginRight: '10px' }} className={`text-sm font-bold ${pnlBase >= 0 ? 'text-success' : 'text-danger'}`}>
+                                                                                        {hideBalances ? '' : `${pnlBase >= 0 ? '+' : '-'}${Math.abs(pnlBase).toLocaleString(undefined, { maximumFractionDigits: 2 })} ${baseCurrency === 'USD' ? '$' : baseCurrency} `}
+                                                                                        ({pnlPercent >= 0 ? '+' : ''}{pnlPercent.toFixed(2)}%)
+                                                                                    </span>
+                                                                                );
+                                                                            })()
+                                                                        )}
                                                                     </>
                                                                 )}
                                                             </div>
+
+                                                            <div className="flex items-center gap-4">
+                                                                <div className="flex flex-col items-end">
+                                                                    <span className="font-mono font-medium" style={{ fontSize: '1rem' }}>
+                                                                        {hideBalances ? '••••' : (tx.isReverse ? tx.quoteAmount : tx.baseAmount).toLocaleString()} {tx.isReverse ? tx.quoteCurrency : tx.baseCurrency}
+                                                                    </span>
+                                                                    {(tx.quoteAmount > 0 && !tx.isReverse) && (
+                                                                        <div className="flex items-center gap-1">
+                                                                            {loadingPrice ? (
+                                                                                <div className="h-3 w-12 bg-white-10 rounded animate-pulse ml-auto" />
+                                                                            ) : (
+                                                                                <span className="text-xs text-muted">
+                                                                                    {(() => {
+                                                                                        const dateStr = tx.date.split('T')[0];
+                                                                                        const txQuoteCurrency = (tx.quoteCurrency || selectedAsset.currency || 'USD').toUpperCase();
+                                                                                        let costFx = 1;
+                                                                                        if (txQuoteCurrency !== baseCurrency) {
+                                                                                            costFx = historicalFx[dateStr] || fxRate || 1;
+                                                                                        }
+                                                                                        return `${((tx.quoteAmount / tx.baseAmount) * costFx).toLocaleString(undefined, { maximumFractionDigits: 2 })} ${baseCurrency === 'USD' ? '$' : baseCurrency}`;
+                                                                                    })()}
+                                                                                </span>
+                                                                            )}
+                                                                            {tx.type === 'BUY' && (
+                                                                                loadingPrice || !assetPrice ? (
+                                                                                    <div className="h-3 w-8 bg-white-10 rounded animate-pulse ml-auto" style={{ marginLeft: '5px' }} />
+                                                                                ) : (
+                                                                                    <span className={`text-xs text-[10px] ${tx.affectsFiatBalance === false ? 'text-muted/50 decoration-line-through' : 'text-muted'}`} title={tx.affectsFiatBalance === false ? "Did not deduct from balance" : "Deducted from balance"}>
+                                                                                        | {hideBalances ? '••••••' : (() => {
+                                                                                            const dateStr = tx.date.split('T')[0];
+                                                                                            const txQuoteCurrency = (tx.quoteCurrency || selectedAsset.currency || 'USD').toUpperCase();
+                                                                                            const hFx = txQuoteCurrency !== baseCurrency ? (historicalFx[dateStr] || fxRate || 1) : 1;
+                                                                                            return `${(tx.quoteAmount * hFx).toLocaleString(undefined, { maximumFractionDigits: 2 })} ${baseCurrency === 'USD' ? '$' : baseCurrency}`;
+                                                                                        })()}
+                                                                                    </span>
+                                                                                )
+                                                                            )}
+                                                                        </div>
+                                                                    )}
+                                                                </div>
+
+                                                                <div className="flex flex-col">
+                                                                    {!tx.isReverse && (
+                                                                        <>
+                                                                            <button onClick={() => handleEdit(tx)} className="p-1 text-muted hover:text-white hover-bg-surface rounded-full transition-all" style={{ background: 'transparent', border: 'none', cursor: 'pointer' }}>
+                                                                                <Edit2 size={16} />
+                                                                            </button>
+                                                                            <button onClick={() => setDeleteConfirm({ id: tx.id, type: tx.type, date: tx.date })} className="p-1 text-danger hover-bg-surface rounded-full transition-all" style={{ background: 'transparent', border: 'none', cursor: 'pointer' }}>
+                                                                                <Trash2 size={16} />
+                                                                            </button>
+                                                                        </>
+                                                                    )}
+                                                                </div>
+                                                            </div>
                                                         </div>
-                                                    </div>
-                                                ))
-                                            )}
+                                                    ))
+                                                )}
+                                            </div>
                                         </div>
-                                    </div>
+                                    )}
                                 </div>
                             )}
 
@@ -792,10 +870,11 @@ function TransactionForm({ holding, existingTx, transactions, onSave, onCancel, 
     // Available transaction types - bare currencies are limited
     const availableTypes = isBareCurrency ? ['DEPOSIT', 'WITHDRAW'] : ['BUY', 'SELL', 'DEPOSIT', 'WITHDRAW'];
 
-    // Show portfolio selector if in 'All' view with multiple portfolios
-    const showPortfolioSelector = currentPortfolioId === 'all' && portfolios.length > 1;
+    // Show portfolio selector if in 'All' view with multiple regular (non-watchlist) portfolios
+    const regularPortfolios = portfolios.filter(p => !p.isWatchlist);
+    const showPortfolioSelector = currentPortfolioId === 'all' && regularPortfolios.length > 1;
     const [selectedPortfolioId, setSelectedPortfolioId] = useState(
-        existingTx?.portfolioId || (portfolios.length > 0 ? portfolios[0].id : 1)
+        existingTx?.portfolioId || (regularPortfolios.length > 0 ? regularPortfolios[0].id : 1)
     );
 
     // Detect quote currency from symbol (e.g., BTC-EUR -> EUR, SAP.DE -> EUR)
@@ -1035,7 +1114,7 @@ function TransactionForm({ holding, existingTx, transactions, onSave, onCancel, 
                             MozAppearance: 'none'
                         }}
                     >
-                        {portfolios.map(p => (
+                        {portfolios.filter(p => !p.isWatchlist).map(p => (
                             <option key={p.id} value={p.id} style={{ background: '#121212', color: 'white' }}>{p.name}</option>
                         ))}
                     </select>

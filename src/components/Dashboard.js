@@ -20,7 +20,8 @@ import {
     getSetting,
     setSetting,
     ensureDefaultPortfolio,
-    getAllPortfolios
+    getAllPortfolios,
+    getWatchlistAssets
 } from '@/utils/db';
 
 const TIMEFRAMES = ['1D', '1W', '1M', '1Y', 'YTD', 'ALL'];
@@ -44,6 +45,8 @@ export default function Dashboard() {
     const [refreshTrigger, setRefreshTrigger] = useState(0);
     const [portfolios, setPortfolios] = useState([]);
     const [currentPortfolioId, setCurrentPortfolioId] = useState('all'); // 'all' or portfolio id
+    const [isWatchlistView, setIsWatchlistView] = useState(false);
+    const [watchlistAssets, setWatchlistAssets] = useState([]);
     const prevTimeframeRef = useRef(timeframe);
     const prevBaseCurrencyRef = useRef(baseCurrency);
     const prevBaseCurrencyQuotesRef = useRef(baseCurrency);
@@ -108,11 +111,24 @@ export default function Dashboard() {
         setCurrentPortfolioId(portfolioId);
         await setSetting('current_portfolio', portfolioId);
 
-        // Reload transactions for the new portfolio
-        const newTransactions = portfolioId === 'all'
-            ? await getAllTransactions()
-            : await getTransactionsByPortfolio(portfolioId);
-        setTransactions(newTransactions || []);
+        // Check if this is a watchlist
+        const portfolio = portfolios.find(p => p.id === portfolioId);
+        const isWatchlist = portfolio?.isWatchlist || false;
+        setIsWatchlistView(isWatchlist);
+
+        if (isWatchlist) {
+            // Load watchlist assets instead of transactions
+            const assets = await getWatchlistAssets(portfolioId);
+            setWatchlistAssets(assets);
+            setTransactions([]);
+        } else {
+            // Reload transactions for the new portfolio
+            setWatchlistAssets([]);
+            const newTransactions = portfolioId === 'all'
+                ? await getAllTransactions()
+                : await getTransactionsByPortfolio(portfolioId);
+            setTransactions(newTransactions || []);
+        }
 
         // Trigger data refresh
         setPricesLoading(true);
@@ -144,9 +160,13 @@ export default function Dashboard() {
     useEffect(() => {
         if (loading) return;
 
-        // Identification of unique assets
-        const baseAssets = [...new Set(transactions.map(t => t.baseCurrency))];
-        const initialQuoteAssets = [...new Set(transactions.map(t => t.quoteCurrency))].filter(c => c && c !== baseCurrency);
+        // Identification of unique assets - include watchlist assets if in watchlist mode
+        const baseAssets = isWatchlistView
+            ? [...new Set(watchlistAssets.map(a => a.symbol))]
+            : [...new Set(transactions.map(t => t.baseCurrency))];
+        const initialQuoteAssets = isWatchlistView
+            ? []
+            : [...new Set(transactions.map(t => t.quoteCurrency))].filter(c => c && c !== baseCurrency);
 
         if (baseAssets.length === 0) {
             setPricesLoading(false);
@@ -281,13 +301,37 @@ export default function Dashboard() {
         const interval = setInterval(fetchQuotes, 30000);
         return () => clearInterval(interval);
 
-    }, [transactions, loading, baseCurrency, refreshTrigger]);
+    }, [transactions, loading, baseCurrency, refreshTrigger, isWatchlistView, watchlistAssets]);
 
     // Recalculate Holdings when transactions or prices change
     useEffect(() => {
-        const h = calculateHoldings(transactions, prices, baseCurrency);
-        setHoldings(h);
-    }, [transactions, prices, baseCurrency]);
+        if (isWatchlistView && watchlistAssets.length > 0) {
+            // For watchlists, create holdings from watchlist assets with unit amounts
+            const watchlistHoldings = watchlistAssets.map(asset => {
+                const priceData = prices[asset.symbol] || {};
+                const price = priceData.price || 0;
+                const change24h = priceData.changePercent || 0;
+                return {
+                    asset: asset.symbol,
+                    name: asset.name || asset.symbol,
+                    symbol: asset.symbol,
+                    amount: 1, // Watchlist tracks with notional 1 unit
+                    price: price,
+                    value: price, // Value = price * 1
+                    change24h: change24h,
+                    dailyPnl: 0, // No P&L for watchlist
+                    originalType: asset.type,
+                    currency: asset.currency,
+                    isFiat: false, // Watchlists don't have fiat treatment
+                    isWatchlistItem: true
+                };
+            });
+            setHoldings(watchlistHoldings);
+        } else {
+            const h = calculateHoldings(transactions, prices, baseCurrency);
+            setHoldings(h);
+        }
+    }, [transactions, prices, baseCurrency, isWatchlistView, watchlistAssets]);
 
     // UI Scroll reset: Only on timeframe change
     useEffect(() => {
@@ -788,9 +832,10 @@ export default function Dashboard() {
                             <button
                                 key={p.id}
                                 onClick={() => handlePortfolioChange(p.id)}
-                                className={`pill ${currentPortfolioId === p.id ? 'active' : ''}`}
+                                className={`pill ${currentPortfolioId === p.id ? 'active' : ''} ${p.isWatchlist ? 'watchlist' : ''}`}
                                 style={{ flexShrink: 0 }}
                             >
+                                {p.isWatchlist && <Eye size={12} className="inline mr-1" />}
                                 {p.name}
                             </button>
                         ))}
@@ -807,7 +852,9 @@ export default function Dashboard() {
                             <header className="flex flex-col items-start px-1 pb-8 gap-4 w-full">
                                 <div className="flex items-center justify-between w-full gap-2">
                                     <div className="flex items-center gap-2 min-w-0">
-                                        <span className="text-muted text-xs sm:text-sm uppercase tracking-wider font-bold truncate">Portfolio Performance</span>
+                                        <span className="text-muted text-xs sm:text-sm uppercase tracking-wider font-bold truncate">
+                                            {isWatchlistView ? 'Watchlist' : 'Portfolio Performance'}
+                                        </span>
                                         <button
                                             onClick={togglePrivacy}
                                             className="p-1 text-muted hover:text-white transition-colors shrink-0"
@@ -867,13 +914,17 @@ export default function Dashboard() {
                                             <>
                                                 <div className="flex flex-wrap items-center gap-3">
                                                     <div className="text-2xl font-bold tracking-tight">
-                                                        {hideBalances ? '••••••' : `${totalValue.toLocaleString(undefined, { maximumFractionDigits: 2 })} ${baseCurrency === 'USD' ? '$' : baseCurrency}`}
+                                                        {isWatchlistView
+                                                            ? `${holdings.length} assets`
+                                                            : (hideBalances ? '••••••' : `${totalValue.toLocaleString(undefined, { maximumFractionDigits: 2 })} ${baseCurrency === 'USD' ? '$' : baseCurrency}`)}
                                                     </div>
                                                 </div>
-                                                <div className="flex gap-4">
-                                                    <div className="h-6 w-32 bg-white-10 rounded animate-pulse" />
-                                                    <div className="h-6 w-40 bg-white-10 rounded animate-pulse" />
-                                                </div>
+                                                {!isWatchlistView && (
+                                                    <div className="flex gap-4">
+                                                        <div className="h-6 w-32 bg-white-10 rounded animate-pulse" />
+                                                        <div className="h-6 w-40 bg-white-10 rounded animate-pulse" />
+                                                    </div>
+                                                )}
                                             </>
                                         )}
                                     </div>
@@ -881,9 +932,11 @@ export default function Dashboard() {
                                     <div className="flex flex-col gap-1">
                                         <div className="flex flex-wrap items-center gap-3">
                                             <div className="text-2xl font-bold tracking-tight">
-                                                {hideBalances ? '••••••' : `${totalValue.toLocaleString(undefined, { maximumFractionDigits: 2 })} ${baseCurrency === 'USD' ? '$' : baseCurrency}`}
+                                                {isWatchlistView
+                                                    ? `${holdings.length} assets`
+                                                    : (hideBalances ? '••••••' : `${totalValue.toLocaleString(undefined, { maximumFractionDigits: 2 })} ${baseCurrency === 'USD' ? '$' : baseCurrency}`)}
                                             </div>
-                                            {timeframe !== '1D' && (
+                                            {!isWatchlistView && timeframe !== '1D' && (
                                                 <div style={{ marginLeft: '5px' }} className={`text-xs px-2 py-0.5 rounded-md font-medium ${displayDiffDay >= 0 ? 'bg-success/10 text-success' : 'bg-danger/10 text-danger'}`}>
                                                     {hideBalances ? (
                                                         `(${displayPercentDay >= 0 ? '+' : ''}${displayPercentDay.toFixed(2)}%)`
@@ -893,57 +946,64 @@ export default function Dashboard() {
                                                 </div>
                                             )}
                                         </div>
-                                        <div className={`text font-medium flex flex-wrap items-center gap-x-3`}>
-                                            <div className={safeDiff >= 0 ? 'text-success' : 'text-danger'}>
-                                                {hideBalances ? (
-                                                    <span className="flex items-center gap-1">
-                                                        {safePercent >= 0 ? '+' : ''}{safePercent.toFixed(2)}%
-                                                    </span>
-                                                ) : (
-                                                    <span>{safeDiff >= 0 ? '+' : '-'}{Math.abs(safeDiff).toLocaleString(undefined, { maximumFractionDigits: 2 })} {baseCurrency === 'USD' ? '$' : baseCurrency} ({safePercent >= 0 ? '+' : ''}{safePercent.toFixed(2)}%)</span>
-                                                )}
+                                        {!isWatchlistView && (
+                                            <div className={`text font-medium flex flex-wrap items-center gap-x-3`}>
+                                                <div className={safeDiff >= 0 ? 'text-success' : 'text-danger'}>
+                                                    {hideBalances ? (
+                                                        <span className="flex items-center gap-1">
+                                                            {safePercent >= 0 ? '+' : ''}{safePercent.toFixed(2)}%
+                                                        </span>
+                                                    ) : (
+                                                        <span>{safeDiff >= 0 ? '+' : '-'}{Math.abs(safeDiff).toLocaleString(undefined, { maximumFractionDigits: 2 })} {baseCurrency === 'USD' ? '$' : baseCurrency} ({safePercent >= 0 ? '+' : ''}{safePercent.toFixed(2)}%)</span>
+                                                    )}
+                                                </div>
                                             </div>
-                                        </div>
+                                        )}
                                     </div>
                                 )}
                             </header>
 
-                            <div className="no-select">
-                                <ProfitChart
-                                    data={history}
-                                    baseCurrency={baseCurrency}
-                                    hideBalances={hideBalances}
-                                    loading={historyLoading}
-                                />
-                            </div>
+                            {/* Charts hidden for watchlists */}
+                            {!isWatchlistView && (
+                                <>
+                                    <div className="no-select">
+                                        <ProfitChart
+                                            data={history}
+                                            baseCurrency={baseCurrency}
+                                            hideBalances={hideBalances}
+                                            loading={historyLoading}
+                                        />
+                                    </div>
 
 
-                            <div className="flex justify-between mb-8 overflow-x-auto gap-1 sm:gap-2 no-scrollbar">
-                                {TIMEFRAMES.map((tf) => (
-                                    <button
-                                        key={tf}
-                                        onClick={() => {
-                                            setTimeframe(tf);
-                                            localStorage.setItem('portfolio_chart_timeframe', tf);
-                                        }}
-                                        className={`btn ${timeframe === tf ? 'bg-white text-black shadow-lg' : 'btn-ghost opacity-60 hover:opacity-100'}`}
-                                        style={{
-                                            background: timeframe === tf ? 'var(--foreground)' : 'transparent',
-                                            color: timeframe === tf ? 'var(--background)' : 'var(--muted)',
-                                            flex: 1,
-                                            minWidth: '45px',
-                                            padding: '8px 4px',
-                                            fontSize: '0.75rem'
-                                        }}
-                                    >
-                                        {tf}
-                                    </button>
-                                ))}
-                            </div>
+                                    <div className="flex justify-between mb-8 overflow-x-auto gap-1 sm:gap-2 no-scrollbar">
+                                        {TIMEFRAMES.map((tf) => (
+                                            <button
+                                                key={tf}
+                                                onClick={() => {
+                                                    setTimeframe(tf);
+                                                    localStorage.setItem('portfolio_chart_timeframe', tf);
+                                                }}
+                                                className={`btn ${timeframe === tf ? 'bg-white text-black shadow-lg' : 'btn-ghost opacity-60 hover:opacity-100'}`}
+                                                style={{
+                                                    background: timeframe === tf ? 'var(--foreground)' : 'transparent',
+                                                    color: timeframe === tf ? 'var(--background)' : 'var(--muted)',
+                                                    flex: 1,
+                                                    minWidth: '45px',
+                                                    padding: '8px 4px',
+                                                    fontSize: '0.75rem'
+                                                }}
+                                            >
+                                                {tf}
+                                            </button>
+                                        ))}
+                                    </div>
 
-                            <div className="mb-6 desktop-only no-select">
-                                <CompositionChart holdings={holdings} baseCurrency={baseCurrency} hideBalances={hideBalances} loading={pricesLoading} />
-                            </div>
+                                    <div className="mb-6 desktop-only no-select">
+                                        <CompositionChart holdings={holdings} baseCurrency={baseCurrency} hideBalances={hideBalances} loading={pricesLoading} />
+                                    </div>
+                                </>
+                            )}
                         </div>
 
                         {/* Sidebar: Balance & Holdings */}
@@ -955,6 +1015,7 @@ export default function Dashboard() {
                                 onAddAsset={openAddModal}
                                 hideBalances={hideBalances}
                                 baseCurrency={baseCurrency}
+                                isWatchlist={isWatchlistView}
                             />
                         </div>
                     </div>
@@ -970,9 +1031,19 @@ export default function Dashboard() {
                     baseCurrency={baseCurrency}
                     portfolios={portfolios}
                     currentPortfolioId={currentPortfolioId}
+                    isWatchlist={isWatchlistView}
+                    watchlistAssets={watchlistAssets}
                     onClose={() => setIsModalOpen(false)}
                     onSave={handleSaveTransaction}
                     onDelete={handleDeleteTransaction}
+                    onWatchlistUpdate={async () => {
+                        // Refresh watchlist assets
+                        if (currentPortfolioId !== 'all') {
+                            const assets = await getWatchlistAssets(currentPortfolioId);
+                            setWatchlistAssets(assets);
+                            setRefreshTrigger(prev => prev + 1);
+                        }
+                    }}
                 />
             )}
 
