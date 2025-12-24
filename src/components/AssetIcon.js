@@ -1,9 +1,12 @@
 import { useState, useMemo, useEffect } from 'react';
 
-export default function AssetIcon({ symbol, type, size = 40, className = "" }) {
+export default function AssetIcon({ symbol, type, isFiat, size = 40, className = "" }) {
     const [iconSrc, setIconSrc] = useState(null);
     const [imageError, setImageError] = useState(false);
     const [loading, setLoading] = useState(true);
+
+    // List of known fiat currencies to skip logo lookups
+    const COMMON_FIAT = ['USD', 'EUR', 'AUD', 'GBP', 'JPY', 'CAD', 'CHF', 'CNY', 'HKD', 'NZD', 'MXN', 'SGD', 'INR', 'BRL', 'RUB'];
 
     // Clean symbol for icon lookup and display
     // Removes trailing =X, =F, .X, =, . and other common suffixes
@@ -13,6 +16,11 @@ export default function AssetIcon({ symbol, type, size = 40, className = "" }) {
         // This handles: =X, =F, .X, .F, =, .
         return symbol.toUpperCase().replace(/[=.](X|F)?$/, '').replace(/[=.]+$/, '');
     }, [symbol]);
+
+    // Check if it's a currency based on prop or name
+    const shouldSkipLogo = useMemo(() => {
+        return isFiat || COMMON_FIAT.includes(cleanSym);
+    }, [isFiat, cleanSym]);
 
     // Generate a consistent gradient based on the clean symbol
     const gradient = useMemo(() => {
@@ -34,7 +42,7 @@ export default function AssetIcon({ symbol, type, size = 40, className = "" }) {
 
     // Fetch icon via API to avoid console errors
     useEffect(() => {
-        if (!symbol) {
+        if (!symbol || shouldSkipLogo) {
             setLoading(false);
             return;
         }
@@ -71,7 +79,7 @@ export default function AssetIcon({ symbol, type, size = 40, className = "" }) {
         return () => {
             active = false;
         };
-    }, [symbol, type]);
+    }, [symbol, type, shouldSkipLogo]);
 
     // Cleanup object URL when iconSrc changes
     useEffect(() => {
@@ -95,7 +103,8 @@ export default function AssetIcon({ symbol, type, size = 40, className = "" }) {
         );
     }
 
-    if (iconSrc && !imageError) {
+    // Skip logo and show initials if it's a fiat currency or image failed
+    if (iconSrc && !imageError && !shouldSkipLogo) {
         return (
             <div
                 className={`relative shrink-0 rounded-full overflow-hidden ${className}`}

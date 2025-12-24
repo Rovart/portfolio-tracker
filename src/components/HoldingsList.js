@@ -180,6 +180,7 @@ export default function HoldingsList({ holdings, onSelect, onAddAsset, loading, 
                     <AssetIcon
                         symbol={holding.asset}
                         type={holding.originalType}
+                        isFiat={holding.isFiat}
                         size={40}
                         className="mr-3"
                     />
