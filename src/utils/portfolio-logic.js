@@ -32,6 +32,7 @@ export function calculateHoldings(transactions, priceMap, baseCurrency = 'USD') 
     const cashFlow = {}; // To calculate total amount made (in local quote currency)
     const quoteMap = {}; // Map normalizedAsset -> quoteCurrency
     const priceSymbolMap = {}; // Map normalizedAsset -> actual symbol for price lookup
+    const allQuoteCurrencies = {}; // Map normalizedAsset -> Set of all quote currencies used
 
     // Sort ascending for calculation
     const sortedTx = [...transactions].sort((a, b) => new Date(a.date) - new Date(b.date));
@@ -46,17 +47,50 @@ export function calculateHoldings(transactions, priceMap, baseCurrency = 'USD') 
         if (base && !balances[base]) balances[base] = 0;
         if (base && !cashFlow[base]) cashFlow[base] = 0;
 
-        // Track which symbol to use for fetching prices (prefer the one with most info)
-        if (base && !priceSymbolMap[base]) {
-            priceSymbolMap[base] = rawBase;
-        }
-
-        if (base && !quoteMap[base]) {
+        // Track all quote currencies used for this asset (for proper FX handling)
+        if (base) {
+            if (!allQuoteCurrencies[base]) allQuoteCurrencies[base] = new Set();
             if (rawQuote) {
-                quoteMap[base] = rawQuote;
+                allQuoteCurrencies[base].add(rawQuote.toUpperCase());
             } else if (rawBase.includes('-') || rawBase.includes('/')) {
                 const parts = rawBase.split(/[-/]/);
-                quoteMap[base] = parts[parts.length - 1].toUpperCase();
+                allQuoteCurrencies[base].add(parts[parts.length - 1].toUpperCase());
+            }
+        }
+
+        // Track which symbol to use for fetching prices
+        // PREFER USD pairs for crypto assets since they're most liquid and consistent
+        if (base) {
+            const existingSym = priceSymbolMap[base];
+            const currentQuote = rawBase.includes('-') ? rawBase.split('-')[1]?.toUpperCase() : (rawBase.includes('/') ? rawBase.split('/')[1]?.toUpperCase() : null);
+            const existingQuote = existingSym?.includes('-') ? existingSym.split('-')[1]?.toUpperCase() : (existingSym?.includes('/') ? existingSym.split('/')[1]?.toUpperCase() : null);
+
+            // Prefer USD pairs over other pairs for crypto
+            if (!existingSym) {
+                priceSymbolMap[base] = rawBase;
+            } else if (currentQuote === 'USD' && existingQuote && existingQuote !== 'USD') {
+                // Upgrade to USD pair
+                priceSymbolMap[base] = rawBase;
+            }
+        }
+
+        // Track the quote currency used, preferring USD for consistency
+        if (base) {
+            let currentPairQuote = null;
+            if (rawQuote) {
+                currentPairQuote = rawQuote.toUpperCase();
+            } else if (rawBase.includes('-') || rawBase.includes('/')) {
+                const parts = rawBase.split(/[-/]/);
+                currentPairQuote = parts[parts.length - 1].toUpperCase();
+            }
+
+            if (currentPairQuote) {
+                if (!quoteMap[base]) {
+                    quoteMap[base] = currentPairQuote;
+                } else if (currentPairQuote === 'USD' && quoteMap[base] !== 'USD') {
+                    // Prefer USD as the quote currency
+                    quoteMap[base] = 'USD';
+                }
             }
         }
 

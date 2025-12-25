@@ -54,6 +54,36 @@ export default function Dashboard() {
 
     const CURRENCIES = ['USD', 'EUR', 'GBP', 'JPY', 'CAD', 'AUD', 'CHF', 'CNY', 'HKD', 'SGD', 'IDR'];
 
+    // Handle Android back button/gesture
+    // When on the main Dashboard (no modals open), exit the app
+    useEffect(() => {
+        let backButtonListener = null;
+
+        const setupBackButton = async () => {
+            try {
+                const { App } = await import('@capacitor/app');
+                backButtonListener = await App.addListener('backButton', () => {
+                    // Only exit app if no modals are open
+                    // The modals handle their own back button via their own listeners
+                    if (!isModalOpen && !isSettingsModalOpen) {
+                        App.exitApp();
+                    }
+                });
+            } catch (e) {
+                // Capacitor App plugin not available (web browser)
+                console.log('Capacitor App plugin not available');
+            }
+        };
+
+        setupBackButton();
+
+        return () => {
+            if (backButtonListener) {
+                backButtonListener.remove();
+            }
+        };
+    }, [isModalOpen, isSettingsModalOpen]);
+
     // Load from IndexedDB
     useEffect(() => {
         async function loadData() {
