@@ -389,14 +389,45 @@ export default function Dashboard() {
             // For watchlists, create holdings from watchlist assets with unit amounts
             const watchlistHoldings = watchlistAssets.map(asset => {
                 const priceData = prices[asset.symbol] || {};
-                const price = priceData.price || 0;
+                const rawPrice = priceData.price || 0;
                 const change24h = priceData.changePercent || 0;
-                // Nominal change (dailyPnl for watchlist items)
+
+                // Get the asset's native currency (usually USD for most assets)
+                const assetCurrency = (priceData.currency || asset.currency || 'USD').toUpperCase();
+
+                // Apply FX conversion if needed
+                let fxRate = 1;
+                if (assetCurrency !== baseCurrency) {
+                    // Pivot via USD: assetCurrency -> USD -> baseCurrency
+                    let toUsdRate = 1;
+                    if (assetCurrency !== 'USD') {
+                        const toUsdPair = prices[`${assetCurrency}USD=X`] || prices[assetCurrency];
+                        if (toUsdPair && toUsdPair.price) {
+                            toUsdRate = parseFloat(toUsdPair.price);
+                        }
+                    }
+
+                    let fromUsdRate = 1;
+                    if (baseCurrency !== 'USD') {
+                        const fromUsdPair = prices[`${baseCurrency}USD=X`] || prices[baseCurrency];
+                        if (fromUsdPair && fromUsdPair.price) {
+                            // baseCurrency/USD gives us "1 base = X USD", we need USD/base = 1/X
+                            fromUsdRate = 1 / parseFloat(fromUsdPair.price);
+                        }
+                    }
+
+                    fxRate = toUsdRate * fromUsdRate;
+                }
+
+                const price = rawPrice * fxRate;
+
+                // Nominal change (dailyPnl for watchlist items) - also converted
                 let change = priceData.change;
                 if (change === undefined || change === null) {
                     // Fallback calculation if nominal change is missing
-                    change = price - (price / (1 + change24h / 100));
+                    change = rawPrice - (rawPrice / (1 + change24h / 100));
                 }
+                const dailyPnl = (change || 0) * fxRate;
 
                 return {
                     asset: asset.symbol,
@@ -406,9 +437,10 @@ export default function Dashboard() {
                     price: price,
                     value: price, // Value = price * 1
                     change24h: change24h,
-                    dailyPnl: change || 0, // Use price change as P&L for watchlist
+                    dailyPnl: dailyPnl,
                     originalType: asset.type,
                     currency: asset.currency,
+                    quoteCurrency: assetCurrency, // Track original currency for display
                     isFiat: false, // Watchlists don't have fiat treatment
                     isWatchlistItem: true
                 };
