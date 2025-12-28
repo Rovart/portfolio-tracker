@@ -1,7 +1,7 @@
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
-import { ArrowLeft, Plus, Trash2, Edit2, Check, X, Upload, Download, FolderOpen, ChevronDown, Star, Bell, Eye, GripVertical } from 'lucide-react';
+import Link from 'next/link';
+import { ArrowLeft, Plus, Trash2, Edit2, Check, X, Upload, Download, FolderOpen, ChevronDown, Star, Bell, Eye, GripVertical, Shield, FileText, ChevronRight } from 'lucide-react';
 import ConfirmModal from './ConfirmModal';
 import {
     getAllPortfolios,
@@ -481,6 +481,7 @@ export default function SettingsModal({ onClose, onPortfolioChange, currentPortf
     const tabs = [
         { id: 'portfolios', label: 'Portfolios', icon: FolderOpen },
         { id: 'export', label: 'Export/Import', icon: Download },
+        { id: 'legal', label: 'Legal', icon: Shield },
         // DISABLED: Notifications tab (uncomment when live notifications are ready)
         // { id: 'notifications', label: 'Notifications', icon: Bell }
     ];
@@ -825,6 +826,54 @@ export default function SettingsModal({ onClose, onPortfolioChange, currentPortf
                                 onChange={handleImportCsv}
                                 style={{ display: 'none' }}
                             />
+                        </div>
+                    )}
+                    {activeTab === 'legal' && (
+                        <div className="flex flex-col gap-3">
+                            <p className="text-muted text-sm pb-2">
+                                Review our policies and terms of service.
+                            </p>
+
+                            <Link
+                                href="/privacy"
+                                className="flex items-center justify-between p-4 rounded-xl hover:bg-white/5 transition-all text-white no-underline"
+                                style={{ border: '1px solid rgba(255,255,255,0.08)', background: 'rgba(255,255,255,0.03)' }}
+                            >
+                                <div className="flex items-center gap-3">
+                                    <div className="p-3 rounded-full bg-blue-500/10">
+                                        <Shield size={20} className="text-blue-400" />
+                                    </div>
+                                    <div>
+                                        <div className="font-medium">Privacy Policy</div>
+                                        <div className="text-xs text-muted">How we handle your data</div>
+                                    </div>
+                                </div>
+                                <ChevronRight size={18} className="text-muted" />
+                            </Link>
+
+                            <Link
+                                href="/terms"
+                                className="flex items-center justify-between p-4 rounded-xl hover:bg-white/5 transition-all text-white no-underline"
+                                style={{ border: '1px solid rgba(255,255,255,0.08)', background: 'rgba(255,255,255,0.03)' }}
+                            >
+                                <div className="flex items-center gap-3">
+                                    <div className="p-3 rounded-full bg-purple-500/10">
+                                        <FileText size={20} className="text-purple-400" />
+                                    </div>
+                                    <div>
+                                        <div className="font-medium">Terms & Conditions</div>
+                                        <div className="text-xs text-muted">Legal agreement and disclaimers</div>
+                                    </div>
+                                </div>
+                                <ChevronRight size={18} className="text-muted" />
+                            </Link>
+
+                            <div className="mt-4 p-4 rounded-xl text-center" style={{ border: '1px solid rgba(255,255,255,0.05)', background: 'rgba(255,255,255,0.01)' }}>
+                                <p className="text-xs text-muted leading-relaxed">
+                                    Monetra is a locally-stored portfolio tracker.<br />
+                                    All your data stays exclusively on your device.
+                                </p>
+                            </div>
                         </div>
                     )}
 
