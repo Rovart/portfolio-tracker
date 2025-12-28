@@ -12,7 +12,7 @@ const config: CapacitorConfig = {
     SplashScreen: {
       launchShowDuration: 2000,
       launchAutoHide: true,
-      backgroundColor: '#0a0a0a',
+      backgroundColor: '#000000',
       showSpinner: false,
       splashFullScreen: true,
       splashImmersive: true
@@ -22,7 +22,7 @@ const config: CapacitorConfig = {
     contentInset: 'automatic'
   },
   android: {
-    backgroundColor: '#0a0a0a'
+    backgroundColor: '#000000'
   }
 };
 
