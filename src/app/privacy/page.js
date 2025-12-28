@@ -14,8 +14,9 @@ function PrivacyPolicyContent() {
 
     const handleBack = () => {
         if (fromSettings) {
-            // Use replace to avoid adding extra history entry
-            router.replace('/?settings=true');
+            // Set flag in sessionStorage so Dashboard opens settings immediately
+            sessionStorage.setItem('openSettings', 'true');
+            router.push('/');
         } else {
             router.back();
         }

@@ -35,7 +35,17 @@ export default function Dashboard() {
     const [timeframe, setTimeframe] = useState('1D');
     const [selectedHolding, setSelectedHolding] = useState(null);
     const [isModalOpen, setIsModalOpen] = useState(false);
-    const [isSettingsModalOpen, setIsSettingsModalOpen] = useState(false);
+    // Check sessionStorage synchronously to open settings immediately (no flash)
+    const [isSettingsModalOpen, setIsSettingsModalOpen] = useState(() => {
+        if (typeof window !== 'undefined') {
+            const shouldOpen = sessionStorage.getItem('openSettings') === 'true';
+            if (shouldOpen) {
+                sessionStorage.removeItem('openSettings');
+                return true;
+            }
+        }
+        return false;
+    });
     const [modalMode, setModalMode] = useState('MANAGE');
     const [loading, setLoading] = useState(true);
     const [pricesLoading, setPricesLoading] = useState(true);
@@ -56,7 +66,7 @@ export default function Dashboard() {
     const CURRENCIES = ['USD', 'EUR', 'GBP', 'JPY', 'CAD', 'AUD', 'CHF', 'CNY', 'HKD', 'SGD', 'IDR'];
 
     // Handle Android back button/gesture
-    // When on the main Dashboard (no modals open), exit the app
+    // When modals are open, close them; when on main Dashboard, exit the app
     useEffect(() => {
         let backButtonListener = null;
 
@@ -64,15 +74,22 @@ export default function Dashboard() {
             try {
                 const { App } = await import('@capacitor/app');
                 backButtonListener = await App.addListener('backButton', () => {
-                    // Only exit app if no modals are open
-                    // The modals handle their own back button via their own listeners
-                    if (!isModalOpen && !isSettingsModalOpen) {
-                        App.exitApp();
+                    // Close Settings modal if open
+                    if (isSettingsModalOpen) {
+                        setIsSettingsModalOpen(false);
+                        return;
                     }
+                    // Close Transaction modal if open
+                    if (isModalOpen) {
+                        setIsModalOpen(false);
+                        setSelectedHolding(null);
+                        return;
+                    }
+                    // No modals open - exit the app
+                    App.exitApp();
                 });
             } catch (e) {
                 // Capacitor App plugin not available (web browser)
-                console.log('Capacitor App plugin not available');
             }
         };
 
@@ -143,14 +160,19 @@ export default function Dashboard() {
         loadData();
     }, []);
 
-    // Auto-open settings modal if ?settings=true is in URL (e.g., returning from privacy/terms pages)
+    // Auto-open settings modal if ?settings=true is in URL or sessionStorage flag is set
     const searchParams = useSearchParams();
     const router = useRouter();
     useEffect(() => {
+        // Check URL param (fallback for direct links)
         if (searchParams.get('settings') === 'true') {
             setIsSettingsModalOpen(true);
-            // Clean up the URL param
             router.replace('/', { scroll: false });
+        }
+        // Check sessionStorage (for instant open without flash)
+        if (typeof window !== 'undefined' && sessionStorage.getItem('openSettings') === 'true') {
+            sessionStorage.removeItem('openSettings');
+            setIsSettingsModalOpen(true);
         }
     }, [searchParams, router]);
 
