@@ -836,7 +836,7 @@ export default function SettingsModal({ onClose, onPortfolioChange, currentPortf
                             </p>
 
                             <Link
-                                href="/privacy"
+                                href="/privacy?from=settings"
                                 className="flex items-center justify-between p-4 rounded-xl hover:bg-white/5 transition-all text-white no-underline"
                                 style={{ border: '1px solid rgba(255,255,255,0.08)', background: 'rgba(255,255,255,0.03)' }}
                             >
@@ -853,7 +853,7 @@ export default function SettingsModal({ onClose, onPortfolioChange, currentPortf
                             </Link>
 
                             <Link
-                                href="/terms"
+                                href="/terms?from=settings"
                                 className="flex items-center justify-between p-4 rounded-xl hover:bg-white/5 transition-all text-white no-underline"
                                 style={{ border: '1px solid rgba(255,255,255,0.08)', background: 'rgba(255,255,255,0.03)' }}
                             >

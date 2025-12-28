@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useRef, useCallback } from 'react';
+import { useSearchParams, useRouter } from 'next/navigation';
 import { Eye, EyeOff, Search, Settings } from 'lucide-react';
 import ProfitChart from './ProfitChart';
 import CompositionChart from './CompositionChart';
@@ -142,7 +143,16 @@ export default function Dashboard() {
         loadData();
     }, []);
 
-
+    // Auto-open settings modal if ?settings=true is in URL (e.g., returning from privacy/terms pages)
+    const searchParams = useSearchParams();
+    const router = useRouter();
+    useEffect(() => {
+        if (searchParams.get('settings') === 'true') {
+            setIsSettingsModalOpen(true);
+            // Clean up the URL param
+            router.replace('/', { scroll: false });
+        }
+    }, [searchParams, router]);
 
     const togglePrivacy = async () => {
         const newState = !hideBalances;

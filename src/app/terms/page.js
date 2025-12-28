@@ -1,13 +1,23 @@
 'use client';
 
 import { ArrowLeft, Mail, FileText } from 'lucide-react';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import APP_CONFIG from '@/config/app';
 import styles from './terms.module.css';
 
 export default function TermsAndConditions() {
     const router = useRouter();
+    const searchParams = useSearchParams();
     const { legal, name } = APP_CONFIG;
+    const fromSettings = searchParams.get('from') === 'settings';
+
+    const handleBack = () => {
+        if (fromSettings) {
+            router.push('/?settings=true');
+        } else {
+            router.back();
+        }
+    };
 
     return (
         <div className={styles.termsContainer}>
@@ -16,7 +26,7 @@ export default function TermsAndConditions() {
                 <div className={styles.headerLeft}>
                     <button
                         className={styles.backButton}
-                        onClick={() => router.back()}
+                        onClick={handleBack}
                         aria-label="Go back"
                     >
                         <ArrowLeft size={24} />
