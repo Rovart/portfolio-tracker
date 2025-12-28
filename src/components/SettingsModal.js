@@ -264,6 +264,7 @@ export default function SettingsModal({ onClose, onPortfolioChange, currentPortf
                 const { Filesystem, Directory } = await import('@capacitor/filesystem');
                 const { Share } = await import('@capacitor/share');
 
+                // Write file to cache with explicit encoding
                 const result = await Filesystem.writeFile({
                     path: filename,
                     data: csv,
@@ -271,10 +272,10 @@ export default function SettingsModal({ onClose, onPortfolioChange, currentPortf
                     encoding: 'utf8'
                 });
 
+                // Use files array with proper MIME type for better compatibility
                 await Share.share({
-                    title: 'Export Portfolio',
-                    text: 'Portfolio transactions export',
-                    url: result.uri,
+                    title: filename,
+                    files: [result.uri],
                     dialogTitle: 'Save or Share CSV'
                 });
                 return;
