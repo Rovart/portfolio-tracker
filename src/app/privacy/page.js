@@ -1,11 +1,12 @@
 'use client';
 
+import { Suspense } from 'react';
 import { ArrowLeft, Mail, Shield } from 'lucide-react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import APP_CONFIG from '@/config/app';
 import styles from './privacy.module.css';
 
-export default function PrivacyPolicy() {
+function PrivacyPolicyContent() {
     const router = useRouter();
     const searchParams = useSearchParams();
     const { legal, name, storage } = APP_CONFIG;
@@ -298,5 +299,13 @@ export default function PrivacyPolicy() {
                 </section>
             </main>
         </div>
+    );
+}
+
+export default function PrivacyPolicy() {
+    return (
+        <Suspense fallback={<div className={styles.privacyContainer} />}>
+            <PrivacyPolicyContent />
+        </Suspense>
     );
 }

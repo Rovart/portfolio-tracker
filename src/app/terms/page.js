@@ -1,11 +1,12 @@
 'use client';
 
+import { Suspense } from 'react';
 import { ArrowLeft, Mail, FileText } from 'lucide-react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import APP_CONFIG from '@/config/app';
 import styles from './terms.module.css';
 
-export default function TermsAndConditions() {
+function TermsAndConditionsContent() {
     const router = useRouter();
     const searchParams = useSearchParams();
     const { legal, name } = APP_CONFIG;
@@ -431,5 +432,13 @@ export default function TermsAndConditions() {
                 </div>
             </main>
         </div>
+    );
+}
+
+export default function TermsAndConditions() {
+    return (
+        <Suspense fallback={<div className={styles.termsContainer} />}>
+            <TermsAndConditionsContent />
+        </Suspense>
     );
 }
