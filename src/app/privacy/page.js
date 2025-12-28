@@ -1,6 +1,6 @@
 'use client';
 
-import { Suspense } from 'react';
+import { Suspense, useEffect } from 'react';
 import { ArrowLeft, Mail, Shield } from 'lucide-react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import APP_CONFIG from '@/config/app';
@@ -14,11 +14,36 @@ function PrivacyPolicyContent() {
 
     const handleBack = () => {
         if (fromSettings) {
-            router.push('/?settings=true');
+            // Use replace to avoid adding extra history entry
+            router.replace('/?settings=true');
         } else {
             router.back();
         }
     };
+
+    // Handle Android back button/gesture
+    useEffect(() => {
+        let backButtonListener = null;
+
+        const setupBackButton = async () => {
+            try {
+                const { App } = await import('@capacitor/app');
+                backButtonListener = await App.addListener('backButton', () => {
+                    handleBack();
+                });
+            } catch (e) {
+                // Capacitor not available (web browser)
+            }
+        };
+
+        setupBackButton();
+
+        return () => {
+            if (backButtonListener) {
+                backButtonListener.remove();
+            }
+        };
+    }, [fromSettings]);
 
     return (
         <div className={styles.privacyContainer}>
