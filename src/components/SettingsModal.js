@@ -1,5 +1,6 @@
 'use client';
 
+import { useState, useEffect, useRef } from 'react';
 import Link from 'next/link';
 import { ArrowLeft, Plus, Trash2, Edit2, Check, X, Upload, Download, FolderOpen, ChevronDown, Star, Bell, Eye, GripVertical, Shield, FileText, ChevronRight } from 'lucide-react';
 import ConfirmModal from './ConfirmModal';
