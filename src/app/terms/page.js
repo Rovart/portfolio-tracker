@@ -1,6 +1,6 @@
 'use client';
 
-import { Suspense, useEffect } from 'react';
+import { Suspense, useEffect, useCallback } from 'react';
 import { ArrowLeft, Mail, FileText } from 'lucide-react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import APP_CONFIG from '@/config/app';
@@ -12,7 +12,7 @@ function TermsAndConditionsContent() {
     const { legal, name } = APP_CONFIG;
     const fromSettings = searchParams.get('from') === 'settings';
 
-    const handleBack = () => {
+    const handleBack = useCallback(() => {
         if (fromSettings) {
             // Set flag in sessionStorage so Dashboard opens settings immediately
             sessionStorage.setItem('openSettings', 'true');
@@ -20,18 +20,18 @@ function TermsAndConditionsContent() {
         } else {
             router.back();
         }
-    };
+    }, [fromSettings, router]);
 
     // Handle Android back button/gesture
     useEffect(() => {
         let backButtonListener = null;
+        let mounted = true;
 
         const setupBackButton = async () => {
             try {
                 const { App } = await import('@capacitor/app');
-                backButtonListener = await App.addListener('backButton', () => {
-                    handleBack();
-                });
+                if (!mounted) return;
+                backButtonListener = await App.addListener('backButton', handleBack);
             } catch (e) {
                 // Capacitor not available (web browser)
             }
@@ -40,11 +40,12 @@ function TermsAndConditionsContent() {
         setupBackButton();
 
         return () => {
+            mounted = false;
             if (backButtonListener) {
                 backButtonListener.remove();
             }
         };
-    }, [fromSettings]);
+    }, [handleBack]);
 
     return (
         <div className={styles.termsContainer}>

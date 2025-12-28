@@ -160,21 +160,18 @@ export default function Dashboard() {
         loadData();
     }, []);
 
-    // Auto-open settings modal if ?settings=true is in URL or sessionStorage flag is set
+    // Auto-open settings modal if ?settings=true is in URL (fallback for direct links)
     const searchParams = useSearchParams();
     const router = useRouter();
     useEffect(() => {
-        // Check URL param (fallback for direct links)
+        // Only check URL param - sessionStorage is handled in useState initializer
         if (searchParams.get('settings') === 'true') {
             setIsSettingsModalOpen(true);
-            router.replace('/', { scroll: false });
+            // Clean up URL without triggering re-render loop
+            window.history.replaceState({}, '', '/');
         }
-        // Check sessionStorage (for instant open without flash)
-        if (typeof window !== 'undefined' && sessionStorage.getItem('openSettings') === 'true') {
-            sessionStorage.removeItem('openSettings');
-            setIsSettingsModalOpen(true);
-        }
-    }, [searchParams, router]);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []); // Run only once on mount
 
     const togglePrivacy = async () => {
         const newState = !hideBalances;
