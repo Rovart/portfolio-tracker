@@ -188,6 +188,7 @@ export default function TransactionModal({
 
                 let fetchedPrice = null;
                 let fetchedChange = null;
+                let fetchedAbsChange = null;
                 let fetchedCurrency = quoteCurr;
                 let fetchedFxRate = 1;
 
@@ -196,6 +197,7 @@ export default function TransactionModal({
                     if (assetQuote) {
                         fetchedPrice = assetQuote.price;
                         fetchedChange = assetQuote.changePercent;
+                        fetchedAbsChange = assetQuote.change;
                         fetchedCurrency = (assetQuote.currency || quoteCurr).toUpperCase();
                     }
                     // For bare currencies (EUR from EUR=X → EURUSD=X), special handling:
@@ -285,6 +287,9 @@ export default function TransactionModal({
                     var fetchedActualFxRate = actualFxRateValue;
                 }
 
+                // Initializer vars for update
+                let fetchedAbsChangeValue = fetchedAbsChange;
+
                 // Fetch historical FX if needed
                 // For bare currencies, use the bare currency code, not the Yahoo-reported currency
                 let fetchedHMap = {};
@@ -320,6 +325,7 @@ export default function TransactionModal({
                 // SINGLE atomic update - guarantees exactly one render
                 setPriceData({
                     price: fetchedPrice,
+                    change: fetchedAbsChangeValue,
                     changePercent: fetchedChange,
                     fxRate: fetchedFxRate,
                     actualFxRate: fetchedActualFxRate || fetchedFxRate,
@@ -338,7 +344,7 @@ export default function TransactionModal({
     }, [selectedAsset?.symbol, baseCurrency]);
 
     // Destructure for easy access throughout component
-    const { price: assetPrice, changePercent, fxRate, actualFxRate, historicalFx, isLoading: loadingPrice } = priceData;
+    const { price: assetPrice, change: assetChange, changePercent, fxRate, actualFxRate, historicalFx, isLoading: loadingPrice } = priceData;
 
     const assetTransactions = selectedAsset
         ? transactions.filter(t => {
@@ -593,8 +599,8 @@ export default function TransactionModal({
 
                     {currentView === 'LIST' && selectedAsset && (
                         <div className="flex flex-col gap-4">
-                            {/* Tab Navigation - only show for individual stocks (EQUITY) */}
-                            {selectedAsset.originalType === 'EQUITY' && (
+                            {/* Tab Navigation - only show for individual stocks (EQUITY) AND NOT WATCHLIST */}
+                            {selectedAsset.originalType === 'EQUITY' && !isWatchlist && (
                                 <div className="flex gap-2 p-1 rounded-full" style={{ background: '#171717' }}>
                                     <button
                                         onClick={() => setAssetTab('overview')}
@@ -651,17 +657,27 @@ export default function TransactionModal({
                                                 // Use best available price
                                                 let displayPrice = assetPrice;
                                                 let displayChange = changePercent || 0;
+                                                let displayAbsChange = assetChange || 0;
+
                                                 if (selectedAsset?.marketState === 'PRE' && selectedAsset.preMarketPrice) {
                                                     displayPrice = selectedAsset.preMarketPrice;
                                                     displayChange = selectedAsset.preMarketChangePercent || 0;
+                                                    // Estimated abs change for pre-market (price - (price / 1+change))
+                                                    displayAbsChange = displayPrice - (displayPrice / (1 + (displayChange / 100)));
                                                 } else if ((selectedAsset?.marketState === 'POST' || selectedAsset?.marketState === 'POSTPOST') && selectedAsset.postMarketPrice) {
                                                     displayPrice = selectedAsset.postMarketPrice;
                                                     displayChange = selectedAsset.postMarketChangePercent || 0;
+                                                    displayAbsChange = displayPrice - (displayPrice / (1 + (displayChange / 100)));
                                                 }
                                                 return (
-                                                    <span className={`text sm:text-2xl ${displayChange >= 0 ? 'text-success' : 'text-danger'}`}>
-                                                        {(displayPrice * fxRate).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} {baseCurrency === 'USD' ? '$' : baseCurrency}
-                                                    </span>
+                                                    <div className="flex flex-col">
+                                                        <span className={`text sm:text-2xl font-bold`}>
+                                                            {(displayPrice * fxRate).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} {baseCurrency === 'USD' ? '$' : baseCurrency}
+                                                        </span>
+                                                        <span className={`text-xs font-medium ${displayChange >= 0 ? 'text-success' : 'text-danger'}`}>
+                                                            {displayAbsChange >= 0 ? '+' : ''}{(displayAbsChange * fxRate).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ({displayChange >= 0 ? '+' : ''}{displayChange.toFixed(2)}%)
+                                                        </span>
+                                                    </div>
                                                 );
                                             })()}
                                         </div>
@@ -720,7 +736,7 @@ export default function TransactionModal({
                                     </div>
 
                                     {/* Transactions List - hidden for watchlists */}
-                                    {!isWatchlist && (
+                                    {!isWatchlist ? (
                                         <div>
                                             <h3 className="text-xl text-muted" style={{ marginBottom: '1rem' }}>History</h3>
                                             <div className="flex flex-col gap-2">
@@ -834,6 +850,15 @@ export default function TransactionModal({
                                                 )}
                                             </div>
                                         </div>
+                                    ) : (
+                                        selectedAsset.originalType === 'EQUITY' && (
+                                            <div className="mt-8">
+                                                <FinancialInfo
+                                                    symbol={selectedAsset.symbol}
+                                                    baseCurrency={baseCurrency}
+                                                />
+                                            </div>
+                                        )
                                     )}
                                 </div>
                             )}

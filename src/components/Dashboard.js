@@ -227,6 +227,19 @@ export default function Dashboard() {
         const allPortfolios = await getAllPortfolios();
         setPortfolios(allPortfolios);
 
+        // If we are on 'all' but there is only one portfolio, force switch to it
+        // This ensures users don't get stuck in 'all' view when they essentially have one context
+        if (currentPortfolioId === 'all' && allPortfolios.length === 1) {
+            handlePortfolioChange(allPortfolios[0].id, allPortfolios);
+            return;
+        }
+
+        // If the current portfolio no longer exists (deleted), switch to 'all' or first available
+        if (currentPortfolioId !== 'all' && !allPortfolios.find(p => p.id === currentPortfolioId)) {
+            handlePortfolioChange('all', allPortfolios);
+            return;
+        }
+
         // If the current portfolio's watchlist status changed, we need to refresh the view
         const current = allPortfolios.find(p => p.id === currentPortfolioId);
         if (current && current.isWatchlist !== isWatchlistView) {
