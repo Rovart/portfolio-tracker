@@ -55,40 +55,23 @@ let instanceCounter = 0;
 const instances = new Map();
 
 export function createYahooInstance() {
-    const userAgent = getRandomUserAgent();
-
-    // Custom fetch wrapper to enforce User-Agent
-    const customFetch = async (url, options = {}) => {
-        const headers = new Headers(options.headers || {});
-        headers.set('User-Agent', userAgent);
-        headers.set('Accept', '*/*');
-        headers.set('Accept-Encoding', 'gzip, deflate, br');
-        headers.set('Accept-Language', 'en-US,en;q=0.9');
-        headers.set('Content-Type', 'text/plain');
-        headers.set('Referer', 'https://finance.yahoo.com/');
-        headers.set('Origin', 'https://finance.yahoo.com');
-        headers.set('Sec-Fetch-Dest', 'document');
-        headers.set('Sec-Fetch-Mode', 'navigate');
-        headers.set('Sec-Fetch-Site', 'none');
-        headers.set('Sec-Fetch-User', '?1');
-        headers.set('Upgrade-Insecure-Requests', '1');
-
-        // Merge valid options with enforced headers
-        const newOptions = {
-            ...options,
-            headers,
-        };
-
-        return fetch(url, newOptions);
-    };
+    const userAgent = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36';
 
     const config = {
         suppressNotices: ['yahooSurvey'],
-        // Inject custom fetch to guarantee headers
-        fetch: customFetch,
         fetchOptions: {
             headers: {
-                'User-Agent': userAgent
+                'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
+                'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7',
+                'Accept-Encoding': 'gzip, deflate, br',
+                'Accept-Language': 'en-US,en;q=0.9',
+                'Referer': 'https://finance.yahoo.com/',
+                'Origin': 'https://finance.yahoo.com',
+                'Sec-Fetch-Dest': 'document',
+                'Sec-Fetch-Mode': 'navigate',
+                'Sec-Fetch-Site': 'none',
+                'Sec-Fetch-User': '?1',
+                'Upgrade-Insecure-Requests': '1'
             }
         }
     };
