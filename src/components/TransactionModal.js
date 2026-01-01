@@ -260,7 +260,7 @@ export default function TransactionModal({
                             actualFxRateValue = 1;
                         } else {
                             const expectedFxSymbol = `${fetchedCurrency}${baseCurrency}=X`;
-                            let fxQuote = json.data.find(q => q.symbol === expectedFxSymbol);
+                            let fxQuote = json.data?.find(q => q.symbol === expectedFxSymbol);
 
                             if (!fxQuote) {
                                 try {
