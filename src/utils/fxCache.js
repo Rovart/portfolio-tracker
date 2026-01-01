@@ -68,7 +68,22 @@ export async function getCachedFxRate(fromCurrency, toCurrency) {
     try {
         const symbol = `${from}${to}=X`;
         const res = await fetch(`/api/quote?symbols=${symbol}`);
-        const json = await res.json();
+
+        if (!res.ok) {
+            console.warn(`FX rate fetch failed ${res.status}: ${res.statusText}`);
+            return { rate: 1, changePercent: 0 };
+        }
+
+        const text = await res.text();
+        if (!text) return { rate: 1, changePercent: 0 };
+
+        let json;
+        try {
+            json = JSON.parse(text);
+        } catch (e) {
+            console.error('Invalid JSON from quote API:', text.substring(0, 100));
+            return { rate: 1, changePercent: 0 };
+        }
 
         if (json.data && json.data[0]) {
             const data = {
@@ -128,27 +143,53 @@ export async function getCachedFxHistory(fromCurrency, toCurrency, range = 'ALL'
             // EUR -> USD (Fetch EURUSD=X)
             const symbol = `${from}USD=X`;
             const res = await fetch(`/api/history?symbol=${symbol}&range=${range}`);
-            const json = await res.json();
-            if (json.history) {
-                json.history.forEach(d => { finalData[d.date.split('T')[0]] = d.price; });
+            if (res.ok) {
+                const text = await res.text();
+                if (text) {
+                    try {
+                        const json = JSON.parse(text);
+                        if (json.history) {
+                            json.history.forEach(d => { finalData[d.date.split('T')[0]] = d.price; });
+                        }
+                    } catch (e) { console.error('JSON parse error 1', e); }
+                }
             }
         } else if (from === 'USD') {
             // USD -> EUR (Fetch USDEUR=X, or 1/EURUSD=X)
             // Ideally fetch USDEUR=X directly
             const symbol = `USD${to}=X`;
             const res = await fetch(`/api/history?symbol=${symbol}&range=${range}`);
-            const json = await res.json();
-            if (json.history) {
-                json.history.forEach(d => { finalData[d.date.split('T')[0]] = d.price; });
-            } else {
+            let succeeded = false;
+
+            if (res.ok) {
+                const text = await res.text();
+                if (text) {
+                    try {
+                        const json = JSON.parse(text);
+                        if (json.history) {
+                            json.history.forEach(d => { finalData[d.date.split('T')[0]] = d.price; });
+                            succeeded = true;
+                        }
+                    } catch (e) { console.error('JSON parse error 2', e); }
+                }
+            }
+
+            if (!succeeded) {
                 // Fallback: Fetch EURUSD=X and inverse
                 const invSymbol = `${to}USD=X`;
                 const invRes = await fetch(`/api/history?symbol=${invSymbol}&range=${range}`);
-                const invJson = await invRes.json();
-                if (invJson.history) {
-                    invJson.history.forEach(d => {
-                        if (d.price) finalData[d.date.split('T')[0]] = 1 / d.price;
-                    });
+                if (invRes.ok) {
+                    const text = await invRes.text();
+                    if (text) {
+                        try {
+                            const invJson = JSON.parse(text);
+                            if (invJson.history) {
+                                invJson.history.forEach(d => {
+                                    if (d.price) finalData[d.date.split('T')[0]] = 1 / d.price;
+                                });
+                            }
+                        } catch (e) { console.error('JSON parse error 3', e); }
+                    }
                 }
             }
         } else {
