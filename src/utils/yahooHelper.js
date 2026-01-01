@@ -61,6 +61,15 @@ export function createYahooInstance() {
     const customFetch = async (url, options = {}) => {
         const headers = new Headers(options.headers || {});
         headers.set('User-Agent', userAgent);
+        headers.set('Accept', 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7');
+        headers.set('Accept-Language', 'en-US,en;q=0.9');
+        headers.set('Referer', 'https://finance.yahoo.com/');
+        headers.set('Origin', 'https://finance.yahoo.com');
+        headers.set('Sec-Fetch-Dest', 'document');
+        headers.set('Sec-Fetch-Mode', 'navigate');
+        headers.set('Sec-Fetch-Site', 'none');
+        headers.set('Sec-Fetch-User', '?1');
+        headers.set('Upgrade-Insecure-Requests', '1');
 
         // Merge valid options with enforced headers
         const newOptions = {
