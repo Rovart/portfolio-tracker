@@ -13,8 +13,8 @@ import YahooFinance from 'yahoo-finance2';
 // Pool of realistic User-Agent strings (updated for 2025/2026)
 // Pool of realistic User-Agent strings (updated for 2025/2026)
 const USER_AGENTS = [
-    // Specific UA reported to work by user - Primary Option
-    'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36',
+    // Standard Chrome 120 User-Agent (Widely used, less likely to be profiled as bot or future-fake)
+    'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
 
     /*
     // Modern macOS User Agents
