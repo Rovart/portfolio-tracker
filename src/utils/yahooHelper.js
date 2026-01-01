@@ -103,10 +103,9 @@ let requestCount = 0;
 let currentInstance = null;
 
 export function getYahooInstance() {
-    requestCount++;
-
-    // Rotate instance every 50 requests to avoid patterns
-    if (!currentInstance || requestCount % 50 === 0) {
+    // Use a persistent instance (Singleton) to minimize 'get crumb' handshakes
+    // Only verify we have one, never auto-rotate on count
+    if (!currentInstance) {
         currentInstance = createYahooInstance();
     }
 
