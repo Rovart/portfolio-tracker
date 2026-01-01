@@ -16,6 +16,7 @@ const USER_AGENTS = [
     // Specific UA reported to work by user - Primary Option
     'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36',
 
+    /*
     // Modern macOS User Agents
     'Mozilla/5.0 (Macintosh; Intel Mac OS X 14_0) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36',
     'Mozilla/5.0 (Macintosh; Intel Mac OS X 14.2; rv:122.0) Gecko/20100101 Firefox/122.0',
@@ -27,10 +28,8 @@ const USER_AGENTS = [
     'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36 Edg/123.0.0.0',
 
     // Linux
-    'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36',
-
-    // Fallback/Custom
-    'Mozilla/5.0 (compatible; PortfolioTracker/1.0)',
+    'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36'
+    */
 ];
 
 // Get a random User-Agent
@@ -106,8 +105,8 @@ let currentInstance = null;
 export function getYahooInstance() {
     requestCount++;
 
-    // Rotate instance every 10 requests to avoid patterns
-    if (!currentInstance || requestCount % 10 === 0) {
+    // Rotate instance every 50 requests to avoid patterns
+    if (!currentInstance || requestCount % 50 === 0) {
         currentInstance = createYahooInstance();
     }
 
