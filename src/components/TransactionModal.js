@@ -193,7 +193,7 @@ export default function TransactionModal({
                 let fetchedFxRate = 1;
 
                 if (json.data) {
-                    const assetQuote = json.data.find(q => q.symbol === fetchSym);
+                    const assetQuote = json.data?.find(q => q.symbol === fetchSym);
                     if (assetQuote) {
                         fetchedPrice = assetQuote.price;
                         fetchedChange = assetQuote.changePercent;
@@ -318,7 +318,7 @@ export default function TransactionModal({
                     if (!prev) return null;
                     const isGenericName = !prev.name || prev.name === prev.symbol;
                     // Find the assetQuote again to get the name
-                    const assetQuote = json.data.find(q => q.symbol === fetchSym);
+                    const assetQuote = json.data?.find(q => q.symbol === fetchSym);
                     return { ...prev, name: isGenericName ? (assetQuote?.name || prev.name) : prev.name };
                 });
 
