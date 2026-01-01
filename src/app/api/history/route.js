@@ -167,6 +167,7 @@ export async function GET(request) {
         }
 
 
+        return NextResponse.json({ history, source: 'yahoo-finance2' });
     } catch (error) {
         console.error('History error:', error);
 

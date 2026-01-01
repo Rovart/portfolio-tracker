@@ -10,6 +10,8 @@
  * Dataset: https://huggingface.co/datasets/bwzheng2010/yahoo-finance-data
  */
 
+import { getRandomUserAgent } from './yahooHelper';
+
 const HF_DATASET_BASE = 'https://huggingface.co/datasets/bwzheng2010/yahoo-finance-data/resolve/main';
 
 // Cache for parquet file data (in-memory, per-request lifecycle in serverless)
@@ -129,7 +131,7 @@ export async function fetchAlternativeHistory(symbol, range = '1M') {
 
             const response = await fetch(url, {
                 headers: {
-                    'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                    'User-Agent': getRandomUserAgent(),
                     'Accept': 'application/json',
                     'Accept-Language': 'en-US,en;q=0.9',
                     'Referer': 'https://finance.yahoo.com/',

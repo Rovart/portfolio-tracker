@@ -225,7 +225,22 @@ export async function getCachedAssetHistory(symbol, range = 'ALL') {
     // Fetch fresh data
     try {
         const res = await fetch(`/api/history?symbol=${symbol}&range=${range}`);
-        const json = await res.json();
+
+        if (!res.ok) {
+            console.warn(`Asset history fetch failed ${res.status}: ${res.statusText}`);
+            return [];
+        }
+
+        const text = await res.text();
+        if (!text) return [];
+
+        let json;
+        try {
+            json = JSON.parse(text);
+        } catch (e) {
+            console.error('Invalid JSON from history API:', text.substring(0, 100));
+            return [];
+        }
 
         if (json.history && json.history.length > 0) {
             const data = json.history
