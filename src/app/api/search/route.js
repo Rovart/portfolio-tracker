@@ -1,7 +1,6 @@
-import YahooFinance from 'yahoo-finance2';
+import { yahooApiCall } from '@/utils/yahooHelper';
+import { shouldUseFallback } from '@/utils/defeatbetaFallback';
 import { NextResponse } from 'next/server';
-
-const yahooFinance = new YahooFinance({ suppressNotices: ['yahooSurvey'] });
 
 export async function GET(request) {
     const { searchParams } = new URL(request.url);
@@ -12,7 +11,12 @@ export async function GET(request) {
     }
 
     try {
-        const results = await yahooFinance.search(q);
+        // Use yahoo helper with rate-limit evasion
+        const results = await yahooApiCall(
+            (instance) => instance.search(q),
+            [],
+            { maxRetries: 3 }
+        );
 
         // Filter for relevant types (Equity, Crypto, ETF, Currency)
         let filtered = results.quotes.filter(item =>
@@ -54,9 +58,18 @@ export async function GET(request) {
             });
         }
 
-        return NextResponse.json({ results: filtered });
+        return NextResponse.json({ results: filtered, source: 'yahoo-finance2' });
     } catch (error) {
         console.error('Search error:', error);
+
+        // Return more descriptive error for rate limiting
+        if (shouldUseFallback(error)) {
+            return NextResponse.json({
+                error: 'Rate limited by Yahoo Finance. Please try again in a few minutes.',
+                retryAfter: 60
+            }, { status: 429 });
+        }
+
         return NextResponse.json({ error: 'Failed to search' }, { status: 500 });
     }
 }

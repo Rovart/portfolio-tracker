@@ -1,7 +1,6 @@
-import YahooFinance from 'yahoo-finance2';
+import { yahooApiCall } from '@/utils/yahooHelper';
+import { shouldUseFallback } from '@/utils/defeatbetaFallback';
 import { NextResponse } from 'next/server';
-
-const yahooFinance = new YahooFinance({ suppressNotices: ['yahooSurvey'] });
 
 export async function GET(request) {
     const { searchParams } = new URL(request.url);
@@ -14,8 +13,12 @@ export async function GET(request) {
     const symbolList = symbols.split(',');
 
     try {
-        // yahooFinance.quote can accept an array
-        const quotes = await yahooFinance.quote(symbolList);
+        // Use yahoo helper with rate-limit evasion
+        const quotes = await yahooApiCall(
+            (instance) => instance.quote(symbolList),
+            [],
+            { maxRetries: 3 }
+        );
 
         // Normalize response
         const data = (Array.isArray(quotes) ? quotes : [quotes]).map(q => ({
@@ -35,9 +38,22 @@ export async function GET(request) {
             marketState: q.marketState || null // PRE, REGULAR, POST, CLOSED
         }));
 
-        return NextResponse.json({ data });
+        // Cache control: Short cache (60s) for quotes
+        const response = NextResponse.json({ data, source: 'yahoo-finance2' });
+        response.headers.set('Cache-Control', 'public, s-maxage=60, stale-while-revalidate=300');
+
+        return response;
     } catch (error) {
         console.error('Quote error:', error);
+
+        // Return more descriptive error for rate limiting
+        if (shouldUseFallback(error)) {
+            return NextResponse.json({
+                error: 'Rate limited by Yahoo Finance. Please try again in a few minutes.',
+                retryAfter: 60
+            }, { status: 429 });
+        }
+
         return NextResponse.json({ error: 'Failed to fetch quotes' }, { status: 500 });
     }
 }

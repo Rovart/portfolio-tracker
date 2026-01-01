@@ -1,7 +1,6 @@
-import YahooFinance from 'yahoo-finance2';
+import { yahooApiCall } from '@/utils/yahooHelper';
+import { shouldUseFallback } from '@/utils/defeatbetaFallback';
 import { NextResponse } from 'next/server';
-
-const yahooFinance = new YahooFinance({ suppressNotices: ['yahooSurvey'] });
 
 export async function GET(request) {
     const { searchParams } = new URL(request.url);
@@ -12,21 +11,30 @@ export async function GET(request) {
     }
 
     try {
-        // Fetch comprehensive financial data
-        const quoteSummary = await yahooFinance.quoteSummary(symbol, {
-            modules: [
-                'summaryDetail',
-                'defaultKeyStatistics',
-                'financialData',
-                'calendarEvents',
-                'earnings',
-                'earningsHistory',
-                'earningsTrend',
-                'incomeStatementHistory',
-                'balanceSheetHistory',
-                'cashflowStatementHistory'
-            ]
-        }).catch(() => null);
+        // Fetch comprehensive financial data with rate-limit evasion
+        let quoteSummary;
+        try {
+            quoteSummary = await yahooApiCall(
+                (instance) => instance.quoteSummary(symbol, {
+                    modules: [
+                        'summaryDetail',
+                        'defaultKeyStatistics',
+                        'financialData',
+                        'calendarEvents',
+                        'earnings',
+                        'earningsHistory',
+                        'earningsTrend',
+                        'incomeStatementHistory',
+                        'balanceSheetHistory',
+                        'cashflowStatementHistory'
+                    ]
+                }),
+                [],
+                { maxRetries: 3 }
+            );
+        } catch (e) {
+            quoteSummary = null;
+        }
 
         if (!quoteSummary) {
             return NextResponse.json({ error: 'No financial data available' }, { status: 404 });
@@ -174,9 +182,22 @@ export async function GET(request) {
             })) || []
         };
 
-        return NextResponse.json({ data });
+        // Cache control: Long cache (24h) for financial statements
+        const response = NextResponse.json({ data, source: 'yahoo-finance2' });
+        response.headers.set('Cache-Control', 'public, s-maxage=86400, stale-while-revalidate=604800');
+
+        return response;
     } catch (error) {
         console.error('Financial data error:', error);
+
+        // Return more descriptive error for rate limiting
+        if (shouldUseFallback(error)) {
+            return NextResponse.json({
+                error: 'Rate limited by Yahoo Finance. Please try again in a few minutes.',
+                retryAfter: 60
+            }, { status: 429 });
+        }
+
         return NextResponse.json({ error: 'Failed to fetch financial data' }, { status: 500 });
     }
 }

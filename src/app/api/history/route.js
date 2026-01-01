@@ -1,7 +1,6 @@
-import YahooFinance from 'yahoo-finance2';
+import { yahooApiCall, randomDelay } from '@/utils/yahooHelper';
+import { fetchAlternativeHistory, shouldUseFallback } from '@/utils/defeatbetaFallback';
 import { NextResponse } from 'next/server';
-
-const yahooFinance = new YahooFinance({ suppressNotices: ['yahooSurvey'] });
 
 // IQR-based outlier smoothing + percentage-based V-shape detection
 function smoothOutliers(data) {
@@ -94,8 +93,41 @@ export async function GET(request) {
     }
 
     try {
+        // Use yahoo helper with rate-limit evasion
         const queryOptions = { period1: period1.toISOString().split('T')[0], interval };
-        let result = await yahooFinance.chart(symbol, queryOptions);
+
+        let result;
+        let usedFallback = false;
+
+        try {
+            // Primary: Yahoo Finance with retry logic
+            result = await yahooApiCall(
+                (instance) => instance.chart(symbol, queryOptions),
+                [],
+                { maxRetries: 3 }
+            );
+        } catch (yahooError) {
+            // Check if we should try fallback
+            if (shouldUseFallback(yahooError)) {
+                console.log(`Yahoo rate limited for ${symbol}, trying fallback...`);
+
+                // Try alternative direct Yahoo endpoints
+                const fallbackResult = await fetchAlternativeHistory(symbol, range);
+
+                if (fallbackResult?.history?.length > 0) {
+                    usedFallback = true;
+                    let history = smoothOutliers(fallbackResult.history);
+                    return NextResponse.json({
+                        history,
+                        source: fallbackResult.source,
+                        fallback: true
+                    });
+                }
+            }
+
+            // Re-throw if fallback didn't work
+            throw yahooError;
+        }
 
         // Extract and filter
         let history = result.quotes.map(q => ({
@@ -110,7 +142,16 @@ export async function GET(request) {
                 const extendedPeriod = new Date();
                 extendedPeriod.setDate(now.getDate() - lookbackDays);
                 const extendedOptions = { period1: extendedPeriod.toISOString().split('T')[0], interval: '1h' };
-                result = await yahooFinance.chart(symbol, extendedOptions);
+
+                // Add small delay between retries
+                await randomDelay();
+
+                result = await yahooApiCall(
+                    (instance) => instance.chart(symbol, extendedOptions),
+                    [],
+                    { maxRetries: 2, initialDelay: false }
+                );
+
                 history = result.quotes.map(q => ({
                     date: q.date,
                     price: q.close
@@ -125,12 +166,18 @@ export async function GET(request) {
             }
         }
 
-        // Apply IQR smoothing to remove outliers (dividend spikes, splits, API errors)
-        history = smoothOutliers(history);
 
-        return NextResponse.json({ history });
     } catch (error) {
         console.error('History error:', error);
+
+        // Return more descriptive error for rate limiting
+        if (shouldUseFallback(error)) {
+            return NextResponse.json({
+                error: 'Rate limited by Yahoo Finance. Please try again in a few minutes.',
+                retryAfter: 60
+            }, { status: 429 });
+        }
+
         return NextResponse.json({ error: 'Failed to fetch history' }, { status: 500 });
     }
 }
