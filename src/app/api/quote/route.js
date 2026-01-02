@@ -13,12 +13,21 @@ export async function GET(request) {
     const symbolList = symbols.split(',');
 
     try {
-        // Use yahoo helper with rate-limit evasion
-        const quotes = await yahooApiCall(
-            (instance) => instance.quote(symbolList),
-            [],
-            { maxRetries: 3 }
-        );
+        // BATCHING DISABLED: Fetch each symbol individually to avoid rate limiting
+        const quotes = [];
+        for (const symbol of symbolList) {
+            try {
+                const result = await yahooApiCall(
+                    (instance) => instance.quote(symbol),
+                    [],
+                    { maxRetries: 3 }
+                );
+                quotes.push(result);
+            } catch (err) {
+                console.warn(`Failed to fetch quote for ${symbol}:`, err.message);
+                // Continue with other symbols even if one fails
+            }
+        }
 
         // Normalize response
         const data = (Array.isArray(quotes) ? quotes : [quotes]).map(q => ({
