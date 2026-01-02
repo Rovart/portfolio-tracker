@@ -728,37 +728,60 @@ export default function Dashboard() {
         let filtered = rawHistory.filter(d => d.date >= cutoffStr);
 
         // RESAMPLE: Reduce granularity for smoother charts
-        // Weekly: 1-hour buckets, Daily: keep all (15-30 min granularity from Yahoo)
-        if (timeframe === '1W' && filtered.length > 0) {
-            const hourlyBuckets = {};
+        // Daily: 30-min buckets, Weekly: 2-hour buckets
+        if ((timeframe === '1D' || timeframe === '1W') && filtered.length > 0) {
+            const bucketMinutes = timeframe === '1D' ? 30 : 120; // 30 min for daily, 2 hours for weekly
+            const buckets = {};
             filtered.forEach(point => {
-                // Round to hour
                 const d = new Date(point.date);
-                d.setMinutes(0, 0, 0);
-                const hourKey = d.toISOString();
-                // Keep the last value in each hour bucket
-                hourlyBuckets[hourKey] = point.value;
+                // Round to bucket
+                const mins = Math.floor(d.getMinutes() / bucketMinutes) * bucketMinutes;
+                d.setMinutes(mins, 0, 0);
+                if (timeframe === '1W') {
+                    // For weekly, also round hours to 2-hour blocks
+                    const hrs = Math.floor(d.getHours() / 2) * 2;
+                    d.setHours(hrs, 0, 0, 0);
+                }
+                const bucketKey = d.toISOString();
+                // Keep last value in each bucket
+                buckets[bucketKey] = point.value;
             });
-            filtered = Object.entries(hourlyBuckets)
+            filtered = Object.entries(buckets)
                 .map(([date, value]) => ({ date, value }))
                 .sort((a, b) => a.date.localeCompare(b.date));
         }
 
-        // SMOOTHING: Final pass to catch spikes
-        if (filtered.length > 5) {
+        // MOVING AVERAGE SMOOTHING for daily view
+        if (timeframe === '1D' && filtered.length > 5) {
+            const windowSize = 3; // 3-point moving average
             filtered = filtered.map((point, i, arr) => {
-                if (i === 0 || i === arr.length - 1) return point;
-                const prev = arr[i - 1].value;
-                const curr = point.value;
-                const next = arr[i + 1].value;
-                if (prev === 0 || next === 0) return point;
-                const diffPrev = Math.abs(curr - prev) / prev;
-                const diffNext = Math.abs(curr - next) / next;
-                if ((diffPrev > 0.25 && diffNext > 0.25) || (curr === 0 && prev > 0 && next > 0)) {
-                    return { ...point, value: (prev + next) / 2 };
-                }
-                return point;
+                if (i < 1 || i >= arr.length - 1) return point;
+                const values = arr.slice(Math.max(0, i - 1), Math.min(arr.length, i + 2)).map(p => p.value);
+                const avg = values.reduce((a, b) => a + b, 0) / values.length;
+                return { ...point, value: avg };
             });
+        }
+
+        // SPIKE REMOVAL: Multiple passes with lower threshold for smoother result
+        const spikeThreshold = timeframe === '1D' ? 0.10 : 0.15; // 10% for daily, 15% for weekly
+        const spikePasses = timeframe === '1D' ? 4 : 3;
+
+        if (filtered.length > 5) {
+            for (let pass = 0; pass < spikePasses; pass++) {
+                filtered = filtered.map((point, i, arr) => {
+                    if (i === 0 || i === arr.length - 1) return point;
+                    const prev = arr[i - 1].value;
+                    const curr = point.value;
+                    const next = arr[i + 1].value;
+                    if (prev === 0 || next === 0) return point;
+                    const diffPrev = Math.abs(curr - prev) / prev;
+                    const diffNext = Math.abs(curr - next) / next;
+                    if ((diffPrev > spikeThreshold && diffNext > spikeThreshold) || (curr === 0 && prev > 0 && next > 0)) {
+                        return { ...point, value: (prev + next) / 2 };
+                    }
+                    return point;
+                });
+            }
         }
 
         // Append live price point if prices are stable
