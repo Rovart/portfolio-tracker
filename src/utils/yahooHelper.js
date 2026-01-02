@@ -1,36 +1,22 @@
 /**
  * Yahoo Finance Helper with Rate-Limit Evasion
  * 
- * Implements:
- * - Rotating User-Agents to mimic different browsers
- * - Random delays between requests
- * - Exponential backoff retry logic
- * - Cookie/session rotation
+ * yahoo-finance2 v3.11.1+ has built-in UA fix, so we trust library defaults.
+ * Custom UA is only applied as a fallback when rate-limiting is detected.
  */
 
 import YahooFinance from 'yahoo-finance2';
 
-// Pool of Chrome-based User-Agent strings (Firefox/Safari may be blocked by Yahoo)
-const USER_AGENTS = [
-    // Chrome on macOS (verified working)
+// Fallback User-Agent strings (used only on retry after rate limit)
+const FALLBACK_USER_AGENTS = [
     'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36',
-    'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
-    'Mozilla/5.0 (Macintosh; Intel Mac OS X 14_2) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
-
-    // Chrome on Windows
-    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
-    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36',
-
-    // Edge on Windows (Chromium-based)
-    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36 Edg/131.0.0.0',
-
-    // Chrome on Linux
-    'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
+    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+    'Mozilla/5.0 (compatible; PortfolioTracker/1.0)',
 ];
 
-// Get a random User-Agent
+// Get a random fallback User-Agent
 export function getRandomUserAgent() {
-    return USER_AGENTS[Math.floor(Math.random() * USER_AGENTS.length)];
+    return FALLBACK_USER_AGENTS[Math.floor(Math.random() * FALLBACK_USER_AGENTS.length)];
 }
 
 // Random delay to avoid detection (100ms - 500ms)
@@ -46,67 +32,48 @@ export function retryDelay(attempt) {
     return new Promise(resolve => setTimeout(resolve, baseDelay + jitter));
 }
 
-// Create a new Yahoo Finance instance with rotating headers
-let instanceCounter = 0;
-const instances = new Map();
+// Default instance - trusts library's built-in UA (v3.11.1+)
+let defaultInstance = null;
 
-export function createYahooInstance() {
+function getDefaultInstance() {
+    if (!defaultInstance) {
+        defaultInstance = new YahooFinance({ suppressNotices: ['yahooSurvey'] });
+    }
+    return defaultInstance;
+}
+
+// Create a fallback instance with custom UA (used after rate limit failure)
+function createFallbackInstance() {
     const userAgent = getRandomUserAgent();
 
-    // Custom fetch wrapper to enforce User-Agent
     const customFetch = async (url, options = {}) => {
         const headers = new Headers(options.headers || {});
         headers.set('User-Agent', userAgent);
-
-        // Merge valid options with enforced headers
-        const newOptions = {
-            ...options,
-            headers,
-        };
-
-        return fetch(url, newOptions);
+        return fetch(url, { ...options, headers });
     };
 
-    const config = {
+    return new YahooFinance({
         suppressNotices: ['yahooSurvey'],
-        // Inject custom fetch to guarantee headers
         fetch: customFetch,
         fetchOptions: {
-            headers: {
-                'User-Agent': userAgent
-            }
+            headers: { 'User-Agent': userAgent }
         }
-    };
-
-    const instance = new YahooFinance(config);
-
-    // Track instance for potential cleanup
-    instanceCounter++;
-    const id = instanceCounter;
-    instances.set(id, { instance, userAgent, createdAt: Date.now() });
-
-    // Clean up old instances (keep only last 10)
-    if (instances.size > 10) {
-        const oldestKey = instances.keys().next().value;
-        instances.delete(oldestKey);
-    }
-
-    return { instance, userAgent, id };
+    });
 }
 
-// Get or create a fresh instance (rotates every 10 requests)
-let requestCount = 0;
-let currentInstance = null;
+// Track if we've had to switch to fallback mode
+let useFallbackMode = false;
+let fallbackInstance = null;
 
+// Get the appropriate instance
 export function getYahooInstance() {
-    requestCount++;
-
-    // Rotate instance every 10 requests to avoid patterns
-    if (!currentInstance || requestCount % 10 === 0) {
-        currentInstance = createYahooInstance();
+    if (useFallbackMode) {
+        if (!fallbackInstance) {
+            fallbackInstance = createFallbackInstance();
+        }
+        return { instance: fallbackInstance };
     }
-
-    return currentInstance;
+    return { instance: getDefaultInstance() };
 }
 
 // Wrapper for Yahoo Finance API calls with retry logic
@@ -114,7 +81,6 @@ export async function yahooApiCall(apiMethod, args, options = {}) {
     const maxRetries = options.maxRetries || 3;
     const initialDelay = options.initialDelay !== false;
 
-    // Add initial random delay to avoid burst patterns
     if (initialDelay) {
         await randomDelay();
     }
@@ -124,15 +90,11 @@ export async function yahooApiCall(apiMethod, args, options = {}) {
     for (let attempt = 0; attempt < maxRetries; attempt++) {
         try {
             const { instance } = getYahooInstance();
-
-            // Make the API call
             const result = await apiMethod(instance, ...args);
-
             return result;
         } catch (error) {
             lastError = error;
 
-            // Check if it's a rate limit error
             const isRateLimit =
                 error.message?.includes('429') ||
                 error.message?.toLowerCase().includes('rate') ||
@@ -143,15 +105,20 @@ export async function yahooApiCall(apiMethod, args, options = {}) {
             if (isRateLimit && attempt < maxRetries - 1) {
                 console.warn(`Yahoo API rate limited (attempt ${attempt + 1}/${maxRetries}), retrying...`);
 
-                // Force new instance on rate limit
-                currentInstance = createYahooInstance();
+                // Switch to fallback mode with custom UA
+                if (!useFallbackMode) {
+                    console.warn('Switching to fallback UA mode');
+                    useFallbackMode = true;
+                    fallbackInstance = createFallbackInstance();
+                } else {
+                    // Rotate fallback instance
+                    fallbackInstance = createFallbackInstance();
+                }
 
-                // Exponential backoff
                 await retryDelay(attempt);
                 continue;
             }
 
-            // For other errors or last retry, throw
             throw error;
         }
     }
@@ -159,24 +126,24 @@ export async function yahooApiCall(apiMethod, args, options = {}) {
     throw lastError;
 }
 
-// Cached instance for backward compatibility
-let defaultInstance = null;
-
+// For backward compatibility
 export function getDefaultYahooInstance() {
-    if (!defaultInstance) {
-        defaultInstance = new YahooFinance({ suppressNotices: ['yahooSurvey'] });
-    }
-    return defaultInstance;
+    return getDefaultInstance();
 }
 
-// Export default singleton for simpler usage (with rate limit awareness)
+// Reset fallback mode (for testing or manual reset)
+export function resetFallbackMode() {
+    useFallbackMode = false;
+    fallbackInstance = null;
+}
+
 export default {
     getRandomUserAgent,
     randomDelay,
     retryDelay,
-    createYahooInstance,
     getYahooInstance,
     yahooApiCall,
     getDefaultYahooInstance,
-    USER_AGENTS
+    resetFallbackMode,
+    FALLBACK_USER_AGENTS
 };
