@@ -191,15 +191,33 @@ export default function TransactionModal({
                 let fetchedAbsChange = null;
                 let fetchedCurrency = quoteCurr;
                 let fetchedFxRate = 1;
+                let fetchedMarketState = null;
+                let fetchedPreMarketPrice = null;
+                let fetchedPreMarketChange = null;
+                let fetchedPostMarketPrice = null;
+                let fetchedPostMarketChange = null;
 
                 if (json.data) {
-                    const assetQuote = json.data?.find(q => q.symbol === fetchSym);
+                    // Use case-insensitive matching for symbol to be robust
+                    const assetQuote = json.data?.find(q =>
+                        q.symbol?.toUpperCase() === fetchSym.toUpperCase() ||
+                        q.symbol?.toUpperCase().replace(/-/g, '') === fetchSym.toUpperCase().replace(/-/g, '')
+                    );
+
                     if (assetQuote) {
                         fetchedPrice = assetQuote.price;
                         fetchedChange = assetQuote.changePercent;
                         fetchedAbsChange = assetQuote.change;
                         fetchedCurrency = (assetQuote.currency || quoteCurr).toUpperCase();
+
+                        // Store extended market data for better display
+                        fetchedMarketState = assetQuote.marketState;
+                        fetchedPreMarketPrice = assetQuote.preMarketPrice;
+                        fetchedPreMarketChange = assetQuote.preMarketChangePercent;
+                        fetchedPostMarketPrice = assetQuote.postMarketPrice;
+                        fetchedPostMarketChange = assetQuote.postMarketChangePercent;
                     }
+
                     // For bare currencies (EUR from EUR=X → EURUSD=X), special handling:
                     // The assetPrice from EURUSD=X IS already the EUR/USD conversion rate
                     // So we should NOT multiply by fxRate again!
@@ -318,7 +336,10 @@ export default function TransactionModal({
                     if (!prev) return null;
                     const isGenericName = !prev.name || prev.name === prev.symbol;
                     // Find the assetQuote again to get the name
-                    const assetQuote = json.data?.find(q => q.symbol === fetchSym);
+                    const assetQuote = json.data?.find(q =>
+                        q.symbol?.toUpperCase() === fetchSym.toUpperCase() ||
+                        q.symbol?.toUpperCase().replace(/-/g, '') === fetchSym.toUpperCase().replace(/-/g, '')
+                    );
                     return { ...prev, name: isGenericName ? (assetQuote?.name || prev.name) : prev.name };
                 });
 
@@ -330,6 +351,11 @@ export default function TransactionModal({
                     fxRate: fetchedFxRate,
                     actualFxRate: fetchedActualFxRate || fetchedFxRate,
                     historicalFx: fetchedHMap,
+                    marketState: fetchedMarketState,
+                    preMarketPrice: fetchedPreMarketPrice,
+                    preMarketChange: fetchedPreMarketChange,
+                    postMarketPrice: fetchedPostMarketPrice,
+                    postMarketChange: fetchedPostMarketChange,
                     isLoading: false
                 });
             } catch (e) {
@@ -344,7 +370,20 @@ export default function TransactionModal({
     }, [selectedAsset?.symbol, baseCurrency]);
 
     // Destructure for easy access throughout component
-    const { price: assetPrice, change: assetChange, changePercent, fxRate, actualFxRate, historicalFx, isLoading: loadingPrice } = priceData;
+    const {
+        price: assetPrice,
+        change: assetChange,
+        changePercent,
+        fxRate,
+        actualFxRate,
+        historicalFx,
+        isLoading: loadingPrice,
+        marketState: currentMarketState,
+        preMarketPrice: currentPrePrice,
+        preMarketChange: currentPreChange,
+        postMarketPrice: currentPostPrice,
+        postMarketChange: currentPostChange
+    } = priceData;
 
     const assetTransactions = selectedAsset
         ? transactions.filter(t => {
@@ -640,14 +679,14 @@ export default function TransactionModal({
                                         <div className="flex flex-col flex-1 items-start">
                                             <span className="text-xs sm:text-sm text-muted uppercase tracking-wider flex items-center gap-1.5">
                                                 Current Price
-                                                {selectedAsset?.marketState && selectedAsset.marketState !== 'REGULAR' && selectedAsset.marketState !== 'CLOSED' && (
+                                                {currentMarketState && currentMarketState !== 'REGULAR' && currentMarketState !== 'CLOSED' && (
                                                     <span className="inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded-full" style={{ background: 'rgba(255,255,255,0.1)', marginLeft: '5px' }}>
-                                                        {selectedAsset.marketState === 'PRE' ? (
+                                                        {currentMarketState.includes('PRE') ? (
                                                             <Sun size={10} className="text-amber-400" />
                                                         ) : (
                                                             <Moon size={10} className="text-blue-400" />
                                                         )}
-                                                        <span style={{ display: 'none' }} className="opacity-80">{selectedAsset.marketState === 'PRE' ? 'Pre' : 'After'}</span>
+                                                        <span style={{ display: 'none' }} className="opacity-80">{currentMarketState.includes('PRE') ? 'Pre' : 'After'}</span>
                                                     </span>
                                                 )}
                                             </span>
@@ -659,14 +698,14 @@ export default function TransactionModal({
                                                 let displayChange = changePercent || 0;
                                                 let displayAbsChange = assetChange || 0;
 
-                                                if (selectedAsset?.marketState === 'PRE' && selectedAsset.preMarketPrice) {
-                                                    displayPrice = selectedAsset.preMarketPrice;
-                                                    displayChange = selectedAsset.preMarketChangePercent || 0;
+                                                if (currentMarketState?.includes('PRE') && currentPrePrice) {
+                                                    displayPrice = currentPrePrice;
+                                                    displayChange = currentPreChange || 0;
                                                     // Estimated abs change for pre-market (price - (price / 1+change))
                                                     displayAbsChange = displayPrice - (displayPrice / (1 + (displayChange / 100)));
-                                                } else if ((selectedAsset?.marketState === 'POST' || selectedAsset?.marketState === 'POSTPOST') && selectedAsset.postMarketPrice) {
-                                                    displayPrice = selectedAsset.postMarketPrice;
-                                                    displayChange = selectedAsset.postMarketChangePercent || 0;
+                                                } else if ((currentMarketState?.includes('POST')) && currentPostPrice) {
+                                                    displayPrice = currentPostPrice;
+                                                    displayChange = currentPostChange || 0;
                                                     displayAbsChange = displayPrice - (displayPrice / (1 + (displayChange / 100)));
                                                 }
                                                 return (

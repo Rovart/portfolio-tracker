@@ -29,7 +29,7 @@
     "react": "19.2.1",
     "react-dom": "19.2.1",
     "recharts": "^3.6.0",
-    "yahoo-finance2": "^3.10.2"
+    "yahoo-finance2": "^3.11.2"
   },
   "devDependencies": {
     "@capacitor/assets": "^3.0.5",
