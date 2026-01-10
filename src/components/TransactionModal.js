@@ -712,16 +712,24 @@ export default function TransactionModal({
                                                 }
                                                 return (
                                                     <div className="flex flex-col">
-                                                        <span className={`text sm:text-2xl font-bold`}>
-                                                            {(displayPrice * fxRate).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} {baseCurrency === 'USD' ? '$' : baseCurrency}
-                                                        </span>
-                                                        {/* 1D change - always shown */}
-                                                        <span className={`text-xs font-medium ${displayChange >= 0 ? 'text-success' : 'text-danger'}`}>
-                                                            {displayAbsChange >= 0 ? '+' : ''}{(displayAbsChange * fxRate).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ({displayChange >= 0 ? '+' : ''}{displayChange.toFixed(2)}%)
-                                                        </span>
-                                                        {/* Timeframe performance - shown below 1D when viewing a different timeframe */}
-                                                        {rangePerformance && rangePerformance.range !== '1D' && (
-                                                            <span className={`text-xs font-medium mt-0.5 ${rangePerformance.changePercent >= 0 ? 'text-success' : 'text-danger'}`}>
+                                                        <div className="flex items-baseline gap-2">
+                                                            <span className={`text sm:text-2xl font-bold`}>
+                                                                {(displayPrice * fxRate).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} {baseCurrency === 'USD' ? '$' : baseCurrency}
+                                                            </span>
+                                                            {/* 1D change on the right when viewing different timeframe */}
+                                                            {rangePerformance && rangePerformance.range !== '1D' && (
+                                                                <span className={`text-xs font-medium ${displayChange >= 0 ? 'text-success' : 'text-danger'}`}>
+                                                                    {displayAbsChange >= 0 ? '+' : ''}{(displayAbsChange * fxRate).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ({displayChange >= 0 ? '+' : ''}{displayChange.toFixed(2)}%)
+                                                                </span>
+                                                            )}
+                                                        </div>
+                                                        {/* Show 1D change below when viewing 1D, or selected timeframe when not 1D */}
+                                                        {(!rangePerformance || rangePerformance.range === '1D') ? (
+                                                            <span className={`text-xs font-medium ${displayChange >= 0 ? 'text-success' : 'text-danger'}`}>
+                                                                {displayAbsChange >= 0 ? '+' : ''}{(displayAbsChange * fxRate).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ({displayChange >= 0 ? '+' : ''}{displayChange.toFixed(2)}%)
+                                                            </span>
+                                                        ) : (
+                                                            <span className={`text-xs font-medium ${rangePerformance.changePercent >= 0 ? 'text-success' : 'text-danger'}`}>
                                                                 {rangePerformance.change >= 0 ? '+' : ''}{(rangePerformance.change * fxRate).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ({rangePerformance.changePercent >= 0 ? '+' : ''}{rangePerformance.changePercent.toFixed(2)}%)
                                                             </span>
                                                         )}

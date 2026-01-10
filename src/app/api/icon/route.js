@@ -85,18 +85,27 @@ export async function GET(request) {
     }
 
     // Try Financial Modeling Prep (stocks, ETFs, etc.)
-    try {
-        const fmpRes = await fetch(fmpUrl, { next: { revalidate: 604800 } });
-        if (fmpRes.ok) {
-            const buffer = await fmpRes.arrayBuffer();
-            return new NextResponse(buffer, {
-                headers: {
-                    'Content-Type': 'image/png',
-                    'Cache-Control': 'public, max-age=604800'
+    // Skip FMP for crypto pairs to avoid wrong logos
+    if (!isCrypto) {
+        try {
+            const fmpRes = await fetch(fmpUrl, { next: { revalidate: 604800 } });
+            if (fmpRes.ok) {
+                const contentType = fmpRes.headers.get('content-type');
+                if (contentType && contentType.includes('image')) {
+                    const buffer = await fmpRes.arrayBuffer();
+                    // Make sure the image is not a tiny placeholder (at least 1KB)
+                    if (buffer.byteLength > 1000) {
+                        return new NextResponse(buffer, {
+                            headers: {
+                                'Content-Type': 'image/png',
+                                'Cache-Control': 'public, max-age=604800'
+                            }
+                        });
+                    }
                 }
-            });
-        }
-    } catch (e) { }
+            }
+        } catch (e) { }
+    }
 
     // For non-crypto that failed FMP, try CoinCap as last resort (might be unlisted crypto)
     if (!isCrypto) {

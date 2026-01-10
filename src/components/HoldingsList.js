@@ -267,15 +267,22 @@ export default function HoldingsList({ holdings, onSelect, onAddAsset, loading, 
 
             {/* Collapsible Fiat Section - only for regular portfolios with fiat holdings */}
             {!isWatchlist && fiatHoldings.length > 0 && (
-                <div className="mt-2">
+                <div
+                    className="mt-2 rounded-xl transition-all"
+                    style={!fiatCollapsed ? {
+                        background: 'rgba(255,255,255,0.03)',
+                        border: '1px solid rgba(255,255,255,0.05)',
+                        padding: '8px'
+                    } : {}}
+                >
                     {/* Fiat header - clickable to expand/collapse */}
                     <div
-                        className="card flex justify-between items-center cursor-pointer hover:bg-white/5 transition-colors"
+                        className={`flex justify-between items-center cursor-pointer hover:bg-white/5 transition-colors rounded-xl ${fiatCollapsed ? 'card' : ''}`}
                         onClick={toggleFiatCollapsed}
-                        style={{
+                        style={fiatCollapsed ? {
                             background: 'rgba(255,255,255,0.02)',
                             borderColor: 'rgba(255,255,255,0.05)'
-                        }}
+                        } : { padding: '8px' }}
                     >
                         <div className="flex items-center gap-3">
                             {fiatCollapsed ? (
@@ -314,13 +321,7 @@ export default function HoldingsList({ holdings, onSelect, onAddAsset, loading, 
 
                     {/* Expanded fiat holdings */}
                     {!fiatCollapsed && (
-                        <div
-                            className="flex flex-col gap-1 mt-1 rounded-xl p-2"
-                            style={{
-                                background: 'rgba(255,255,255,0.03)',
-                                border: '1px solid rgba(255,255,255,0.05)'
-                            }}
-                        >
+                        <div className="flex flex-col gap-1 mt-2">
                             {fiatHoldings.map((holding, index) => renderHoldingRow(holding, index, true))}
                         </div>
                     )}
