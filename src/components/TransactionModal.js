@@ -712,20 +712,19 @@ export default function TransactionModal({
                                                 }
                                                 return (
                                                     <div className="flex flex-col">
-                                                        <div className="flex items-center gap-2 flex-wrap">
-                                                            <span className={`text sm:text-2xl font-bold`}>
-                                                                {(displayPrice * fxRate).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} {baseCurrency === 'USD' ? '$' : baseCurrency}
-                                                            </span>
-                                                            {/* Show 1D badge when viewing a different timeframe */}
-                                                            {rangePerformance && rangePerformance.range !== '1D' && (
-                                                                <span className={`text-xs px-2 py-0.5 rounded-md font-medium ${displayChange >= 0 ? 'bg-success/10 text-success' : 'bg-danger/10 text-danger'}`}>
-                                                                    1D: {displayChange >= 0 ? '+' : ''}{displayChange.toFixed(2)}%
-                                                                </span>
-                                                            )}
-                                                        </div>
+                                                        <span className={`text sm:text-2xl font-bold`}>
+                                                            {(displayPrice * fxRate).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} {baseCurrency === 'USD' ? '$' : baseCurrency}
+                                                        </span>
+                                                        {/* 1D change - always shown */}
                                                         <span className={`text-xs font-medium ${displayChange >= 0 ? 'text-success' : 'text-danger'}`}>
                                                             {displayAbsChange >= 0 ? '+' : ''}{(displayAbsChange * fxRate).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ({displayChange >= 0 ? '+' : ''}{displayChange.toFixed(2)}%)
                                                         </span>
+                                                        {/* Timeframe performance - shown below 1D when viewing a different timeframe */}
+                                                        {rangePerformance && rangePerformance.range !== '1D' && (
+                                                            <span className={`text-xs font-medium mt-0.5 ${rangePerformance.changePercent >= 0 ? 'text-success' : 'text-danger'}`}>
+                                                                {rangePerformance.change >= 0 ? '+' : ''}{(rangePerformance.change * fxRate).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ({rangePerformance.changePercent >= 0 ? '+' : ''}{rangePerformance.changePercent.toFixed(2)}%)
+                                                            </span>
+                                                        )}
                                                     </div>
                                                 );
                                             })()}
@@ -784,14 +783,6 @@ export default function TransactionModal({
                                             onRangePerformance={setRangePerformance}
                                             transactions={assetTransactions.filter(tx => !tx.isReverse)}
                                         />
-                                        {/* Timeframe performance - shown below chart when not 1D */}
-                                        {rangePerformance && rangePerformance.range !== '1D' && (
-                                            <div className="flex justify-center mt-3">
-                                                <span className={`text-sm font-medium ${rangePerformance.changePercent >= 0 ? 'text-success' : 'text-danger'}`}>
-                                                    {rangePerformance.range}: {rangePerformance.change >= 0 ? '+' : ''}{rangePerformance.change.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} {baseCurrency === 'USD' ? '$' : baseCurrency} ({rangePerformance.changePercent >= 0 ? '+' : ''}{rangePerformance.changePercent.toFixed(2)}%)
-                                                </span>
-                                            </div>
-                                        )}
                                     </div>
 
                                     {/* Earnings Event - for both watchlist and portfolio equities */}

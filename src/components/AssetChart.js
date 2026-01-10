@@ -445,11 +445,11 @@ export default function AssetChart({ symbol, chartSymbol, baseCurrency = 'USD', 
                                 key={`tx-${i}`}
                                 x={dot.x}
                                 y={dot.y}
-                                r={6}
+                                r={4}
                                 fill={dot.isBuy ? green : red}
-                                stroke="#000"
-                                strokeWidth={2}
-                                fillOpacity={0.9}
+                                stroke="#fff"
+                                strokeWidth={1.5}
+                                fillOpacity={1}
                                 isFront={true}
                             />
                         ))}

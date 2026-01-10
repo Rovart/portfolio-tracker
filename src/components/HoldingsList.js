@@ -314,7 +314,13 @@ export default function HoldingsList({ holdings, onSelect, onAddAsset, loading, 
 
                     {/* Expanded fiat holdings */}
                     {!fiatCollapsed && (
-                        <div className="flex flex-col gap-1 mt-1 pl-4" style={{ borderLeft: '2px solid rgba(255,255,255,0.1)' }}>
+                        <div
+                            className="flex flex-col gap-1 mt-1 rounded-xl p-2"
+                            style={{
+                                background: 'rgba(255,255,255,0.03)',
+                                border: '1px solid rgba(255,255,255,0.05)'
+                            }}
+                        >
                             {fiatHoldings.map((holding, index) => renderHoldingRow(holding, index, true))}
                         </div>
                     )}
