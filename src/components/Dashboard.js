@@ -471,20 +471,45 @@ export default function Dashboard() {
                 }
                 const dailyPnl = (change || 0) * fxRate;
 
+                // Determine best display price based on market state
+                let displayPrice = rawPrice;
+                let displayChange = change24h;
+                const marketState = priceData.marketState;
+
+                if (marketState?.includes('PRE') && priceData.preMarketPrice) {
+                    displayPrice = priceData.preMarketPrice;
+                    displayChange = priceData.preMarketChangePercent || change24h;
+                } else if ((marketState?.includes('POST')) && priceData.postMarketPrice) {
+                    displayPrice = priceData.postMarketPrice;
+                    displayChange = priceData.postMarketChangePercent || change24h;
+                }
+
+                const convertedDisplayPrice = displayPrice * fxRate;
+
+                // Recalculate dailyPnl based on display price
+                const displayPriceChange = displayPrice - (displayPrice / (1 + displayChange / 100));
+                const displayDailyPnl = displayPriceChange * fxRate;
+
                 return {
                     asset: asset.symbol,
                     name: asset.name || asset.symbol,
                     symbol: asset.symbol,
                     amount: 1, // Watchlist tracks with notional 1 unit
-                    price: price,
-                    value: price, // Value = price * 1
-                    change24h: change24h,
-                    dailyPnl: dailyPnl,
+                    price: convertedDisplayPrice,
+                    value: convertedDisplayPrice, // Value = price * 1
+                    change24h: displayChange,
+                    dailyPnl: displayDailyPnl,
                     originalType: asset.type,
                     currency: asset.currency,
                     quoteCurrency: assetCurrency, // Track original currency for display
                     isFiat: false, // Watchlists don't have fiat treatment
-                    isWatchlistItem: true
+                    isWatchlistItem: true,
+                    // Extended hours data for TransactionModal
+                    marketState: marketState,
+                    preMarketPrice: priceData.preMarketPrice,
+                    preMarketChangePercent: priceData.preMarketChangePercent,
+                    postMarketPrice: priceData.postMarketPrice,
+                    postMarketChangePercent: priceData.postMarketChangePercent
                 };
             });
             setHoldings(watchlistHoldings);

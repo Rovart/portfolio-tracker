@@ -53,6 +53,20 @@ export default function ProfitChart({ data, baseCurrency, hideBalances, loading 
         return { startIdx, endIdx, startVal, endVal, change, changePercent };
     }, [selectionStart, selectionEnd, chartData]);
 
+    // Pre-compute selection highlight data (avoids expensive function accessor)
+    const selectionChartData = useMemo(() => {
+        if (!selectionMetrics) return null;
+        return chartData.map((d, idx) => ({
+            date: d.date,
+            value: idx >= selectionMetrics.startIdx && idx <= selectionMetrics.endIdx ? d.value : null
+        }));
+    }, [selectionMetrics, chartData]);
+
+    // Throttle ref for touch/mouse moves
+    const lastMoveTimeRef = useRef(0);
+    const rectCacheRef = useRef(null);
+    const THROTTLE_MS = 16; // ~60fps
+
     const handleMouseDown = useCallback((e) => {
         if (e && e.activeTooltipIndex !== undefined) {
             setSelectionStart(e.activeTooltipIndex);
@@ -62,9 +76,13 @@ export default function ProfitChart({ data, baseCurrency, hideBalances, loading 
     }, []);
 
     const handleMouseMove = useCallback((e) => {
-        if (isSelecting && e && e.activeTooltipIndex !== undefined) {
-            setSelectionEnd(e.activeTooltipIndex);
-        }
+        if (!isSelecting || !e || e.activeTooltipIndex === undefined) return;
+
+        const now = Date.now();
+        if (now - lastMoveTimeRef.current < THROTTLE_MS) return;
+        lastMoveTimeRef.current = now;
+
+        setSelectionEnd(e.activeTooltipIndex);
     }, [isSelecting]);
 
     const handleMouseUp = useCallback(() => {
@@ -73,7 +91,9 @@ export default function ProfitChart({ data, baseCurrency, hideBalances, loading 
 
     const handleTouchStart = useCallback((e) => {
         if (e.touches.length === 2 && containerRef.current) {
-            const rect = containerRef.current.getBoundingClientRect();
+            // Cache the rect to avoid layout thrashing
+            rectCacheRef.current = containerRef.current.getBoundingClientRect();
+            const rect = rectCacheRef.current;
             const count = chartData.length;
             if (count === 0) return;
 
@@ -87,30 +107,39 @@ export default function ProfitChart({ data, baseCurrency, hideBalances, loading 
             setSelectionEnd(idx2);
             setIsSelecting(true);
         }
-    }, [chartData]);
+    }, [chartData.length]);
 
     const handleTouchMove = useCallback((e) => {
-        if (e.touches.length === 2 && containerRef.current) {
-            if (e.cancelable) e.preventDefault();
+        if (e.touches.length !== 2) return;
 
-            const rect = containerRef.current.getBoundingClientRect();
-            const count = chartData.length;
-            if (count === 0) return;
+        // Throttle updates
+        const now = Date.now();
+        if (now - lastMoveTimeRef.current < THROTTLE_MS) return;
+        lastMoveTimeRef.current = now;
 
-            const t1 = e.touches[0].clientX - rect.left;
-            const t2 = e.touches[1].clientX - rect.left;
+        if (e.cancelable) e.preventDefault();
 
-            const idx1 = Math.max(0, Math.min(count - 1, Math.floor((t1 / rect.width) * count)));
-            const idx2 = Math.max(0, Math.min(count - 1, Math.floor((t2 / rect.width) * count)));
+        // Use cached rect
+        const rect = rectCacheRef.current || containerRef.current?.getBoundingClientRect();
+        if (!rect) return;
 
-            setSelectionStart(idx1);
-            setSelectionEnd(idx2);
-        }
-    }, [chartData]);
+        const count = chartData.length;
+        if (count === 0) return;
+
+        const t1 = e.touches[0].clientX - rect.left;
+        const t2 = e.touches[1].clientX - rect.left;
+
+        const idx1 = Math.max(0, Math.min(count - 1, Math.floor((t1 / rect.width) * count)));
+        const idx2 = Math.max(0, Math.min(count - 1, Math.floor((t2 / rect.width) * count)));
+
+        setSelectionStart(idx1);
+        setSelectionEnd(idx2);
+    }, [chartData.length]);
 
     const handleTouchEnd = useCallback((e) => {
         if (e.touches.length < 2) {
             setIsSelecting(false);
+            rectCacheRef.current = null; // Clear cache
         }
     }, []);
 
@@ -247,16 +276,11 @@ export default function ProfitChart({ data, baseCurrency, hideBalances, loading 
                         />
 
                         {/* White highlight line for selected portion only */}
-                        {selectionMetrics && (
+                        {selectionMetrics && selectionChartData && (
                             <Area
+                                data={selectionChartData}
                                 type="monotone"
-                                dataKey={(d) => {
-                                    const idx = chartData.findIndex(cd => cd.date === d.date);
-                                    if (idx >= selectionMetrics.startIdx && idx <= selectionMetrics.endIdx) {
-                                        return d.value;
-                                    }
-                                    return null;
-                                }}
+                                dataKey="value"
                                 stroke="#ffffff"
                                 fill="none"
                                 strokeWidth={2.5}

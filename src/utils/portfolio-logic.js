@@ -297,7 +297,9 @@ export function calculateHoldings(transactions, priceMap, baseCurrency = 'USD') 
             const td = (quote.typeDisp || '').toUpperCase();
 
             // Use quote metadata to detect fiat currencies
-            const isFiat = asset.length <= 4 && (qt === 'CURRENCY' || td.includes('CURRENCY') || isBareCurrency || asset === baseCurrency || (priceSym && priceSym.endsWith('=X')));
+            // Note: Always treat 'USD' as fiat, regardless of baseCurrency
+            const commonFiatCurrencies = ['USD', 'EUR', 'GBP', 'JPY', 'CAD', 'AUD', 'CHF', 'CNY', 'HKD', 'SGD', 'IDR', 'NZD', 'SEK', 'NOK', 'DKK', 'KRW', 'INR', 'BRL', 'MXN', 'ZAR'];
+            const isFiat = asset.length <= 4 && (qt === 'CURRENCY' || td.includes('CURRENCY') || isBareCurrency || asset === baseCurrency || commonFiatCurrencies.includes(asset) || (priceSym && priceSym.endsWith('=X')));
 
             if (isFiat) {
                 category = 'Currencies';

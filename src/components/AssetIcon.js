@@ -1,6 +1,6 @@
-import { useState, useMemo, useEffect } from 'react';
+import { useState, useMemo, useEffect, memo } from 'react';
 
-export default function AssetIcon({ symbol, type, isFiat, size = 40, className = "" }) {
+const AssetIcon = memo(function AssetIcon({ symbol, type, isFiat, size = 40, className = "" }) {
     const [iconSrc, setIconSrc] = useState(null);
     const [imageError, setImageError] = useState(false);
     const [loading, setLoading] = useState(true);
@@ -136,4 +136,6 @@ export default function AssetIcon({ symbol, type, isFiat, size = 40, className =
             {initials}
         </div>
     );
-}
+});
+
+export default AssetIcon;

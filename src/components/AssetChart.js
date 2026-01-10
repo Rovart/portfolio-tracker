@@ -1,12 +1,12 @@
 'use client';
 
 import { useEffect, useState, useMemo, useCallback, useRef } from 'react';
-import { AreaChart, Area, XAxis, Tooltip, ResponsiveContainer, YAxis, ReferenceArea, ReferenceLine } from 'recharts';
+import { AreaChart, Area, XAxis, Tooltip, ResponsiveContainer, YAxis, ReferenceArea, ReferenceLine, ReferenceDot } from 'recharts';
 import { getCachedFxHistory, getCachedAssetHistory } from '@/utils/fxCache';
 
 const RANGES = ['1D', '1W', '1M', '3M', '1Y', 'ALL'];
 
-export default function AssetChart({ symbol, chartSymbol, baseCurrency = 'USD', fxRate = 1, parentLoading = false, assetCurrency }) {
+export default function AssetChart({ symbol, chartSymbol, baseCurrency = 'USD', fxRate = 1, parentLoading = false, assetCurrency, onRangePerformance, transactions = [] }) {
     const [rawData, setRawData] = useState([]);
     const [fxHistory, setFxHistory] = useState({});
     const [loading, setLoading] = useState(true);
@@ -106,8 +106,24 @@ export default function AssetChart({ symbol, chartSymbol, baseCurrency = 'USD', 
             if (isNaN(off) || !isFinite(off)) off = 0;
             off = Math.max(0, Math.min(1, off));
         }
-        return { chartData: convertedData, offset: off, startPrice: start, yDomain: fixedYDomain };
+        // Calculate range performance
+        const endPrice = convertedData.length > 0 ? convertedData[convertedData.length - 1].value : 0;
+        const rangeChange = endPrice - start;
+        const rangeChangePercent = start !== 0 ? (rangeChange / start) * 100 : 0;
+
+        return { chartData: convertedData, offset: off, startPrice: start, yDomain: fixedYDomain, rangeChange, rangeChangePercent };
     }, [rawData, fxRate, fxHistory, needsFxConversion]);
+
+    // Report range performance to parent when it changes
+    useEffect(() => {
+        if (onRangePerformance && chartData.length > 0 && !loading) {
+            onRangePerformance({
+                range,
+                change: rangeChange,
+                changePercent: rangeChangePercent
+            });
+        }
+    }, [chartData, range, rangeChange, rangeChangePercent, loading, onRangePerformance]);
 
     // Selection metrics
     const selectionMetrics = useMemo(() => {
@@ -122,6 +138,84 @@ export default function AssetChart({ symbol, chartSymbol, baseCurrency = 'USD', 
         return { startIdx, endIdx, startVal, endVal, change, changePercent };
     }, [selectionStart, selectionEnd, chartData]);
 
+    // Pre-compute selection highlight data (avoids expensive function accessor)
+    const selectionChartData = useMemo(() => {
+        if (!selectionMetrics) return null;
+        return chartData.map((d, idx) => ({
+            date: d.date,
+            value: idx >= selectionMetrics.startIdx && idx <= selectionMetrics.endIdx ? d.value : null
+        }));
+    }, [selectionMetrics, chartData]);
+
+    // Transaction dots - map transactions to chart points using pre-built date index
+    const { transactionDots, dateIndexMap } = useMemo(() => {
+        if (chartData.length === 0) return { transactionDots: [], dateIndexMap: {} };
+
+        // Build date index map for O(1) lookups
+        const indexMap = {};
+        chartData.forEach((point, idx) => {
+            const dateKey = point.date.split('T')[0];
+            if (!indexMap[dateKey]) {
+                indexMap[dateKey] = { point, idx };
+            }
+        });
+
+        if (!transactions || transactions.length === 0) {
+            return { transactionDots: [], dateIndexMap: indexMap };
+        }
+
+        const dots = [];
+        const twoDaysMs = 2 * 24 * 60 * 60 * 1000;
+
+        transactions.forEach(tx => {
+            if (!tx.date || !['BUY', 'SELL', 'DEPOSIT', 'WITHDRAW'].includes(tx.type)) return;
+
+            const txDate = tx.date.split('T')[0];
+
+            // Try exact match first (O(1))
+            if (indexMap[txDate]) {
+                dots.push({
+                    x: indexMap[txDate].point.date,
+                    y: indexMap[txDate].point.value,
+                    type: tx.type,
+                    amount: tx.baseAmount,
+                    isBuy: ['BUY', 'DEPOSIT'].includes(tx.type)
+                });
+                return;
+            }
+
+            // For non-exact matches, find closest within 2 days
+            const txTime = new Date(txDate).getTime();
+            let closestPoint = null;
+            let closestDiff = Infinity;
+
+            for (const key of Object.keys(indexMap)) {
+                const diff = Math.abs(new Date(key).getTime() - txTime);
+                if (diff < closestDiff && diff <= twoDaysMs) {
+                    closestDiff = diff;
+                    closestPoint = indexMap[key].point;
+                }
+            }
+
+            if (closestPoint) {
+                dots.push({
+                    x: closestPoint.date,
+                    y: closestPoint.value,
+                    type: tx.type,
+                    amount: tx.baseAmount,
+                    isBuy: ['BUY', 'DEPOSIT'].includes(tx.type)
+                });
+            }
+        });
+
+        return { transactionDots: dots, dateIndexMap: indexMap };
+    }, [transactions, chartData]);
+
+    // Throttle ref for touch/mouse moves
+    const lastMoveTimeRef = useRef(0);
+    const rectCacheRef = useRef(null);
+    const THROTTLE_MS = 16; // ~60fps
+
     const handleMouseDown = useCallback((e) => {
         if (e && e.activeTooltipIndex !== undefined) {
             setSelectionStart(e.activeTooltipIndex);
@@ -131,9 +225,13 @@ export default function AssetChart({ symbol, chartSymbol, baseCurrency = 'USD', 
     }, []);
 
     const handleMouseMove = useCallback((e) => {
-        if (isSelecting && e && e.activeTooltipIndex !== undefined) {
-            setSelectionEnd(e.activeTooltipIndex);
-        }
+        if (!isSelecting || !e || e.activeTooltipIndex === undefined) return;
+
+        const now = Date.now();
+        if (now - lastMoveTimeRef.current < THROTTLE_MS) return;
+        lastMoveTimeRef.current = now;
+
+        setSelectionEnd(e.activeTooltipIndex);
     }, [isSelecting]);
 
     const handleMouseUp = useCallback(() => {
@@ -142,7 +240,9 @@ export default function AssetChart({ symbol, chartSymbol, baseCurrency = 'USD', 
 
     const handleTouchStart = useCallback((e) => {
         if (e.touches.length === 2 && containerRef.current) {
-            const rect = containerRef.current.getBoundingClientRect();
+            // Cache the rect to avoid layout thrashing
+            rectCacheRef.current = containerRef.current.getBoundingClientRect();
+            const rect = rectCacheRef.current;
             const count = chartData.length;
             if (count === 0) return;
 
@@ -156,31 +256,40 @@ export default function AssetChart({ symbol, chartSymbol, baseCurrency = 'USD', 
             setSelectionEnd(idx2);
             setIsSelecting(true);
         }
-    }, [chartData]);
+    }, [chartData.length]);
 
     const handleTouchMove = useCallback((e) => {
-        if (e.touches.length === 2 && containerRef.current) {
-            // Prevent scrolling when using two fingers for selection
-            if (e.cancelable) e.preventDefault();
+        if (e.touches.length !== 2) return;
 
-            const rect = containerRef.current.getBoundingClientRect();
-            const count = chartData.length;
-            if (count === 0) return;
+        // Throttle updates
+        const now = Date.now();
+        if (now - lastMoveTimeRef.current < THROTTLE_MS) return;
+        lastMoveTimeRef.current = now;
 
-            const t1 = e.touches[0].clientX - rect.left;
-            const t2 = e.touches[1].clientX - rect.left;
+        // Prevent scrolling when using two fingers for selection
+        if (e.cancelable) e.preventDefault();
 
-            const idx1 = Math.max(0, Math.min(count - 1, Math.floor((t1 / rect.width) * count)));
-            const idx2 = Math.max(0, Math.min(count - 1, Math.floor((t2 / rect.width) * count)));
+        // Use cached rect
+        const rect = rectCacheRef.current || containerRef.current?.getBoundingClientRect();
+        if (!rect) return;
 
-            setSelectionStart(idx1);
-            setSelectionEnd(idx2);
-        }
-    }, [chartData]);
+        const count = chartData.length;
+        if (count === 0) return;
+
+        const t1 = e.touches[0].clientX - rect.left;
+        const t2 = e.touches[1].clientX - rect.left;
+
+        const idx1 = Math.max(0, Math.min(count - 1, Math.floor((t1 / rect.width) * count)));
+        const idx2 = Math.max(0, Math.min(count - 1, Math.floor((t2 / rect.width) * count)));
+
+        setSelectionStart(idx1);
+        setSelectionEnd(idx2);
+    }, [chartData.length]);
 
     const handleTouchEnd = useCallback((e) => {
         if (e.touches.length < 2) {
             setIsSelecting(false);
+            rectCacheRef.current = null; // Clear cache
         }
     }, []);
 
@@ -317,16 +426,11 @@ export default function AssetChart({ symbol, chartSymbol, baseCurrency = 'USD', 
                         />
 
                         {/* White highlight line for selected portion only */}
-                        {selectionMetrics && (
+                        {selectionMetrics && selectionChartData && (
                             <Area
+                                data={selectionChartData}
                                 type="monotone"
-                                dataKey={(d) => {
-                                    const idx = chartData.findIndex(cd => cd.date === d.date);
-                                    if (idx >= selectionMetrics.startIdx && idx <= selectionMetrics.endIdx) {
-                                        return d.value;
-                                    }
-                                    return null;
-                                }}
+                                dataKey="value"
                                 stroke="#ffffff"
                                 fill="none"
                                 strokeWidth={2.5}
@@ -334,6 +438,21 @@ export default function AssetChart({ symbol, chartSymbol, baseCurrency = 'USD', 
                                 isAnimationActive={false}
                             />
                         )}
+
+                        {/* Transaction dots - Buy (green) and Sell (red) */}
+                        {!isSelecting && !hasSelection && transactionDots.map((dot, i) => (
+                            <ReferenceDot
+                                key={`tx-${i}`}
+                                x={dot.x}
+                                y={dot.y}
+                                r={6}
+                                fill={dot.isBuy ? green : red}
+                                stroke="#000"
+                                strokeWidth={2}
+                                fillOpacity={0.9}
+                                isFront={true}
+                            />
+                        ))}
                     </AreaChart>
                 </ResponsiveContainer>
             </div>

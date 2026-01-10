@@ -4,6 +4,7 @@ import { useState, useEffect, useMemo, useRef } from 'react';
 import AssetSearch from './AssetSearch';
 import AssetChart from './AssetChart';
 import FinancialInfo from './FinancialInfo';
+import EarningsEvent from './EarningsEvent';
 import ConfirmModal from './ConfirmModal';
 import { Trash2, Edit2, X, Plus, ChevronLeft, ArrowLeft, Moon, Sun, Eye, EyeOff } from 'lucide-react';
 import { normalizeAsset } from '@/utils/portfolio-logic';
@@ -46,6 +47,7 @@ export default function TransactionModal({
     const [deleteConfirm, setDeleteConfirm] = useState(null); // { id, type, date }
     const [assetTab, setAssetTab] = useState('overview'); // 'overview' | 'financials'
     const [isInWatchlist, setIsInWatchlist] = useState(false);
+    const [rangePerformance, setRangePerformance] = useState(null); // { range, change, changePercent }
 
     // Sync selectedAsset when holding prop changes (e.g. if name is loaded late in Dashboard)
     useEffect(() => {
@@ -710,9 +712,17 @@ export default function TransactionModal({
                                                 }
                                                 return (
                                                     <div className="flex flex-col">
-                                                        <span className={`text sm:text-2xl font-bold`}>
-                                                            {(displayPrice * fxRate).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} {baseCurrency === 'USD' ? '$' : baseCurrency}
-                                                        </span>
+                                                        <div className="flex items-center gap-2 flex-wrap">
+                                                            <span className={`text sm:text-2xl font-bold`}>
+                                                                {(displayPrice * fxRate).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} {baseCurrency === 'USD' ? '$' : baseCurrency}
+                                                            </span>
+                                                            {/* Show 1D badge when viewing a different timeframe */}
+                                                            {rangePerformance && rangePerformance.range !== '1D' && (
+                                                                <span className={`text-xs px-2 py-0.5 rounded-md font-medium ${displayChange >= 0 ? 'bg-success/10 text-success' : 'bg-danger/10 text-danger'}`}>
+                                                                    1D: {displayChange >= 0 ? '+' : ''}{displayChange.toFixed(2)}%
+                                                                </span>
+                                                            )}
+                                                        </div>
                                                         <span className={`text-xs font-medium ${displayChange >= 0 ? 'text-success' : 'text-danger'}`}>
                                                             {displayAbsChange >= 0 ? '+' : ''}{(displayAbsChange * fxRate).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ({displayChange >= 0 ? '+' : ''}{displayChange.toFixed(2)}%)
                                                         </span>
@@ -771,8 +781,25 @@ export default function TransactionModal({
                                                 }
                                                 return s;
                                             })()}
+                                            onRangePerformance={setRangePerformance}
+                                            transactions={assetTransactions.filter(tx => !tx.isReverse)}
                                         />
+                                        {/* Timeframe performance - shown below chart when not 1D */}
+                                        {rangePerformance && rangePerformance.range !== '1D' && (
+                                            <div className="flex justify-center mt-3">
+                                                <span className={`text-sm font-medium ${rangePerformance.changePercent >= 0 ? 'text-success' : 'text-danger'}`}>
+                                                    {rangePerformance.range}: {rangePerformance.change >= 0 ? '+' : ''}{rangePerformance.change.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} {baseCurrency === 'USD' ? '$' : baseCurrency} ({rangePerformance.changePercent >= 0 ? '+' : ''}{rangePerformance.changePercent.toFixed(2)}%)
+                                                </span>
+                                            </div>
+                                        )}
                                     </div>
+
+                                    {/* Earnings Event - for both watchlist and portfolio equities */}
+                                    {selectedAsset.originalType === 'EQUITY' && (
+                                        <div className="mt-4">
+                                            <EarningsEvent symbol={selectedAsset.symbol} />
+                                        </div>
+                                    )}
 
                                     {/* Transactions List - hidden for watchlists */}
                                     {!isWatchlist ? (

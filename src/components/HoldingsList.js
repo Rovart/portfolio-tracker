@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useMemo } from 'react';
 import { GripVertical } from 'lucide-react';
 import { updateWatchlistAssetPositions } from '@/utils/db';
 import AssetIcon from './AssetIcon';
@@ -97,9 +97,10 @@ export default function HoldingsList({ holdings, onSelect, onAddAsset, loading, 
 
     // Sort holdings based on selected option
     // FIAT currencies go to bottom for regular portfolios (not watchlists)
-    const sortedHoldings = sortBy === 'custom'
-        ? holdings // Custom order respects original array order (from DB)
-        : [...holdings].sort((a, b) => {
+    const sortedHoldings = useMemo(() => {
+        if (sortBy === 'custom') return holdings;
+
+        return [...holdings].sort((a, b) => {
             // Use isFiat flag from portfolio-logic - but only for non-watchlist views
             if (!isWatchlist) {
                 const aIsFiat = a.isFiat;
@@ -125,6 +126,7 @@ export default function HoldingsList({ holdings, onSelect, onAddAsset, loading, 
                     return b.value - a.value;
             }
         });
+    }, [holdings, sortBy, isWatchlist]);
 
     const activeOptions = isWatchlist ? WATCHLIST_SORT_OPTIONS : SORT_OPTIONS;
     const isDraggable = isWatchlist && sortBy === 'custom';
