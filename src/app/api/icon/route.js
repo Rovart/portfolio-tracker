@@ -12,20 +12,79 @@ export async function GET(request) {
         return new NextResponse('Invalid symbol', { status: 400 });
     }
 
-    // Clean symbol logic (same as frontend)
-    // Remove trailing =X, =F, .X, =, .
-    const cleanSym = symbol.toUpperCase().replace(/[=.](X|F)?$/, '').replace(/[=.]+$/, '');
+    // Clean symbol logic - remove trailing =X, =F, .X, =, .
+    let cleanSym = symbol.toUpperCase().replace(/[=.](X|F)?$/, '').replace(/[=.]+$/, '');
+
+    // Check if it's a crypto trading pair (e.g., ETH-EUR, BTC-USD)
+    // Extract base symbol for crypto pairs
+    let baseCryptoSym = null;
+    if (cleanSym.includes('-')) {
+        const parts = cleanSym.split('-');
+        // The first part is typically the crypto (ETH-EUR -> ETH)
+        baseCryptoSym = parts[0];
+    }
+
+    // Common cryptocurrencies for detection
+    const COMMON_CRYPTO = [
+        'BTC', 'ETH', 'SOL', 'USDT', 'USDC', 'BNB', 'XRP', 'ADA', 'DOGE', 'DOT',
+        'MATIC', 'LINK', 'LTC', 'UNI', 'AVAX', 'SHIB', 'ATOM', 'TRX', 'ETC', 'XLM',
+        'NEAR', 'APT', 'ARB', 'OP', 'FIL', 'ALGO', 'VET', 'ICP', 'AAVE', 'MKR',
+        'GRT', 'SNX', 'CRV', 'LDO', 'SAND', 'MANA', 'AXS', 'FLOW', 'CHZ', 'ENJ',
+        'XMR', 'DASH', 'ZEC', 'BCH', 'EOS', 'NEO', 'IOTA', 'COMP', 'YFI', 'SUSHI',
+        'PEPE', 'WIF', 'BONK', 'FLOKI', 'RENDER', 'FET', 'INJ', 'SUI', 'SEI', 'TIA'
+    ];
+
+    // Determine if this is a crypto asset
+    const isCrypto = type === 'CRYPTOCURRENCY' || type === 'crypto' ||
+        COMMON_CRYPTO.includes(cleanSym) ||
+        (baseCryptoSym && COMMON_CRYPTO.includes(baseCryptoSym));
+
+    // Use base symbol for crypto lookups if it's a trading pair
+    const cryptoLookupSym = baseCryptoSym || cleanSym;
 
     // Sources
     const fmpUrl = `https://financialmodelingprep.com/image-stock/${cleanSym}.png`;
-    const cryptoUrl = `https://assets.coincap.io/assets/icons/${cleanSym.toLowerCase()}@2x.png`;
+    const cryptoUrl = `https://assets.coincap.io/assets/icons/${cryptoLookupSym.toLowerCase()}@2x.png`;
+    const cryptoCompareUrl = `https://www.cryptocompare.com/media/37746238/${cryptoLookupSym.toLowerCase()}.png`;
 
-    // Heuristic for Crypto
-    const isCrypto = type === 'CRYPTOCURRENCY' || type === 'crypto' ||
-        ['BTC', 'ETH', 'SOL', 'USDT', 'USDC', 'BNB', 'XRP', 'ADA', 'DOGE'].includes(cleanSym);
+    // For crypto assets, try crypto sources FIRST
+    if (isCrypto) {
+        // Try CoinCap first
+        try {
+            const ccRes = await fetch(cryptoUrl, { next: { revalidate: 604800 } });
+            if (ccRes.ok) {
+                const contentType = ccRes.headers.get('content-type');
+                if (contentType && contentType.includes('image')) {
+                    const buffer = await ccRes.arrayBuffer();
+                    return new NextResponse(buffer, {
+                        headers: {
+                            'Content-Type': 'image/png',
+                            'Cache-Control': 'public, max-age=604800'
+                        }
+                    });
+                }
+            }
+        } catch (e) { }
 
-    // 1. Try Financial Modeling Prep (User preference: First)
-    // Cache for 7 days (604800 seconds)
+        // Try CryptoCompare as fallback for crypto
+        try {
+            const ccpRes = await fetch(cryptoCompareUrl, { next: { revalidate: 604800 } });
+            if (ccpRes.ok) {
+                const contentType = ccpRes.headers.get('content-type');
+                if (contentType && contentType.includes('image')) {
+                    const buffer = await ccpRes.arrayBuffer();
+                    return new NextResponse(buffer, {
+                        headers: {
+                            'Content-Type': 'image/png',
+                            'Cache-Control': 'public, max-age=604800'
+                        }
+                    });
+                }
+            }
+        } catch (e) { }
+    }
+
+    // Try Financial Modeling Prep (stocks, ETFs, etc.)
     try {
         const fmpRes = await fetch(fmpUrl, { next: { revalidate: 604800 } });
         if (fmpRes.ok) {
@@ -37,22 +96,23 @@ export async function GET(request) {
                 }
             });
         }
-    } catch (e) {
-        // Continue to next source
-    }
+    } catch (e) { }
 
-    // 2. Try CoinCap (if it might be crypto)
-    if (isCrypto) {
+    // For non-crypto that failed FMP, try CoinCap as last resort (might be unlisted crypto)
+    if (!isCrypto) {
         try {
             const ccRes = await fetch(cryptoUrl, { next: { revalidate: 604800 } });
             if (ccRes.ok) {
-                const buffer = await ccRes.arrayBuffer();
-                return new NextResponse(buffer, {
-                    headers: {
-                        'Content-Type': 'image/png',
-                        'Cache-Control': 'public, max-age=604800'
-                    }
-                });
+                const contentType = ccRes.headers.get('content-type');
+                if (contentType && contentType.includes('image')) {
+                    const buffer = await ccRes.arrayBuffer();
+                    return new NextResponse(buffer, {
+                        headers: {
+                            'Content-Type': 'image/png',
+                            'Cache-Control': 'public, max-age=604800'
+                        }
+                    });
+                }
             }
         } catch (e) { }
     }

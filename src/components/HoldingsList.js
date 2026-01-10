@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useRef, useMemo } from 'react';
-import { GripVertical } from 'lucide-react';
+import { GripVertical, ChevronDown, ChevronRight, Wallet } from 'lucide-react';
 import { updateWatchlistAssetPositions } from '@/utils/db';
 import AssetIcon from './AssetIcon';
 
@@ -32,6 +32,14 @@ export default function HoldingsList({ holdings, onSelect, onAddAsset, loading, 
     const dragItemRef = useRef(null);
     const dragOverItemRef = useRef(null);
 
+    // Fiat section collapsed state
+    const [fiatCollapsed, setFiatCollapsed] = useState(() => {
+        if (typeof window !== 'undefined') {
+            return localStorage.getItem('fiat_collapsed') === 'true';
+        }
+        return true; // Default to collapsed
+    });
+
     // Load saved sort preference OR reset when switching portfolio types
     useEffect(() => {
         const storageKey = isWatchlist ? 'watchlist_sort' : 'holdings_sort';
@@ -45,6 +53,13 @@ export default function HoldingsList({ holdings, onSelect, onAddAsset, loading, 
             setSortBy(isWatchlist ? 'custom' : 'size');
         }
     }, [isWatchlist, currentPortfolioId]); // Also reset when portfolio changes
+
+    // Save fiat collapsed state
+    const toggleFiatCollapsed = () => {
+        const newState = !fiatCollapsed;
+        setFiatCollapsed(newState);
+        localStorage.setItem('fiat_collapsed', newState.toString());
+    };
 
     // Save sort preference
     const handleSortChange = (newSort) => {
@@ -78,40 +93,39 @@ export default function HoldingsList({ holdings, onSelect, onAddAsset, loading, 
             // Get new order of symbols
             const orderedSymbols = items.map(h => h.symbol || h.asset);
 
-            // Save to database
-            if (currentPortfolioId && currentPortfolioId !== 'all') {
+            // Update positions in database
+            if (currentPortfolioId) {
                 await updateWatchlistAssetPositions(currentPortfolioId, orderedSymbols);
-            }
-
-            // Notify parent to refresh
-            if (onWatchlistReorder) {
-                onWatchlistReorder(orderedSymbols);
+                if (onWatchlistReorder) onWatchlistReorder();
             }
         }
 
-        dragItemRef.current = null;
-        dragOverItemRef.current = null;
+        // Reset drag state
         setDraggedIndex(null);
         setDragOverIndex(null);
+        dragItemRef.current = null;
+        dragOverItemRef.current = null;
     };
 
-    // Sort holdings based on selected option
-    // FIAT currencies go to bottom for regular portfolios (not watchlists)
-    const sortedHoldings = useMemo(() => {
-        if (sortBy === 'custom') return holdings;
+    // Sort holdings and separate fiat from non-fiat
+    const { nonFiatHoldings, fiatHoldings, totalFiatValue, totalFiatDailyPnl } = useMemo(() => {
+        const fiat = [];
+        const nonFiat = [];
+        let fiatTotal = 0;
+        let fiatDailyTotal = 0;
 
-        return [...holdings].sort((a, b) => {
-            // Use isFiat flag from portfolio-logic - but only for non-watchlist views
-            if (!isWatchlist) {
-                const aIsFiat = a.isFiat;
-                const bIsFiat = b.isFiat;
-
-                // If one is FIAT and the other isn't, FIAT goes to bottom
-                if (aIsFiat && !bIsFiat) return 1;
-                if (!aIsFiat && bIsFiat) return -1;
+        holdings.forEach(h => {
+            if (h.isFiat && !isWatchlist) {
+                fiat.push(h);
+                fiatTotal += h.value || 0;
+                fiatDailyTotal += h.dailyPnl || 0;
+            } else {
+                nonFiat.push(h);
             }
+        });
 
-            // Both are FIAT or both are not FIAT - apply normal sorting
+        // Sort non-fiat holdings
+        const sortedNonFiat = sortBy === 'custom' ? nonFiat : [...nonFiat].sort((a, b) => {
             switch (sortBy) {
                 case 'gainers':
                     return b.change24h - a.change24h;
@@ -126,10 +140,96 @@ export default function HoldingsList({ holdings, onSelect, onAddAsset, loading, 
                     return b.value - a.value;
             }
         });
+
+        // Sort fiat by value
+        const sortedFiat = [...fiat].sort((a, b) => b.value - a.value);
+
+        return {
+            nonFiatHoldings: sortedNonFiat,
+            fiatHoldings: sortedFiat,
+            totalFiatValue: fiatTotal,
+            totalFiatDailyPnl: fiatDailyTotal
+        };
     }, [holdings, sortBy, isWatchlist]);
 
     const activeOptions = isWatchlist ? WATCHLIST_SORT_OPTIONS : SORT_OPTIONS;
     const isDraggable = isWatchlist && sortBy === 'custom';
+
+    // Render a single holding row
+    const renderHoldingRow = (holding, index, isFiatItem = false) => (
+        <div
+            key={holding.asset}
+            className={`card flex justify-between items-center ${draggedIndex === index ? 'opacity-50' : ''} ${dragOverIndex === index ? 'border-primary' : ''}`}
+            style={{ cursor: isDraggable ? 'grab' : 'pointer', transition: 'opacity 0.15s, border-color 0.15s, margin-right 10px' }}
+            onClick={() => !isDraggable && onSelect(holding)}
+            draggable={isDraggable && !isFiatItem}
+            onDragStart={(e) => isDraggable && !isFiatItem && handleDragStart(e, index)}
+            onDragOver={(e) => { if (isDraggable && !isFiatItem && dragItemRef.current !== null) handleDragOver(e, index); }}
+            onDragEnd={isDraggable && !isFiatItem ? handleDragEnd : undefined}
+            onDrop={(e) => e.preventDefault()}
+        >
+            {isDraggable && !isFiatItem && (
+                <div className="pr-2 text-muted cursor-grab" style={{ touchAction: 'none', marginRight: '10px' }}>
+                    <GripVertical size={16} />
+                </div>
+            )}
+
+            <AssetIcon
+                symbol={holding.asset}
+                type={holding.originalType}
+                isFiat={holding.isFiat}
+                size={40}
+                className="mr-3"
+            />
+
+            <div
+                className="flex-1 flex flex-col min-w-0 pr-2"
+                style={isDraggable ? { cursor: 'pointer' } : {}}
+                onClick={(e) => { if (isDraggable) { e.stopPropagation(); onSelect(holding); } }}
+            >
+                <span className="text-base sm:text-lg font-bold truncate">
+                    {DISPLAY_NAME ? holding.name : holding.asset}
+                </span>
+                <span className="text-[10px] sm:text-xs text-muted truncate">
+                    {loading ? (
+                        <span className="inline-block w-24 h-3 bg-white-10 rounded animate-pulse" />
+                    ) : (
+                        <>
+                            {isWatchlist ? (
+                                // Watchlist: Just show price
+                                `${holding.price.toLocaleString(undefined, { maximumFractionDigits: 2 })} ${baseCurrency === 'USD' ? '$' : baseCurrency}`
+                            ) : (
+                                // Regular: Show Amount | Price
+                                `${hideBalances ? '••••' : holding.amount.toLocaleString(undefined, { maximumFractionDigits: 4 })} | ${holding.price.toLocaleString(undefined, { maximumFractionDigits: 2 })} ${baseCurrency === 'USD' ? '$' : baseCurrency}`
+                            )}
+                        </>
+                    )}
+                </span>
+            </div>
+
+            <div className="flex flex-col items-end shrink-0" style={{ textAlign: 'right' }}>
+                <span className="text-base sm:text-lg font-bold">
+                    {loading ? (
+                        <div className="w-24 sm:w-32 h-6 bg-white-10 rounded animate-pulse ml-auto" />
+                    ) : (
+                        // For watchlists, 'value' is just the price (since amount is 1)
+                        ((hideBalances && !isWatchlist) ? '••••••' : `${holding.value.toLocaleString(undefined, { maximumFractionDigits: 2 })} ${baseCurrency === 'USD' ? '$' : baseCurrency}`)
+                    )}
+                </span>
+                <span className={`text-[10px] sm:text-sm font-medium ${holding.change24h >= 0 ? 'text-success' : 'text-danger'}`}>
+                    {loading ? (
+                        <div className="w-16 sm:w-20 h-4 bg-white-10 rounded animate-pulse mt-1 ml-auto" />
+                    ) : (
+                        <>
+                            {/* Always show nominal change unless hidden by privacy on regular portfolios */}
+                            {(!hideBalances || isWatchlist) && `${holding.dailyPnl >= 0 ? '+' : '-'}${Math.abs(holding.dailyPnl).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ${baseCurrency === 'USD' ? '$' : baseCurrency} `}
+                            ({holding.change24h >= 0 ? '+' : ''}{holding.change24h.toFixed(2)}%)
+                        </>
+                    )}
+                </span>
+            </div>
+        </div>
+    );
 
     return (
         <div className="flex flex-col gap-1">
@@ -161,81 +261,66 @@ export default function HoldingsList({ holdings, onSelect, onAddAsset, loading, 
                     )}
                 </div>
             )}
-            {sortedHoldings.map((holding, index) => (
-                <div
-                    key={holding.asset}
-                    className={`card flex justify-between items-center ${draggedIndex === index ? 'opacity-50' : ''} ${dragOverIndex === index ? 'border-primary' : ''}`}
-                    style={{ cursor: isDraggable ? 'grab' : 'pointer', transition: 'opacity 0.15s, border-color 0.15s, margin-right 10px' }}
-                    onClick={() => !isDraggable && onSelect(holding)}
-                    draggable={isDraggable}
-                    onDragStart={(e) => isDraggable && handleDragStart(e, index)}
-                    onDragOver={(e) => { if (isDraggable && dragItemRef.current !== null) handleDragOver(e, index); }}
-                    onDragEnd={isDraggable ? handleDragEnd : undefined}
-                    onDrop={(e) => e.preventDefault()}
-                >
-                    {isDraggable && (
-                        <div className="pr-2 text-muted cursor-grab" style={{ touchAction: 'none', marginRight: '10px' }}>
-                            <GripVertical size={16} />
+
+            {/* Non-fiat holdings */}
+            {nonFiatHoldings.map((holding, index) => renderHoldingRow(holding, index, false))}
+
+            {/* Collapsible Fiat Section - only for regular portfolios with fiat holdings */}
+            {!isWatchlist && fiatHoldings.length > 0 && (
+                <div className="mt-2">
+                    {/* Fiat header - clickable to expand/collapse */}
+                    <div
+                        className="card flex justify-between items-center cursor-pointer hover:bg-white/5 transition-colors"
+                        onClick={toggleFiatCollapsed}
+                        style={{
+                            background: 'rgba(255,255,255,0.02)',
+                            borderColor: 'rgba(255,255,255,0.05)'
+                        }}
+                    >
+                        <div className="flex items-center gap-3">
+                            {fiatCollapsed ? (
+                                <ChevronRight size={18} className="text-muted" />
+                            ) : (
+                                <ChevronDown size={18} className="text-muted" />
+                            )}
+                            <div
+                                className="shrink-0 rounded-full flex items-center justify-center"
+                                style={{
+                                    width: 40,
+                                    height: 40,
+                                    background: 'linear-gradient(135deg, hsl(45, 65%, 50%), hsl(45, 75%, 40%))',
+                                    marginRight: '10px'
+                                }}
+                            >
+                                <Wallet size={20} className="text-white" />
+                            </div>
+                            <div className="flex flex-col">
+                                <span className="text-base sm:text-lg font-bold">Currencies</span>
+                                <span className="text-[10px] sm:text-xs text-muted">
+                                    {fiatHoldings.length} {fiatHoldings.length === 1 ? 'currency' : 'currencies'}
+                                </span>
+                            </div>
+                        </div>
+
+                        <div className="flex flex-col items-end">
+                            <span className="text-base sm:text-lg font-bold">
+                                {hideBalances ? '••••••' : `${totalFiatValue.toLocaleString(undefined, { maximumFractionDigits: 2 })} ${baseCurrency === 'USD' ? '$' : baseCurrency}`}
+                            </span>
+                            <span className={`text-[10px] sm:text-sm font-medium ${totalFiatDailyPnl >= 0 ? 'text-success' : 'text-danger'}`}>
+                                {!hideBalances && `${totalFiatDailyPnl >= 0 ? '+' : '-'}${Math.abs(totalFiatDailyPnl).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ${baseCurrency === 'USD' ? '$' : baseCurrency}`}
+                            </span>
+                        </div>
+                    </div>
+
+                    {/* Expanded fiat holdings */}
+                    {!fiatCollapsed && (
+                        <div className="flex flex-col gap-1 mt-1 pl-4" style={{ borderLeft: '2px solid rgba(255,255,255,0.1)' }}>
+                            {fiatHoldings.map((holding, index) => renderHoldingRow(holding, index, true))}
                         </div>
                     )}
-
-                    <AssetIcon
-                        symbol={holding.asset}
-                        type={holding.originalType}
-                        isFiat={holding.isFiat}
-                        size={40}
-                        className="mr-3"
-                    />
-
-                    <div
-                        className="flex-1 flex flex-col min-w-0 pr-2"
-                        style={isDraggable ? { cursor: 'pointer' } : {}}
-                        onClick={(e) => { if (isDraggable) { e.stopPropagation(); onSelect(holding); } }}
-                    >
-                        <span className="text-base sm:text-lg font-bold truncate">
-                            {DISPLAY_NAME ? holding.name : holding.asset}
-                        </span>
-                        <span className="text-[10px] sm:text-xs text-muted truncate">
-                            {loading ? (
-                                <span className="inline-block w-24 h-3 bg-white-10 rounded animate-pulse" />
-                            ) : (
-                                <>
-                                    {isWatchlist ? (
-                                        // Watchlist: Just show price
-                                        `${holding.price.toLocaleString(undefined, { maximumFractionDigits: 2 })} ${baseCurrency === 'USD' ? '$' : baseCurrency}`
-                                    ) : (
-                                        // Regular: Show Amount | Price
-                                        `${hideBalances ? '••••' : holding.amount.toLocaleString(undefined, { maximumFractionDigits: 4 })} | ${holding.price.toLocaleString(undefined, { maximumFractionDigits: 2 })} ${baseCurrency === 'USD' ? '$' : baseCurrency}`
-                                    )}
-                                </>
-                            )}
-                        </span>
-                    </div>
-
-                    <div className="flex flex-col items-end shrink-0" style={{ textAlign: 'right' }}>
-                        <span className="text-base sm:text-lg font-bold">
-                            {loading ? (
-                                <div className="w-24 sm:w-32 h-6 bg-white-10 rounded animate-pulse ml-auto" />
-                            ) : (
-                                // For watchlists, 'value' is just the price (since amount is 1)
-                                ((hideBalances && !isWatchlist) ? '••••••' : `${holding.value.toLocaleString(undefined, { maximumFractionDigits: 2 })} ${baseCurrency === 'USD' ? '$' : baseCurrency}`)
-                            )}
-                        </span>
-                        <span className={`text-[10px] sm:text-sm font-medium ${holding.change24h >= 0 ? 'text-success' : 'text-danger'}`}>
-                            {loading ? (
-                                <div className="w-16 sm:w-20 h-4 bg-white-10 rounded animate-pulse mt-1 ml-auto" />
-                            ) : (
-                                <>
-                                    {/* Always show nominal change unless hidden by privacy on regular portfolios */}
-                                    {/* Always show nominal change unless hidden by privacy on regular portfolios */}
-                                    {(!hideBalances || isWatchlist) && `${holding.dailyPnl >= 0 ? '+' : '-'}${Math.abs(holding.dailyPnl).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ${baseCurrency === 'USD' ? '$' : baseCurrency} `}
-                                    ({holding.change24h >= 0 ? '+' : ''}{holding.change24h.toFixed(2)}%)
-                                </>
-                            )}
-                        </span>
-                    </div>
                 </div>
-            ))}
+            )}
+
             {holdings.length === 0 && !loading && (
                 <div
                     className="card flex flex-col items-center justify-center py-10 bg-white-5 rounded-2xl border border-white-5 border-dashed gap-2 animate-enter hover:bg-white/10 hover:border-white/20 transition-all"

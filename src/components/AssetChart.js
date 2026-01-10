@@ -63,8 +63,8 @@ export default function AssetChart({ symbol, chartSymbol, baseCurrency = 'USD', 
         if (symbol || chartSymbol) load();
     }, [symbol, range, needsFxConversion, assetCurrency, baseCurrency, chartSymbol]);
 
-    const { chartData, offset, startPrice, yDomain } = useMemo(() => {
-        if (!rawData || rawData.length === 0) return { chartData: [], offset: 0, startPrice: 0, yDomain: [0, 100] };
+    const { chartData, offset, startPrice, yDomain, rangeChange, rangeChangePercent } = useMemo(() => {
+        if (!rawData || rawData.length === 0) return { chartData: [], offset: 0, startPrice: 0, yDomain: [0, 100], rangeChange: 0, rangeChangePercent: 0 };
         let processedData = rawData;
         if (rawData.length > 300) {
             const step = Math.ceil(rawData.length / 300);
