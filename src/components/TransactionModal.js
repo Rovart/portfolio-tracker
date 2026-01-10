@@ -716,8 +716,8 @@ export default function TransactionModal({
                                                             <span className={`text sm:text-2xl font-bold`}>
                                                                 {(displayPrice * fxRate).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} {baseCurrency === 'USD' ? '$' : baseCurrency}
                                                             </span>
-                                                            {/* 1D change on the right when viewing different timeframe */}
-                                                            {rangePerformance && rangePerformance.range !== '1D' && (
+                                                            {/* 1D change on the right when viewing different timeframe - ONLY FOR WATCHLIST */}
+                                                            {rangePerformance && rangePerformance.range !== '1D' && isWatchlist && (
                                                                 <span className={`text-xs font-medium ${displayChange >= 0 ? 'text-success' : 'text-danger'}`}>
                                                                     {displayAbsChange >= 0 ? '+' : ''}{(displayAbsChange * fxRate).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ({displayChange >= 0 ? '+' : ''}{displayChange.toFixed(2)}%)
                                                                 </span>
