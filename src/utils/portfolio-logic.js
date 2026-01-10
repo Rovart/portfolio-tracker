@@ -155,11 +155,23 @@ export function calculateHoldings(transactions, priceMap, baseCurrency = 'USD') 
             quote = quote || { price: 0, changePercent: 0 };
             const changePercent = parseFloat(quote.changePercent) || 0;
 
+            // For bare fiat currencies that don't have =X in priceSym, construct proper format
+            // All currencies use XXXUSD=X format except USD itself which is USD=X
+            // (USD is the anchor currency)
+            const commonFiatCurrencies = ['USD', 'EUR', 'GBP', 'JPY', 'CAD', 'AUD', 'CHF', 'CNY', 'HKD', 'SGD', 'IDR', 'NZD', 'SEK', 'NOK', 'DKK', 'KRW', 'INR', 'BRL', 'MXN', 'ZAR'];
+            if (commonFiatCurrencies.includes(asset) && asset.length === 3 && !priceSym.includes('=X')) {
+                if (asset === 'USD') {
+                    priceSym = 'USD=X';
+                } else {
+                    priceSym = `${asset}USD=X`;
+                }
+            }
+
             // Detect if this is a bare currency (e.g., EUR from EUR=X)
-            // If the priceSymbol ends with =X and has no pair component, it's a bare currency
+            // If by priceSymbol ends with =X and has no pair component, it's a bare currency
             // Detect if this is a bare currency
             // 1. Literal bare currency from Yahoo (EUR=X)
-            // 2. Upgraded FX pair where the asset matches the base of the pair (AUD -> AUDUSD=X)
+            // 2. Upgraded FX pair where asset matches the base of the pair (AUD -> AUDUSD=X)
             const isBareCurrency = (priceSym && priceSym.endsWith('=X') && priceSym.replace('=X', '').length <= 4) ||
                 (asset.length === 3 && (priceSym === `${asset}${baseCurrency}=X` || priceSym === `${asset}USD=X`));
 

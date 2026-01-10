@@ -184,8 +184,7 @@ export default function HoldingsList({ holdings, onSelect, onAddAsset, loading, 
 
             <div
                 className="flex-1 flex flex-col min-w-0 pr-2"
-                style={isDraggable ? { cursor: 'pointer' } : {}}
-                onClick={(e) => { if (isDraggable) { e.stopPropagation(); onSelect(holding); } }}
+                onClick={(e) => { e.stopPropagation(); onSelect(holding); }}
             >
                 <span className="text-base sm:text-lg font-bold truncate">
                     {DISPLAY_NAME ? holding.name : holding.asset}
