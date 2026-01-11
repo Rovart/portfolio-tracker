@@ -758,7 +758,7 @@ export default function TransactionModal({
                                                     {loadingPrice || !assetPrice ? (
                                                         <div className="h-7 w-32 bg-white-10 rounded animate-pulse mt-1" />
                                                     ) : (
-                                                        <span className="text sm:text-2xl text-success text-right">{hideBalances ? '••••••' : `${(currentBalance * assetPrice * (selectedAsset.isBareCurrencyOrigin ? (actualFxRate || fxRate) : fxRate)).toLocaleString(undefined, { maximumFractionDigits: 2 })} ${baseCurrency === 'USD' ? '$' : baseCurrency}`}</span>
+                                                        <span className="text sm:text-2xl text-success text-right">{hideBalances ? '••••••' : `${(currentBalance * assetPrice * fxRate).toLocaleString(undefined, { maximumFractionDigits: 2 })} ${baseCurrency === 'USD' ? '$' : baseCurrency}`}</span>
                                                     )}
                                                 </div>
                                             </>
@@ -842,9 +842,7 @@ export default function TransactionModal({
                                                                                     costFx = historicalFx[dateStr] || fxRate || 1;
                                                                                 }
                                                                                 const costBase = tx.quoteAmount * costFx;
-                                                                                // For bare currencies, use actualFxRate instead of fxRate (fxRate is 1 to avoid double conversion in display)
-                                                                                const effectiveFxRate = selectedAsset.isBareCurrencyOrigin ? (actualFxRate || fxRate) : fxRate;
-                                                                                const currentValBase = tx.baseAmount * assetPrice * effectiveFxRate;
+                                                                                const currentValBase = tx.baseAmount * assetPrice * fxRate;
                                                                                 const pnlBase = currentValBase - costBase;
                                                                                 const pnlPercent = (pnlBase / costBase) * 100;
                                                                                 return (
