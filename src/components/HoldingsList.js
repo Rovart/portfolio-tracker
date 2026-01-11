@@ -160,8 +160,8 @@ export default function HoldingsList({ holdings, onSelect, onAddAsset, loading, 
         <div
             key={holding.asset}
             className={`card flex justify-between items-center ${draggedIndex === index ? 'opacity-50' : ''} ${dragOverIndex === index ? 'border-primary' : ''}`}
-            style={{ cursor: isDraggable ? 'grab' : 'pointer', transition: 'opacity 0.15s, border-color 0.15s, margin-right 10px' }}
-            onClick={() => !isDraggable && onSelect(holding)}
+            style={{ cursor: 'pointer', transition: 'opacity 0.15s, border-color 0.15s, margin-right 10px' }}
+            onClick={() => onSelect(holding)}
             draggable={isDraggable && !isFiatItem}
             onDragStart={(e) => isDraggable && !isFiatItem && handleDragStart(e, index)}
             onDragOver={(e) => { if (isDraggable && !isFiatItem && dragItemRef.current !== null) handleDragOver(e, index); }}
@@ -169,7 +169,11 @@ export default function HoldingsList({ holdings, onSelect, onAddAsset, loading, 
             onDrop={(e) => e.preventDefault()}
         >
             {isDraggable && !isFiatItem && (
-                <div className="pr-2 text-muted cursor-grab" style={{ touchAction: 'none', marginRight: '10px' }}>
+                <div 
+                    className="pr-2 text-muted cursor-grab" 
+                    style={{ touchAction: 'none', marginRight: '10px' }}
+                    onClick={(e) => e.stopPropagation()}
+                >
                     <GripVertical size={16} />
                 </div>
             )}
@@ -184,7 +188,6 @@ export default function HoldingsList({ holdings, onSelect, onAddAsset, loading, 
 
             <div
                 className="flex-1 flex flex-col min-w-0 pr-2"
-                onClick={(e) => { e.stopPropagation(); onSelect(holding); }}
             >
                 <span className="text-base sm:text-lg font-bold truncate">
                     {DISPLAY_NAME ? holding.name : holding.asset}
