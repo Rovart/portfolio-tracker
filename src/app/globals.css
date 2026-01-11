@@ -91,7 +91,6 @@ a {
   border: 1px solid var(--card-border);
   border-radius: 16px;
   padding: 16px;
-  margin-bottom: 16px;
 }
 
 @media (max-width: 380px) {

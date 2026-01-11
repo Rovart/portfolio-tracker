@@ -160,7 +160,7 @@ export default function HoldingsList({ holdings, onSelect, onAddAsset, loading, 
         <div
             key={holding.asset}
             className={`card flex justify-between items-center ${draggedIndex === index ? 'opacity-50' : ''} ${dragOverIndex === index ? 'border-primary' : ''}`}
-            style={{ cursor: 'pointer', transition: 'opacity 0.15s, border-color 0.15s, margin-right 10px' }}
+            style={{ cursor: 'pointer', transition: 'opacity 0.15s, border-color 0.15s', marginBottom: 0 }}
             onClick={() => onSelect(holding)}
             draggable={isDraggable && !isFiatItem}
             onDragStart={(e) => isDraggable && !isFiatItem && handleDragStart(e, index)}
@@ -234,7 +234,7 @@ export default function HoldingsList({ holdings, onSelect, onAddAsset, loading, 
     );
 
     return (
-        <div className="flex flex-col gap-1">
+        <div className="flex flex-col gap-2">
             {/* Only show header for regular portfolios - watchlist sort is in the top bar */}
             {!isWatchlist && (
                 <div className="flex items-center justify-between mb-1">
@@ -323,7 +323,7 @@ export default function HoldingsList({ holdings, onSelect, onAddAsset, loading, 
 
                     {/* Expanded fiat holdings */}
                     {!fiatCollapsed && (
-                        <div className="flex flex-col gap-1 mt-2">
+                        <div className="flex flex-col gap-2 mt-2">
                             {fiatHoldings.map((holding, index) => renderHoldingRow(holding, index, true))}
                         </div>
                     )}
