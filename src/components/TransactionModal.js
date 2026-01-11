@@ -446,7 +446,13 @@ export default function TransactionModal({
                 // Get FX rate to convert from txQuoteCurrency to baseCurrency
                 let hFx = 1;
                 if (txQuoteCurr !== baseCurrency) {
-                    hFx = historicalFx[dateStr] || actualFxRate || 1;
+                    // For bare currencies, historicalFx contains asset/baseCurrency rates
+                    // But we need txQuoteCurrency/baseCurrency for cost conversion
+                    if (isBareOrigin && txQuoteCurr === 'USD') {
+                        hFx = fxRate || actualFxRate || 1;
+                    } else {
+                        hFx = historicalFx[dateStr] || actualFxRate || 1;
+                    }
                 }
 
                 if (['BUY', 'DEPOSIT'].includes(t.type)) {
@@ -463,7 +469,7 @@ export default function TransactionModal({
 
         const avgBase = buyAmount > 0 ? (totalCostBase / buyAmount) : 0;
         return { currentBalance: totalAmount, averagePurchasePrice: avgBase };
-    }, [transactions, selectedAsset?.symbol, selectedAsset?.currency, historicalFx, actualFxRate, baseCurrency]);
+    }, [transactions, selectedAsset?.symbol, selectedAsset?.currency, selectedAsset?.isBareCurrencyOrigin, historicalFx, fxRate, actualFxRate, baseCurrency]);
 
     const handleAssetSelect = (asset) => {
         // Calculate current balance for the selected asset from transaction history
@@ -839,7 +845,14 @@ export default function TransactionModal({
                                                                                 const txQuoteCurrency = (tx.quoteCurrency || selectedAsset.currency || 'USD').toUpperCase();
                                                                                 let costFx = 1;
                                                                                 if (txQuoteCurrency !== baseCurrency) {
-                                                                                    costFx = historicalFx[dateStr] || fxRate || 1;
+                                                                                    // For bare currencies (e.g., AUD with AUDUSD=X), historicalFx contains AUD/baseCurrency rates
+                                                                                    // But we need txQuoteCurrency/baseCurrency for cost conversion
+                                                                                    // If txQuoteCurrency is USD and we have fxRate (USD/baseCurrency), use that
+                                                                                    if (selectedAsset.isBareCurrencyOrigin && txQuoteCurrency === 'USD') {
+                                                                                        costFx = fxRate || 1;
+                                                                                    } else {
+                                                                                        costFx = historicalFx[dateStr] || fxRate || 1;
+                                                                                    }
                                                                                 }
                                                                                 const costBase = tx.quoteAmount * costFx;
                                                                                 const currentValBase = tx.baseAmount * assetPrice * fxRate;
@@ -873,7 +886,11 @@ export default function TransactionModal({
                                                                                         const txQuoteCurrency = (tx.quoteCurrency || selectedAsset.currency || 'USD').toUpperCase();
                                                                                         let costFx = 1;
                                                                                         if (txQuoteCurrency !== baseCurrency) {
-                                                                                            costFx = historicalFx[dateStr] || fxRate || 1;
+                                                                                            if (selectedAsset.isBareCurrencyOrigin && txQuoteCurrency === 'USD') {
+                                                                                                costFx = fxRate || 1;
+                                                                                            } else {
+                                                                                                costFx = historicalFx[dateStr] || fxRate || 1;
+                                                                                            }
                                                                                         }
                                                                                         return `${((tx.quoteAmount / tx.baseAmount) * costFx).toLocaleString(undefined, { maximumFractionDigits: 2 })} ${baseCurrency === 'USD' ? '$' : baseCurrency}`;
                                                                                     })()}
@@ -887,7 +904,14 @@ export default function TransactionModal({
                                                                                         | {hideBalances ? '••••••' : (() => {
                                                                                             const dateStr = tx.date.split('T')[0];
                                                                                             const txQuoteCurrency = (tx.quoteCurrency || selectedAsset.currency || 'USD').toUpperCase();
-                                                                                            const hFx = txQuoteCurrency !== baseCurrency ? (historicalFx[dateStr] || fxRate || 1) : 1;
+                                                                                            let hFx = 1;
+                                                                                            if (txQuoteCurrency !== baseCurrency) {
+                                                                                                if (selectedAsset.isBareCurrencyOrigin && txQuoteCurrency === 'USD') {
+                                                                                                    hFx = fxRate || 1;
+                                                                                                } else {
+                                                                                                    hFx = historicalFx[dateStr] || fxRate || 1;
+                                                                                                }
+                                                                                            }
                                                                                             return `${(tx.quoteAmount * hFx).toLocaleString(undefined, { maximumFractionDigits: 2 })} ${baseCurrency === 'USD' ? '$' : baseCurrency}`;
                                                                                         })()}
                                                                                     </span>
