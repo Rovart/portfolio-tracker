@@ -62,6 +62,13 @@ const HoldingRow = memo(function HoldingRow({
             >
                 <span className="text-base sm:text-lg font-bold truncate">
                     {DISPLAY_NAME ? holding.name : holding.asset}
+                    {/* Market State Icons */}
+                    {!loading && holding.marketState === 'PRE' && (
+                        <Sun size={12} className="inline" style={{ color: '#facc15', marginLeft: '5px', verticalAlign: 'middle' }} title="Pre-market" />
+                    )}
+                    {!loading && (holding.marketState === 'POST' || holding.marketState === 'POSTPOST') && (
+                        <Moon size={12} className="inline" style={{ color: '#9ca3af', marginLeft: '5px', verticalAlign: 'middle' }} title="After-hours" />
+                    )}
                 </span>
                 <span className="text-[10px] sm:text-xs text-muted truncate">
                     {loading ? (
@@ -74,13 +81,6 @@ const HoldingRow = memo(function HoldingRow({
                             ) : (
                                 // Regular: Show Amount | Price
                                 `${hideBalances ? '••••' : holding.amount.toLocaleString(undefined, { maximumFractionDigits: 4 })} | ${holding.price.toLocaleString(undefined, { maximumFractionDigits: 2 })} ${baseCurrency === 'USD' ? '$' : baseCurrency}`
-                            )}
-                            {/* Market State Icons */}
-                            {holding.marketState === 'PRE' && (
-                                <Sun size={12} className="inline" style={{ color: '#facc15', marginLeft: '5px', verticalAlign: 'middle' }} title="Pre-market" />
-                            )}
-                            {(holding.marketState === 'POST' || holding.marketState === 'POSTPOST') && (
-                                <Moon size={12} className="inline" style={{ color: '#9ca3af', marginLeft: '5px', verticalAlign: 'middle' }} title="After-hours" />
                             )}
                         </>
                     )}
