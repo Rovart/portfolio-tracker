@@ -9,28 +9,7 @@ import ConfirmModal from './ConfirmModal';
 import { Trash2, Edit2, X, Plus, ChevronLeft, ArrowLeft, Moon, Sun, Eye, EyeOff } from 'lucide-react';
 import { normalizeAsset } from '@/utils/portfolio-logic';
 import { addWatchlistAsset, removeWatchlistAsset, isSymbolInWatchlist } from '@/utils/db';
-
-// Commodity symbol to name mapping
-const COMMODITY_NAMES = {
-    'GC=F': 'Gold',
-    'SI=F': 'Silver',
-    'HG=F': 'Copper',
-    'CL=F': 'Crude Oil',
-    'NG=F': 'Natural Gas',
-    'BZ=F': 'Brent Oil',
-    'ZW=F': 'Wheat',
-    'ZC=F': 'Corn',
-    'ZS=F': 'Soybeans',
-    'KC=F': 'Coffee',
-    'CT=F': 'Cotton',
-    'SB=F': 'Sugar',
-    'CC=F': 'Cocoa',
-    'GC': 'Gold',
-    'SI': 'Silver',
-    'HG': 'Copper',
-    'CL': 'Crude Oil',
-    'NG': 'Natural Gas'
-};
+import { COMMODITY_NAMES } from '@/utils/commodities';
 
 // Header display logic: Title = Name, Subtitle = Symbol
 

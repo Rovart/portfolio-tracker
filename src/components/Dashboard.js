@@ -11,6 +11,7 @@ import SettingsModal from './SettingsModal';
 import PullToRefresh from './PullToRefresh';
 import { calculateHoldings } from '@/utils/portfolio-logic';
 import { calculatePortfolioHistory } from '@/utils/portfolio-history';
+import { getAssetDisplayName } from '@/utils/commodities';
 import { getCachedAssetHistory, setCachedAssetHistory, getCachedFxHistory, invalidateAssetCache, clearFxCache } from '@/utils/fxCache';
 import {
     getAllTransactions,
@@ -492,7 +493,7 @@ export default function Dashboard() {
 
                 return {
                     asset: asset.symbol,
-                    name: asset.name || asset.symbol,
+                    name: getAssetDisplayName(asset.symbol, asset.name) || asset.symbol,
                     symbol: asset.symbol,
                     amount: 1, // Watchlist tracks with notional 1 unit
                     price: convertedDisplayPrice,
