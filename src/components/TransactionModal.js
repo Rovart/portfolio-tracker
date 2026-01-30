@@ -621,9 +621,11 @@ export default function TransactionModal({
                         <h2 className="text-xl sm:text-2xl font-bold tracking-tight truncate" style={{ margin: 0 }}>
                             {currentView === 'SEARCH' ? 'Add Asset' : (selectedAsset?.name || selectedAsset?.symbol || 'Details')}
                         </h2>
-                        {currentView === 'LIST' && selectedAsset?.symbol && selectedAsset.name && selectedAsset.name !== selectedAsset.symbol && (
+                        {currentView === 'LIST' && selectedAsset?.symbol && (
                             <span className="text-[10px] sm:text-xs text-muted font-bold truncate uppercase tracking-widest opacity-80">
-                                {selectedAsset.symbol}
+                                {editingTx?.quoteCurrency 
+                                    ? `${selectedAsset.symbol}-${editingTx.quoteCurrency.toUpperCase()}`
+                                    : selectedAsset.symbol}
                             </span>
                         )}
                     </div>
@@ -1367,7 +1369,7 @@ function TransactionForm({ holding, existingTx, transactions, onSave, onCancel, 
             </div>
 
             <div className="relative">
-                <label style={labelStyle}>Amount ({sym})</label>
+                <label style={labelStyle}>Amount ({sym}-{detectedQuote})</label>
                 <div className="relative">
                     <input
                         type="number"
