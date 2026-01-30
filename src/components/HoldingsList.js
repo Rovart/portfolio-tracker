@@ -101,9 +101,14 @@ const HoldingRow = memo(function HoldingRow({
                         <div className="w-16 sm:w-20 h-4 bg-white-10 rounded animate-pulse mt-1 ml-auto" />
                     ) : (
                         <>
-                            {/* Always show nominal change unless hidden by privacy on regular portfolios */}
-                            {(!hideBalances || isWatchlist) && `${holding.dailyPnl >= 0 ? '+' : '-'}${Math.abs(holding.dailyPnl).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ${baseCurrency === 'USD' ? '$' : baseCurrency} `}
-                            ({holding.change24h >= 0 ? '+' : ''}{holding.change24h.toFixed(2)}%)
+                            {/* Hide change if asset is the same as base currency (e.g. EUR in EUR portfolio) */}
+                            {holding.asset !== baseCurrency && (
+                                <>
+                                    {/* Always show nominal change unless hidden by privacy on regular portfolios */}
+                                    {(!hideBalances || isWatchlist) && `${holding.dailyPnl >= 0 ? '+' : '-'}${Math.abs(holding.dailyPnl).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ${baseCurrency === 'USD' ? '$' : baseCurrency} `}
+                                    ({holding.change24h >= 0 ? '+' : ''}{holding.change24h.toFixed(2)}%)
+                                </>
+                            )}
                         </>
                     )}
                 </span>
