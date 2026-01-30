@@ -58,6 +58,45 @@ export async function GET(request) {
             });
         }
 
+        // Special handling for crypto pairs without dash (e.g., ETHAUD -> ETH-AUD)
+        // Check if query looks like a crypto pair (6+ chars, all letters, no dash)
+        if (upperQ.length >= 6 && /^[A-Z]+$/.test(upperQ) && !upperQ.includes('-')) {
+            // Try to split into base and quote (e.g., ETHAUD -> ETH + AUD)
+            // Common crypto bases: BTC, ETH, SOL, ADA, DOT, etc. (3-4 chars)
+            // Common quote currencies: USD, USDT, USDC, EUR, GBP, etc.
+            const possibleBases = ['BTC', 'ETH', 'SOL', 'ADA', 'DOT', 'LINK', 'UNI', 'AAVE', 'CRV', 'SUSHI', 'COMP', 'MKR', 'YFI', 'SNX', 'BAL', 'LRC', 'MATIC', 'AVAX', 'FTM', 'NEAR', 'ALGO', 'VET', 'FIL', 'XTZ', 'ATOM', 'LTC', 'BCH', 'XLM', 'XRP', 'DOGE', 'SHIB'];
+            const possibleQuotes = ['USD', 'USDT', 'USDC', 'EUR', 'GBP', 'JPY', 'AUD', 'CAD', 'CHF', 'BTC', 'ETH'];
+            
+            for (const base of possibleBases) {
+                if (upperQ.startsWith(base)) {
+                    const quote = upperQ.substring(base.length);
+                    if (possibleQuotes.includes(quote)) {
+                        const pairSymbol = `${base}-${quote}`;
+                        // Check if this pair already exists in results
+                        const exists = filtered.some(r => 
+                            r.symbol === pairSymbol || 
+                            r.symbol === `${base}${quote}=X` ||
+                            r.symbol === `${base}-${quote}`
+                        );
+                        
+                        if (!exists) {
+                            // Add the crypto pair at the top
+                            filtered.unshift({
+                                symbol: pairSymbol,
+                                displaySymbol: pairSymbol,
+                                shortname: `${base} ${quote}`,
+                                longname: `${base} to ${quote}`,
+                                type: 'CRYPTOCURRENCY',
+                                exchange: 'CCC',
+                                currency: quote
+                            });
+                        }
+                        break;
+                    }
+                }
+            }
+        }
+
         return NextResponse.json({ results: filtered, source: 'yahoo-finance2' });
     } catch (error) {
         console.error('Search error:', error);
