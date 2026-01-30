@@ -624,7 +624,7 @@ export default function TransactionModal({
                         {currentView === 'LIST' && selectedAsset?.symbol && (
                             <span className="text-[10px] sm:text-xs text-muted font-bold truncate uppercase tracking-widest opacity-80">
                                 {editingTx?.quoteCurrency 
-                                    ? `${selectedAsset.symbol}-${editingTx.quoteCurrency.toUpperCase()}`
+                                    ? `${selectedAsset.symbol.split(/[-/]/)[0]}-${editingTx.quoteCurrency.toUpperCase()}`
                                     : selectedAsset.symbol}
                             </span>
                         )}
@@ -1369,7 +1369,7 @@ function TransactionForm({ holding, existingTx, transactions, onSave, onCancel, 
             </div>
 
             <div className="relative">
-                <label style={labelStyle}>Amount ({sym}-{detectedQuote})</label>
+                <label style={labelStyle}>Amount ({sym.split(/[-/]/)[0]}-{detectedQuote})</label>
                 <div className="relative">
                     <input
                         type="number"
