@@ -153,7 +153,8 @@ export function calculateHoldings(transactions, priceMap, baseCurrency = 'USD') 
             }
 
             quote = quote || { price: 0, changePercent: 0 };
-            const changePercent = parseFloat(quote.changePercent) || 0;
+            // Initialize assetChangePercent with regular change
+            let assetChangePercent = parseFloat(quote.changePercent) || 0;
 
             // For bare fiat currencies that don't have =X in priceSym, construct proper format
             // All currencies use XXXUSD=X format except USD itself which is USD=X
@@ -198,10 +199,16 @@ export function calculateHoldings(transactions, priceMap, baseCurrency = 'USD') 
             // then the local price is 1. We then multiply by the FX rate to base.
             // Use best available price: extended hours price when market is in that state
             let basePrice = parseFloat(quote.price) || 0;
+            let usedMarketState = 'REGULAR'; // 'PRE', 'POST', 'REGULAR'
+
             if (quote.marketState === 'PRE' && quote.preMarketPrice) {
                 basePrice = quote.preMarketPrice;
+                assetChangePercent = parseFloat(quote.preMarketChangePercent) || 0;
+                usedMarketState = 'PRE';
             } else if ((quote.marketState === 'POST' || quote.marketState === 'POSTPOST') && quote.postMarketPrice) {
                 basePrice = quote.postMarketPrice;
+                assetChangePercent = parseFloat(quote.postMarketChangePercent) || 0;
+                usedMarketState = 'POST';
             }
 
             let localPrice = basePrice;
@@ -212,12 +219,15 @@ export function calculateHoldings(transactions, priceMap, baseCurrency = 'USD') 
 
             // FX Rate: How many baseCurrency is 1 quoteCurrency?
             let fxRate = 1;
+            let fxChangePercent = 0;
 
             // CRITICAL: If the asset IS the display currency (e.g., EUR holding displayed in EUR),
             // the value is simply the amount - no conversion needed
             if (asset.toUpperCase() === baseCurrency) {
                 localPrice = 1;
                 fxRate = 1;
+                assetChangePercent = 0; // No change relative to itself
+                fxChangePercent = 0; // No FX change
                 // Skip all FX calculation by jumping past the FX block
             } else
             if (quoteCurr !== baseCurrency) {
@@ -275,11 +285,11 @@ export function calculateHoldings(transactions, priceMap, baseCurrency = 'USD') 
             const value = localValue * fxRate;
 
             // Daily Performance Calculation (incorporating FX volatility)
-            const assetChangePercent = parseFloat(quote.changePercent) || 0;
+            // assetChangePercent is already set above (and updated for pre/post if needed)
 
             // FX Performance Discovery
-            let fxChangePercent = 0;
             // Skip FX change calculation if asset IS the baseCurrency (no FX exposure)
+            // Or if we already forced it to 0 above
             if (asset.toUpperCase() !== baseCurrency && quoteCurr !== baseCurrency) {
                 // 1. Try direct
                 const fxQuote = priceMap[`${quoteCurr}${baseCurrency}=X`] ||
@@ -355,7 +365,7 @@ export function calculateHoldings(transactions, priceMap, baseCurrency = 'USD') 
                 preMarketChangePercent: quote.preMarketChangePercent,
                 postMarketPrice: quote.postMarketPrice,
                 postMarketChangePercent: quote.postMarketChangePercent,
-                marketState: quote.marketState
+                marketState: usedMarketState
             };
         })
         .sort((a, b) => {

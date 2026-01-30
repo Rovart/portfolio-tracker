@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useRef, useMemo, memo, useCallback } from 'react';
-import { GripVertical, ChevronDown, ChevronRight, Wallet } from 'lucide-react';
+import { GripVertical, ChevronDown, ChevronRight, Wallet, Sun, Moon } from 'lucide-react';
 import { updateWatchlistAssetPositions } from '@/utils/db';
 import AssetIcon from './AssetIcon';
 
@@ -97,6 +97,13 @@ const HoldingRow = memo(function HoldingRow({
                             {/* Always show nominal change unless hidden by privacy on regular portfolios */}
                             {(!hideBalances || isWatchlist) && `${holding.dailyPnl >= 0 ? '+' : '-'}${Math.abs(holding.dailyPnl).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ${baseCurrency === 'USD' ? '$' : baseCurrency} `}
                             ({holding.change24h >= 0 ? '+' : ''}{holding.change24h.toFixed(2)}%)
+                            {/* Market State Icons */}
+                            {holding.marketState === 'PRE' && (
+                                <Sun size={12} className="inline ml-1" style={{ color: '#facc15' }} title="Pre-market" />
+                            )}
+                            {(holding.marketState === 'POST' || holding.marketState === 'POSTPOST') && (
+                                <Moon size={12} className="inline ml-1" style={{ color: '#60a5fa' }} title="After-hours" />
+                            )}
                         </>
                     )}
                 </span>

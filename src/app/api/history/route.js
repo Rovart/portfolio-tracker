@@ -87,6 +87,14 @@ export async function GET(request) {
     let interval = '1d';
     if (range === '1D') interval = '1h';
     if (range === '1W') interval = '1h';
+    if (range === '1M') interval = '1h';
+    // For YTD, if we're less than 2 months into the year, use hourly data for more granularity
+    if (range === 'YTD') {
+        const daysSinceYearStart = Math.floor((now - period1) / (1000 * 60 * 60 * 24));
+        if (daysSinceYearStart < 60) {
+            interval = '1h';
+        }
+    }
 
     if (!symbol) {
         return NextResponse.json({ error: 'No symbol provided' }, { status: 400 });
