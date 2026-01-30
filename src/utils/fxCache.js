@@ -14,6 +14,7 @@ const CACHE_DURATIONS = {
     '1D': 15 * 60 * 1000,        // 15 min for 1D (intraday data changes rapidly)
     '1W': 30 * 60 * 1000,       // 30 min for 1W (resampled to hourly anyway)
     '1M': 30 * 60 * 1000,       // 30 min for 1M
+    'YTD': 30 * 60 * 1000,      // 30 min for YTD (can be hourly)
     '3M': 60 * 60 * 1000,       // 1 hour for 3M
     '1Y': 60 * 60 * 1000,       // 1 hour for 1Y
     'ALL': 60 * 60 * 1000,      // 1 hour for ALL
