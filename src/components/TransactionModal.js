@@ -1096,6 +1096,9 @@ function TransactionForm({ holding, existingTx, transactions, onSave, onCancel, 
 
     // Detect quote currency from symbol (e.g., BTC-EUR -> EUR, SAP.DE -> EUR)
     const detectedQuote = useMemo(() => {
+        // Fix: Use transaction's specific quote currency when editing
+        if (existingTx?.quoteCurrency) return existingTx.quoteCurrency.toUpperCase();
+
         if (fetchedCurrency) return fetchedCurrency.toUpperCase();
         if (holding.currency) return holding.currency.toUpperCase();
         if (!sym) return 'USD';
@@ -1115,7 +1118,7 @@ function TransactionForm({ holding, existingTx, transactions, onSave, onCancel, 
             if (quote.length === 3) return quote;
         }
         return 'USD';
-    }, [sym, holding.currency, fetchedCurrency]);
+    }, [sym, holding.currency, fetchedCurrency, existingTx]);
 
     // Default type: DEPOSIT for bare currencies, else existing or BUY
     const [type, setType] = useState(() => {
