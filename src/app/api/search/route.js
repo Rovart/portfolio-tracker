@@ -65,7 +65,7 @@ export async function GET(request) {
             // Common crypto bases: BTC, ETH, SOL, ADA, DOT, etc. (3-4 chars)
             // Common quote currencies: USD, USDT, USDC, EUR, GBP, etc.
             const possibleBases = ['BTC', 'ETH', 'SOL', 'ADA', 'DOT', 'LINK', 'UNI', 'AAVE', 'CRV', 'SUSHI', 'COMP', 'MKR', 'YFI', 'SNX', 'BAL', 'LRC', 'MATIC', 'AVAX', 'FTM', 'NEAR', 'ALGO', 'VET', 'FIL', 'XTZ', 'ATOM', 'LTC', 'BCH', 'XLM', 'XRP', 'DOGE', 'SHIB'];
-            const possibleQuotes = ['USD', 'USDT', 'USDC', 'EUR', 'GBP', 'JPY', 'AUD', 'CAD', 'CHF', 'BTC', 'ETH'];
+            const possibleQuotes = ['USD', 'USDT', 'USDC', 'EUR', 'GBP', 'JPY', 'AUD', 'CAD', 'CHF', 'CNY', 'HKD', 'SGD', 'NZD', 'SEK', 'NOK', 'DKK', 'INR', 'BRL', 'MXN', 'ZAR', 'KRW', 'THB', 'IDR', 'BTC', 'ETH'];
             
             for (const base of possibleBases) {
                 if (upperQ.startsWith(base)) {
