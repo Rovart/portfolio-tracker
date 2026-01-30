@@ -212,6 +212,14 @@ export function calculateHoldings(transactions, priceMap, baseCurrency = 'USD') 
 
             // FX Rate: How many baseCurrency is 1 quoteCurrency?
             let fxRate = 1;
+
+            // CRITICAL: If the asset IS the display currency (e.g., EUR holding displayed in EUR),
+            // the value is simply the amount - no conversion needed
+            if (asset.toUpperCase() === baseCurrency) {
+                localPrice = 1;
+                fxRate = 1;
+                // Skip all FX calculation by jumping past the FX block
+            } else
             if (quoteCurr !== baseCurrency) {
                 // 1. Try direct pair (e.g. HKDEUR=X) - usually doesn't exist
                 let directFx = priceMap[`${quoteCurr}${baseCurrency}=X`];
@@ -271,7 +279,8 @@ export function calculateHoldings(transactions, priceMap, baseCurrency = 'USD') 
 
             // FX Performance Discovery
             let fxChangePercent = 0;
-            if (quoteCurr !== baseCurrency) {
+            // Skip FX change calculation if asset IS the baseCurrency (no FX exposure)
+            if (asset.toUpperCase() !== baseCurrency && quoteCurr !== baseCurrency) {
                 // 1. Try direct
                 const fxQuote = priceMap[`${quoteCurr}${baseCurrency}=X`] ||
                     (quoteCurr === 'USD' ? null : priceMap[quoteCurr]) ||

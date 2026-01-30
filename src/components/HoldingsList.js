@@ -1,9 +1,109 @@
 'use client';
 
-import { useState, useEffect, useRef, useMemo } from 'react';
+import { useState, useEffect, useRef, useMemo, memo, useCallback } from 'react';
 import { GripVertical, ChevronDown, ChevronRight, Wallet } from 'lucide-react';
 import { updateWatchlistAssetPositions } from '@/utils/db';
 import AssetIcon from './AssetIcon';
+
+// Extracted memoized component for holding rows to prevent unnecessary re-renders
+const HoldingRow = memo(function HoldingRow({
+    holding,
+    index,
+    isFiatItem,
+    isDraggable,
+    draggedIndex,
+    dragOverIndex,
+    loading,
+    hideBalances,
+    isWatchlist,
+    baseCurrency,
+    onSelect,
+    handleDragStart,
+    handleDragOver,
+    handleDragEnd,
+    dragItemRef
+}) {
+    const isBeingDragged = draggedIndex === index;
+    const isDragOver = dragOverIndex === index;
+    const showDragHandle = isDraggable && !isFiatItem;
+
+    return (
+        <div
+            key={holding.asset}
+            className={`card flex justify-between items-center ${isBeingDragged ? 'opacity-50' : ''} ${isDragOver ? 'border-primary' : ''}`}
+            style={{ cursor: 'pointer', transition: 'opacity 0.15s, border-color 0.15s', marginBottom: 0 }}
+            onClick={() => onSelect(holding)}
+            draggable={showDragHandle}
+            onDragStart={(e) => showDragHandle && handleDragStart(e, index)}
+            onDragOver={(e) => { if (showDragHandle && dragItemRef.current !== null) handleDragOver(e, index); }}
+            onDragEnd={showDragHandle ? handleDragEnd : undefined}
+            onDrop={(e) => e.preventDefault()}
+        >
+            {showDragHandle && (
+                <div
+                    className="pr-2 text-muted cursor-grab"
+                    style={{ touchAction: 'none', marginRight: '10px' }}
+                    onClick={(e) => e.stopPropagation()}
+                >
+                    <GripVertical size={16} />
+                </div>
+            )}
+
+            <AssetIcon
+                symbol={holding.asset}
+                type={holding.originalType}
+                isFiat={holding.isFiat}
+                size={40}
+                className="mr-3"
+            />
+
+            <div
+                className="flex-1 flex flex-col min-w-0 pr-2"
+            >
+                <span className="text-base sm:text-lg font-bold truncate">
+                    {DISPLAY_NAME ? holding.name : holding.asset}
+                </span>
+                <span className="text-[10px] sm:text-xs text-muted truncate">
+                    {loading ? (
+                        <span className="inline-block w-24 h-3 bg-white-10 rounded animate-pulse" />
+                    ) : (
+                        <>
+                            {isWatchlist ? (
+                                // Watchlist: Just show price
+                                `${holding.price.toLocaleString(undefined, { maximumFractionDigits: 2 })} ${baseCurrency === 'USD' ? '$' : baseCurrency}`
+                            ) : (
+                                // Regular: Show Amount | Price
+                                `${hideBalances ? '••••' : holding.amount.toLocaleString(undefined, { maximumFractionDigits: 4 })} | ${holding.price.toLocaleString(undefined, { maximumFractionDigits: 2 })} ${baseCurrency === 'USD' ? '$' : baseCurrency}`
+                            )}
+                        </>
+                    )}
+                </span>
+            </div>
+
+            <div className="flex flex-col items-end shrink-0" style={{ textAlign: 'right' }}>
+                <span className="text-base sm:text-lg font-bold">
+                    {loading ? (
+                        <div className="w-24 sm:w-32 h-6 bg-white-10 rounded animate-pulse ml-auto" />
+                    ) : (
+                        // For watchlists, 'value' is just the price (since amount is 1)
+                        ((hideBalances && !isWatchlist) ? '••••••' : `${holding.value.toLocaleString(undefined, { maximumFractionDigits: 2 })} ${baseCurrency === 'USD' ? '$' : baseCurrency}`)
+                    )}
+                </span>
+                <span className={`text-[10px] sm:text-sm font-medium ${holding.change24h >= 0 ? 'text-success' : 'text-danger'}`}>
+                    {loading ? (
+                        <div className="w-16 sm:w-20 h-4 bg-white-10 rounded animate-pulse mt-1 ml-auto" />
+                    ) : (
+                        <>
+                            {/* Always show nominal change unless hidden by privacy on regular portfolios */}
+                            {(!hideBalances || isWatchlist) && `${holding.dailyPnl >= 0 ? '+' : '-'}${Math.abs(holding.dailyPnl).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ${baseCurrency === 'USD' ? '$' : baseCurrency} `}
+                            ({holding.change24h >= 0 ? '+' : ''}{holding.change24h.toFixed(2)}%)
+                        </>
+                    )}
+                </span>
+            </div>
+        </div>
+    );
+});
 
 // Toggle this to switch between Symbol and Short Name
 const DISPLAY_NAME = false; // true = Name, false = Symbol
@@ -68,21 +168,21 @@ export default function HoldingsList({ holdings, onSelect, onAddAsset, loading, 
         localStorage.setItem(storageKey, newSort);
     };
 
-    // Drag and drop handlers
-    const handleDragStart = (e, index) => {
+    // Drag and drop handlers - memoized to prevent unnecessary re-renders
+    const handleDragStart = useCallback((e, index) => {
         dragItemRef.current = index;
         setDraggedIndex(index);
         e.dataTransfer.effectAllowed = 'move';
-    };
+    }, []);
 
-    const handleDragOver = (e, index) => {
+    const handleDragOver = useCallback((e, index) => {
         e.preventDefault();
         if (dragItemRef.current === index) return;
         dragOverItemRef.current = index;
         setDragOverIndex(index);
-    };
+    }, []);
 
-    const handleDragEnd = async () => {
+    const handleDragEnd = useCallback(async () => {
         if (dragItemRef.current !== null && dragOverItemRef.current !== null && dragItemRef.current !== dragOverItemRef.current) {
             // Reorder the holdings
             const items = [...holdings];
@@ -105,7 +205,7 @@ export default function HoldingsList({ holdings, onSelect, onAddAsset, loading, 
         setDragOverIndex(null);
         dragItemRef.current = null;
         dragOverItemRef.current = null;
-    };
+    }, [holdings, currentPortfolioId, onWatchlistReorder]);
 
     // Sort holdings and separate fiat from non-fiat
     const { nonFiatHoldings, fiatHoldings, totalFiatValue, totalFiatDailyPnl } = useMemo(() => {
@@ -155,84 +255,6 @@ export default function HoldingsList({ holdings, onSelect, onAddAsset, loading, 
     const activeOptions = isWatchlist ? WATCHLIST_SORT_OPTIONS : SORT_OPTIONS;
     const isDraggable = isWatchlist && sortBy === 'custom';
 
-    // Render a single holding row
-    const renderHoldingRow = (holding, index, isFiatItem = false) => (
-        <div
-            key={holding.asset}
-            className={`card flex justify-between items-center ${draggedIndex === index ? 'opacity-50' : ''} ${dragOverIndex === index ? 'border-primary' : ''}`}
-            style={{ cursor: 'pointer', transition: 'opacity 0.15s, border-color 0.15s', marginBottom: 0 }}
-            onClick={() => onSelect(holding)}
-            draggable={isDraggable && !isFiatItem}
-            onDragStart={(e) => isDraggable && !isFiatItem && handleDragStart(e, index)}
-            onDragOver={(e) => { if (isDraggable && !isFiatItem && dragItemRef.current !== null) handleDragOver(e, index); }}
-            onDragEnd={isDraggable && !isFiatItem ? handleDragEnd : undefined}
-            onDrop={(e) => e.preventDefault()}
-        >
-            {isDraggable && !isFiatItem && (
-                <div 
-                    className="pr-2 text-muted cursor-grab" 
-                    style={{ touchAction: 'none', marginRight: '10px' }}
-                    onClick={(e) => e.stopPropagation()}
-                >
-                    <GripVertical size={16} />
-                </div>
-            )}
-
-            <AssetIcon
-                symbol={holding.asset}
-                type={holding.originalType}
-                isFiat={holding.isFiat}
-                size={40}
-                className="mr-3"
-            />
-
-            <div
-                className="flex-1 flex flex-col min-w-0 pr-2"
-            >
-                <span className="text-base sm:text-lg font-bold truncate">
-                    {DISPLAY_NAME ? holding.name : holding.asset}
-                </span>
-                <span className="text-[10px] sm:text-xs text-muted truncate">
-                    {loading ? (
-                        <span className="inline-block w-24 h-3 bg-white-10 rounded animate-pulse" />
-                    ) : (
-                        <>
-                            {isWatchlist ? (
-                                // Watchlist: Just show price
-                                `${holding.price.toLocaleString(undefined, { maximumFractionDigits: 2 })} ${baseCurrency === 'USD' ? '$' : baseCurrency}`
-                            ) : (
-                                // Regular: Show Amount | Price
-                                `${hideBalances ? '••••' : holding.amount.toLocaleString(undefined, { maximumFractionDigits: 4 })} | ${holding.price.toLocaleString(undefined, { maximumFractionDigits: 2 })} ${baseCurrency === 'USD' ? '$' : baseCurrency}`
-                            )}
-                        </>
-                    )}
-                </span>
-            </div>
-
-            <div className="flex flex-col items-end shrink-0" style={{ textAlign: 'right' }}>
-                <span className="text-base sm:text-lg font-bold">
-                    {loading ? (
-                        <div className="w-24 sm:w-32 h-6 bg-white-10 rounded animate-pulse ml-auto" />
-                    ) : (
-                        // For watchlists, 'value' is just the price (since amount is 1)
-                        ((hideBalances && !isWatchlist) ? '••••••' : `${holding.value.toLocaleString(undefined, { maximumFractionDigits: 2 })} ${baseCurrency === 'USD' ? '$' : baseCurrency}`)
-                    )}
-                </span>
-                <span className={`text-[10px] sm:text-sm font-medium ${holding.change24h >= 0 ? 'text-success' : 'text-danger'}`}>
-                    {loading ? (
-                        <div className="w-16 sm:w-20 h-4 bg-white-10 rounded animate-pulse mt-1 ml-auto" />
-                    ) : (
-                        <>
-                            {/* Always show nominal change unless hidden by privacy on regular portfolios */}
-                            {(!hideBalances || isWatchlist) && `${holding.dailyPnl >= 0 ? '+' : '-'}${Math.abs(holding.dailyPnl).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ${baseCurrency === 'USD' ? '$' : baseCurrency} `}
-                            ({holding.change24h >= 0 ? '+' : ''}{holding.change24h.toFixed(2)}%)
-                        </>
-                    )}
-                </span>
-            </div>
-        </div>
-    );
-
     return (
         <div className="flex flex-col gap-2">
             {/* Only show header for regular portfolios - watchlist sort is in the top bar */}
@@ -265,7 +287,26 @@ export default function HoldingsList({ holdings, onSelect, onAddAsset, loading, 
             )}
 
             {/* Non-fiat holdings */}
-            {nonFiatHoldings.map((holding, index) => renderHoldingRow(holding, index, false))}
+            {nonFiatHoldings.map((holding, index) => (
+                <HoldingRow
+                    key={holding.asset}
+                    holding={holding}
+                    index={index}
+                    isFiatItem={false}
+                    isDraggable={isDraggable}
+                    draggedIndex={draggedIndex}
+                    dragOverIndex={dragOverIndex}
+                    loading={loading}
+                    hideBalances={hideBalances}
+                    isWatchlist={isWatchlist}
+                    baseCurrency={baseCurrency}
+                    onSelect={onSelect}
+                    handleDragStart={handleDragStart}
+                    handleDragOver={handleDragOver}
+                    handleDragEnd={handleDragEnd}
+                    dragItemRef={dragItemRef}
+                />
+            ))}
 
             {/* Collapsible Fiat Section - only for regular portfolios with fiat holdings */}
             {!isWatchlist && fiatHoldings.length > 0 && (
@@ -324,7 +365,26 @@ export default function HoldingsList({ holdings, onSelect, onAddAsset, loading, 
                     {/* Expanded fiat holdings */}
                     {!fiatCollapsed && (
                         <div className="flex flex-col gap-2 mt-2">
-                            {fiatHoldings.map((holding, index) => renderHoldingRow(holding, index, true))}
+                            {fiatHoldings.map((holding, index) => (
+                                <HoldingRow
+                                    key={holding.asset}
+                                    holding={holding}
+                                    index={index}
+                                    isFiatItem={true}
+                                    isDraggable={isDraggable}
+                                    draggedIndex={draggedIndex}
+                                    dragOverIndex={dragOverIndex}
+                                    loading={loading}
+                                    hideBalances={hideBalances}
+                                    isWatchlist={isWatchlist}
+                                    baseCurrency={baseCurrency}
+                                    onSelect={onSelect}
+                                    handleDragStart={handleDragStart}
+                                    handleDragOver={handleDragOver}
+                                    handleDragEnd={handleDragEnd}
+                                    dragItemRef={dragItemRef}
+                                />
+                            ))}
                         </div>
                     )}
                 </div>

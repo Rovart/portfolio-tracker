@@ -94,7 +94,14 @@ export function calculatePortfolioHistory(transactions, historicalPrices, baseCu
 
             // 1. Get local price of asset
             let localPrice = 0;
-            if (asset === quoteCurr) {
+            let fxRate = 1;
+
+            // CRITICAL: If the asset IS the display currency (e.g., EUR holding displayed in EUR),
+            // the value is simply the amount - no conversion needed
+            if (asset.toUpperCase() === baseCurrency) {
+                localPrice = 1;
+                fxRate = 1;
+            } else if (asset === quoteCurr) {
                 localPrice = 1;
             } else {
                 const history = historicalPrices[priceSym];
@@ -117,10 +124,9 @@ export function calculatePortfolioHistory(transactions, historicalPrices, baseCu
             if (localPrice === 0 && asset !== quoteCurr) continue;
 
             // 2. Get FX rate using USD-pivot strategy (same as portfolio-logic)
-            let fxRate = 1;
             const dateOnly = timestamp.split('T')[0];
 
-            if (quoteCurr !== baseCurrency) {
+            if (quoteCurr !== baseCurrency && asset.toUpperCase() !== baseCurrency) {
                 // Pivot: quoteCurr -> USD -> baseCurrency
                 // Step 1: quoteCurr -> USD (e.g., HKDUSD=X)
                 let toUsdRate = 1;

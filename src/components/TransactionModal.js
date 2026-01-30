@@ -50,6 +50,7 @@ export default function TransactionModal({
     const [rangePerformance, setRangePerformance] = useState(null); // { range, change, changePercent }
 
     // Sync selectedAsset when holding prop changes (e.g. if name is loaded late in Dashboard)
+    // Use primitive dependencies to minimize re-runs
     useEffect(() => {
         if (holding) {
             setSelectedAsset({
@@ -66,7 +67,20 @@ export default function TransactionModal({
                 marketState: holding.marketState
             });
         }
-    }, [holding]);
+    }, [
+        holding?.symbol,
+        holding?.asset,
+        holding?.amount,
+        holding?.originalType,
+        holding?.currency,
+        holding?.name,
+        holding?.isBareCurrencyOrigin,
+        holding?.preMarketPrice,
+        holding?.preMarketChangePercent,
+        holding?.postMarketPrice,
+        holding?.postMarketChangePercent,
+        holding?.marketState
+    ]);
 
     // Consolidated price data - updated atomically to guarantee single render
     // Always start loading to prevent showing cached USD price before FX conversion
@@ -76,6 +90,7 @@ export default function TransactionModal({
         fxRate: 1,          // For display (may be 1 for bare currencies to avoid double conversion)
         actualFxRate: 1,    // True FX rate for calculations (used as fallback in avg price)
         historicalFx: {},
+        transactionFx: {},  // Map of quoteCurrency -> historical rates for transaction cost basis
         isLoading: true // Always start loading
     });
 
@@ -329,6 +344,34 @@ export default function TransactionModal({
                     }
                 }
 
+                // BUG FIX: Fetch FX rates for ALL transaction quote currencies
+                // This ensures proper cost basis calculation when viewing ETH-USD
+                // but having transactions in ETH-AUD, ETH-EUR, etc.
+                const fetchedTransactionFx = {};
+                if (transactions && transactions.length > 0) {
+                    const normalizedSymbol = normalizeAsset(selectedAsset.symbol);
+                    // Find all unique quote currencies used in transactions for this asset
+                    const quoteCurrencies = new Set();
+                    transactions.forEach(t => {
+                        if (normalizeAsset(t.baseCurrency) === normalizedSymbol && t.quoteCurrency) {
+                            quoteCurrencies.add(t.quoteCurrency.toUpperCase());
+                        }
+                    });
+
+                    // Fetch historical FX for each unique quote currency
+                    const { getCachedFxHistory } = await import('@/utils/fxCache');
+                    await Promise.all([...quoteCurrencies].map(async (curr) => {
+                        if (curr !== baseCurrency) {
+                            try {
+                                fetchedTransactionFx[curr] = await getCachedFxHistory(curr, baseCurrency, 'ALL');
+                            } catch (e) {
+                                console.error(`Failed to fetch FX history for ${curr}:`, e);
+                                fetchedTransactionFx[curr] = {};
+                            }
+                        }
+                    }));
+                }
+
                 // Update currency in selectedAsset if needed (won't re-trigger effect)
                 if (fetchedCurrency !== selectedAsset.currency) {
                     setSelectedAsset(prev => prev ? { ...prev, currency: fetchedCurrency } : prev);
@@ -353,6 +396,7 @@ export default function TransactionModal({
                     fxRate: fetchedFxRate,
                     actualFxRate: fetchedActualFxRate || fetchedFxRate,
                     historicalFx: fetchedHMap,
+                    transactionFx: fetchedTransactionFx,
                     marketState: fetchedMarketState,
                     preMarketPrice: fetchedPreMarketPrice,
                     preMarketChange: fetchedPreMarketChange,
@@ -369,7 +413,7 @@ export default function TransactionModal({
         fetchData();
         const interval = setInterval(fetchData, 30000);
         return () => clearInterval(interval);
-    }, [selectedAsset?.symbol, baseCurrency]);
+    }, [selectedAsset?.symbol, baseCurrency, transactions]);
 
     // Destructure for easy access throughout component
     const {
@@ -379,6 +423,7 @@ export default function TransactionModal({
         fxRate,
         actualFxRate,
         historicalFx,
+        transactionFx,
         isLoading: loadingPrice,
         marketState: currentMarketState,
         preMarketPrice: currentPrePrice,
@@ -446,12 +491,14 @@ export default function TransactionModal({
                 // Get FX rate to convert from txQuoteCurrency to baseCurrency
                 let hFx = 1;
                 if (txQuoteCurr !== baseCurrency) {
-                    // For bare currencies, historicalFx contains asset/baseCurrency rates
-                    // But we need txQuoteCurrency/baseCurrency for cost conversion
-                    if (isBareOrigin && txQuoteCurr === 'USD') {
-                        hFx = fxRate || actualFxRate || 1;
+                    // BUG FIX: Use transactionFx for the specific quote currency
+                    // This ensures proper conversion when viewing ETH-USD but transaction was in ETH-AUD
+                    const txFxHistory = transactionFx[txQuoteCurr];
+                    if (txFxHistory && txFxHistory[dateStr]) {
+                        hFx = txFxHistory[dateStr];
                     } else {
-                        hFx = historicalFx[dateStr] || actualFxRate || 1;
+                        // Fallback to current rate if no historical data
+                        hFx = actualFxRate || fxRate || 1;
                     }
                 }
 
@@ -469,7 +516,7 @@ export default function TransactionModal({
 
         const avgBase = buyAmount > 0 ? (totalCostBase / buyAmount) : 0;
         return { currentBalance: totalAmount, averagePurchasePrice: avgBase };
-    }, [transactions, selectedAsset?.symbol, selectedAsset?.currency, selectedAsset?.isBareCurrencyOrigin, historicalFx, fxRate, actualFxRate, baseCurrency]);
+    }, [transactions, selectedAsset?.symbol, selectedAsset?.currency, selectedAsset?.isBareCurrencyOrigin, historicalFx, transactionFx, fxRate, actualFxRate, baseCurrency]);
 
     const handleAssetSelect = (asset) => {
         // Calculate current balance for the selected asset from transaction history
@@ -845,13 +892,14 @@ export default function TransactionModal({
                                                                                 const txQuoteCurrency = (tx.quoteCurrency || selectedAsset.currency || 'USD').toUpperCase();
                                                                                 let costFx = 1;
                                                                                 if (txQuoteCurrency !== baseCurrency) {
-                                                                                    // For bare currencies (e.g., AUD with AUDUSD=X), historicalFx contains AUD/baseCurrency rates
-                                                                                    // But we need txQuoteCurrency/baseCurrency for cost conversion
-                                                                                    // If txQuoteCurrency is USD and we have fxRate (USD/baseCurrency), use that
-                                                                                    if (selectedAsset.isBareCurrencyOrigin && txQuoteCurrency === 'USD') {
-                                                                                        costFx = fxRate || 1;
+                                                                                    // BUG FIX: Use transactionFx for the specific quote currency
+                                                                                    // This ensures proper conversion when viewing ETH-USD but transaction was in ETH-AUD
+                                                                                    const txFxHistory = transactionFx[txQuoteCurrency];
+                                                                                    if (txFxHistory && txFxHistory[dateStr]) {
+                                                                                        costFx = txFxHistory[dateStr];
                                                                                     } else {
-                                                                                        costFx = historicalFx[dateStr] || fxRate || 1;
+                                                                                        // Fallback to current rate if no historical data
+                                                                                        costFx = actualFxRate || fxRate || 1;
                                                                                     }
                                                                                 }
                                                                                 const costBase = tx.quoteAmount * costFx;
@@ -886,10 +934,13 @@ export default function TransactionModal({
                                                                                         const txQuoteCurrency = (tx.quoteCurrency || selectedAsset.currency || 'USD').toUpperCase();
                                                                                         let costFx = 1;
                                                                                         if (txQuoteCurrency !== baseCurrency) {
-                                                                                            if (selectedAsset.isBareCurrencyOrigin && txQuoteCurrency === 'USD') {
-                                                                                                costFx = fxRate || 1;
+                                                                                            // BUG FIX: Use transactionFx for the specific quote currency
+                                                                                            const txFxHistory = transactionFx[txQuoteCurrency];
+                                                                                            if (txFxHistory && txFxHistory[dateStr]) {
+                                                                                                costFx = txFxHistory[dateStr];
                                                                                             } else {
-                                                                                                costFx = historicalFx[dateStr] || fxRate || 1;
+                                                                                                // Fallback to current rate if no historical data
+                                                                                                costFx = actualFxRate || fxRate || 1;
                                                                                             }
                                                                                         }
                                                                                         return `${((tx.quoteAmount / tx.baseAmount) * costFx).toLocaleString(undefined, { maximumFractionDigits: 2 })} ${baseCurrency === 'USD' ? '$' : baseCurrency}`;
@@ -906,10 +957,13 @@ export default function TransactionModal({
                                                                                             const txQuoteCurrency = (tx.quoteCurrency || selectedAsset.currency || 'USD').toUpperCase();
                                                                                             let hFx = 1;
                                                                                             if (txQuoteCurrency !== baseCurrency) {
-                                                                                                if (selectedAsset.isBareCurrencyOrigin && txQuoteCurrency === 'USD') {
-                                                                                                    hFx = fxRate || 1;
+                                                                                                // BUG FIX: Use transactionFx for the specific quote currency
+                                                                                                const txFxHistory = transactionFx[txQuoteCurrency];
+                                                                                                if (txFxHistory && txFxHistory[dateStr]) {
+                                                                                                    hFx = txFxHistory[dateStr];
                                                                                                 } else {
-                                                                                                    hFx = historicalFx[dateStr] || fxRate || 1;
+                                                                                                    // Fallback to current rate if no historical data
+                                                                                                    hFx = actualFxRate || fxRate || 1;
                                                                                                 }
                                                                                             }
                                                                                             return `${(tx.quoteAmount * hFx).toLocaleString(undefined, { maximumFractionDigits: 2 })} ${baseCurrency === 'USD' ? '$' : baseCurrency}`;
