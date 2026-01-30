@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef, useMemo, memo, useCallback } from 'react';
 import { GripVertical, ChevronDown, ChevronRight, Wallet, Sun, Moon } from 'lucide-react';
 import { updateWatchlistAssetPositions } from '@/utils/db';
-import { getAssetDisplayName } from '@/utils/commodities';
+import { isCommodity, COMMODITY_NAMES } from '@/utils/commodities';
 import AssetIcon from './AssetIcon';
 
 // Extracted memoized component for holding rows to prevent unnecessary re-renders
@@ -62,7 +62,7 @@ const HoldingRow = memo(function HoldingRow({
                 className="flex-1 flex flex-col min-w-0 pr-2"
             >
                 <span className="text-base sm:text-lg font-bold truncate">
-                    {DISPLAY_NAME ? holding.name : getAssetDisplayName(holding.asset, holding.name)}
+                    {DISPLAY_NAME ? holding.name : (isCommodity(holding.asset) ? COMMODITY_NAMES[holding.asset] : holding.asset)}
                     {/* Market State Icons */}
                     {!loading && holding.marketState === 'PRE' && (
                         <Sun size={12} className="inline" style={{ color: '#facc15', marginLeft: '5px' }} title="Pre-market" />

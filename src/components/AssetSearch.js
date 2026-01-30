@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { Search } from 'lucide-react';
-import { getAssetDisplayName } from '@/utils/commodities';
+import { isCommodity, COMMODITY_NAMES } from '@/utils/commodities';
 
 export default function AssetSearch({ onSelect, onCancel }) {
     const [query, setQuery] = useState('');
@@ -93,8 +93,8 @@ export default function AssetSearch({ onSelect, onCancel }) {
                                 onClick={handleClick}
                             >
                                 <div className="flex flex-col min-w-0">
-                                    <span className="font-bold text-xl group-hover:text-white transition-colors tracking-tight">{getAssetDisplayName(item.symbol, item.shortname || item.longname)}</span>
-                                    <span className="text-sm text-muted line-clamp-1">{item.displaySymbol || item.symbol}</span>
+                                    <span className="font-bold text-xl group-hover:text-white transition-colors tracking-tight">{isCommodity(item.symbol) ? COMMODITY_NAMES[item.symbol] : (item.displaySymbol || item.symbol)}</span>
+                                    <span className="text-sm text-muted line-clamp-1">{isCommodity(item.symbol) ? item.symbol : (item.shortname || item.longname)}</span>
                                 </div>
                                 <div className="flex flex-col items-end gap-2 flex-shrink-0">
                                     <span className="text-[10px] font-bold px-2.5 py-1 bg-white/10 rounded-full text-white uppercase tracking-wider">{item.type || 'ASSET'}</span>
