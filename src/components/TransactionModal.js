@@ -10,6 +10,28 @@ import { Trash2, Edit2, X, Plus, ChevronLeft, ArrowLeft, Moon, Sun, Eye, EyeOff 
 import { normalizeAsset } from '@/utils/portfolio-logic';
 import { addWatchlistAsset, removeWatchlistAsset, isSymbolInWatchlist } from '@/utils/db';
 
+// Commodity symbol to name mapping
+const COMMODITY_NAMES = {
+    'GC=F': 'Gold',
+    'SI=F': 'Silver',
+    'HG=F': 'Copper',
+    'CL=F': 'Crude Oil',
+    'NG=F': 'Natural Gas',
+    'BZ=F': 'Brent Oil',
+    'ZW=F': 'Wheat',
+    'ZC=F': 'Corn',
+    'ZS=F': 'Soybeans',
+    'KC=F': 'Coffee',
+    'CT=F': 'Cotton',
+    'SB=F': 'Sugar',
+    'CC=F': 'Cocoa',
+    'GC': 'Gold',
+    'SI': 'Silver',
+    'HG': 'Copper',
+    'CL': 'Crude Oil',
+    'NG': 'Natural Gas'
+};
+
 // Header display logic: Title = Name, Subtitle = Symbol
 
 export default function TransactionModal({
@@ -619,7 +641,24 @@ export default function TransactionModal({
                     </button>
                     <div className="flex flex-col min-w-0">
                         <h2 className="text-xl sm:text-2xl font-bold tracking-tight truncate" style={{ margin: 0 }}>
-                            {currentView === 'SEARCH' ? 'Add Asset' : (selectedAsset?.name || selectedAsset?.symbol || 'Details')}
+                            {currentView === 'SEARCH' ? 'Add Asset' : (() => {
+                                // Get base symbol without currency suffix
+                                const baseSymbol = selectedAsset?.symbol?.split(/[-/]/)[0];
+                                
+                                // Check if it's a commodity
+                                const commodityName = COMMODITY_NAMES[baseSymbol];
+                                if (commodityName) {
+                                    const quoteCurr = editingTx?.quoteCurrency?.toUpperCase() || selectedAsset?.currency || 'USD';
+                                    return `${commodityName} ${quoteCurr}`;
+                                }
+                                
+                                // Regular asset - reconstruct name with correct currency
+                                if (editingTx?.quoteCurrency && selectedAsset?.name) {
+                                    return selectedAsset.name.replace(/\s+[A-Z]{3}$/, ` ${editingTx.quoteCurrency.toUpperCase()}`);
+                                }
+                                
+                                return selectedAsset?.name || selectedAsset?.symbol || 'Details';
+                            })()}
                         </h2>
                         {currentView === 'LIST' && selectedAsset?.symbol && (
                             <span className="text-[10px] sm:text-xs text-muted font-bold truncate uppercase tracking-widest opacity-80">
