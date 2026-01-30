@@ -77,10 +77,10 @@ const HoldingRow = memo(function HoldingRow({
                             )}
                             {/* Market State Icons */}
                             {holding.marketState === 'PRE' && (
-                                <Sun size={12} className="inline ml-1" style={{ color: '#facc15' }} title="Pre-market" />
+                                <Sun size={12} className="inline" style={{ color: '#facc15', marginLeft: '5px', verticalAlign: 'middle' }} title="Pre-market" />
                             )}
                             {(holding.marketState === 'POST' || holding.marketState === 'POSTPOST') && (
-                                <Moon size={12} className="inline ml-1" style={{ color: '#9ca3af' }} title="After-hours" />
+                                <Moon size={12} className="inline" style={{ color: '#9ca3af', marginLeft: '5px', verticalAlign: 'middle' }} title="After-hours" />
                             )}
                         </>
                     )}
