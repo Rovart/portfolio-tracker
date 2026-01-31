@@ -262,6 +262,16 @@ export async function getAllWatchlistAssets() {
     return await db.watchlistAssets.toArray();
 }
 
+// Update watchlist asset name
+export async function updateWatchlistAssetName(portfolioId, symbol, newName) {
+    const asset = await db.watchlistAssets
+        .where({ portfolioId, symbol })
+        .first();
+    if (asset) {
+        await db.watchlistAssets.update(asset.id, { name: newName });
+    }
+}
+
 // Bulk position update functions
 export async function updatePortfolioPositions(orderedIds) {
     // orderedIds is an array of portfolio IDs in the desired order

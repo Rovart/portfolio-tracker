@@ -23,7 +23,8 @@ import {
     setSetting,
     ensureDefaultPortfolio,
     getAllPortfolios,
-    getWatchlistAssets
+    getWatchlistAssets,
+    updateWatchlistAssetName
 } from '@/utils/db';
 
 const TIMEFRAMES = ['1D', '1W', '1M', '1Y', 'YTD', 'ALL'];
