@@ -411,6 +411,20 @@ export default function Dashboard() {
 
                 setPrices(pxMap);
                 setPricesLoading(false);
+
+                // Refresh watchlist asset names from Yahoo data
+                if (isWatchlistView && watchlistAssets.length > 0 && currentPortfolioId) {
+                    for (const asset of watchlistAssets) {
+                        const quoteData = pxMap[asset.symbol];
+                        if (quoteData && quoteData.name && quoteData.name !== asset.name) {
+                            // Update the name in the database
+                            await updateWatchlistAssetName(currentPortfolioId, asset.symbol, quoteData.name);
+                        }
+                    }
+                    // Reload watchlist assets to get updated names
+                    const updatedAssets = await getWatchlistAssets(currentPortfolioId);
+                    setWatchlistAssets(updatedAssets);
+                }
             } catch (e) {
                 console.error('Failed to fetch quotes', e);
                 if (!isCancelled) setPricesLoading(false);
