@@ -2,6 +2,43 @@ import { yahooApiCall } from '@/utils/yahooHelper';
 import { shouldUseFallback } from '@/utils/defeatbetaFallback';
 import { NextResponse } from 'next/server';
 
+// Futures/Commodities searchable by name
+const FUTURES_BY_NAME = {
+    'GOLD': { symbol: 'GC=F', displaySymbol: 'GC', shortname: 'Gold', type: 'FUTURE' },
+    'SILVER': { symbol: 'SI=F', displaySymbol: 'SI', shortname: 'Silver', type: 'FUTURE' },
+    'COPPER': { symbol: 'HG=F', displaySymbol: 'HG', shortname: 'Copper', type: 'FUTURE' },
+    'PLATINUM': { symbol: 'PL=F', displaySymbol: 'PL', shortname: 'Platinum', type: 'FUTURE' },
+    'PALLADIUM': { symbol: 'PA=F', displaySymbol: 'PA', shortname: 'Palladium', type: 'FUTURE' },
+    'CRUDE': { symbol: 'CL=F', displaySymbol: 'CL', shortname: 'Crude Oil', type: 'FUTURE' },
+    'OIL': { symbol: 'CL=F', displaySymbol: 'CL', shortname: 'Crude Oil', type: 'FUTURE' },
+    'WTI': { symbol: 'CL=F', displaySymbol: 'CL', shortname: 'WTI Crude Oil', type: 'FUTURE' },
+    'BRENT': { symbol: 'BZ=F', displaySymbol: 'BZ', shortname: 'Brent Oil', type: 'FUTURE' },
+    'NATURAL GAS': { symbol: 'NG=F', displaySymbol: 'NG', shortname: 'Natural Gas', type: 'FUTURE' },
+    'GAS': { symbol: 'NG=F', displaySymbol: 'NG', shortname: 'Natural Gas', type: 'FUTURE' },
+    'WHEAT': { symbol: 'ZW=F', displaySymbol: 'ZW', shortname: 'Wheat', type: 'FUTURE' },
+    'CORN': { symbol: 'ZC=F', displaySymbol: 'ZC', shortname: 'Corn', type: 'FUTURE' },
+    'SOYBEANS': { symbol: 'ZS=F', displaySymbol: 'ZS', shortname: 'Soybeans', type: 'FUTURE' },
+    'SOY': { symbol: 'ZS=F', displaySymbol: 'ZS', shortname: 'Soybeans', type: 'FUTURE' },
+    'COFFEE': { symbol: 'KC=F', displaySymbol: 'KC', shortname: 'Coffee', type: 'FUTURE' },
+    'COTTON': { symbol: 'CT=F', displaySymbol: 'CT', shortname: 'Cotton', type: 'FUTURE' },
+    'SUGAR': { symbol: 'SB=F', displaySymbol: 'SB', shortname: 'Sugar', type: 'FUTURE' },
+    'COCOA': { symbol: 'CC=F', displaySymbol: 'CC', shortname: 'Cocoa', type: 'FUTURE' },
+    'RUSSELL': { symbol: 'RTY=F', displaySymbol: 'RTY', shortname: 'Russell 2000', type: 'FUTURE' },
+    'RUSSELL 2000': { symbol: 'RTY=F', displaySymbol: 'RTY', shortname: 'Russell 2000', type: 'FUTURE' },
+    'RTY': { symbol: 'RTY=F', displaySymbol: 'RTY', shortname: 'Russell 2000', type: 'FUTURE' },
+    'SP500': { symbol: 'ES=F', displaySymbol: 'ES', shortname: 'S&P 500', type: 'FUTURE' },
+    'S&P': { symbol: 'ES=F', displaySymbol: 'ES', shortname: 'S&P 500', type: 'FUTURE' },
+    'S&P 500': { symbol: 'ES=F', displaySymbol: 'ES', shortname: 'S&P 500', type: 'FUTURE' },
+    'ES': { symbol: 'ES=F', displaySymbol: 'ES', shortname: 'S&P 500', type: 'FUTURE' },
+    'NASDAQ': { symbol: 'NQ=F', displaySymbol: 'NQ', shortname: 'NASDAQ 100', type: 'FUTURE' },
+    'NASDAQ 100': { symbol: 'NQ=F', displaySymbol: 'NQ', shortname: 'NASDAQ 100', type: 'FUTURE' },
+    'NQ': { symbol: 'NQ=F', displaySymbol: 'NQ', shortname: 'NASDAQ 100', type: 'FUTURE' },
+    'DOW': { symbol: 'YM=F', displaySymbol: 'YM', shortname: 'Dow Jones', type: 'FUTURE' },
+    'DOW JONES': { symbol: 'YM=F', displaySymbol: 'YM', shortname: 'Dow Jones', type: 'FUTURE' },
+    'YM': { symbol: 'YM=F', displaySymbol: 'YM', shortname: 'Dow Jones', type: 'FUTURE' },
+    'VIX': { symbol: 'VX=F', displaySymbol: 'VX', shortname: 'VIX', type: 'FUTURE' }
+};
+
 export async function GET(request) {
     const { searchParams } = new URL(request.url);
     const q = searchParams.get('q');
@@ -56,6 +93,24 @@ export async function GET(request) {
                 exchange: 'CCY',
                 currency: 'USD'
             });
+        }
+
+        // Special handling for futures/commodities by name (e.g., "russell" -> RTY=F)
+        const futuresMatch = FUTURES_BY_NAME[upperQ];
+        if (futuresMatch) {
+            // Check if already in results
+            const exists = filtered.some(r => r.symbol === futuresMatch.symbol);
+            if (!exists) {
+                filtered.unshift({
+                    symbol: futuresMatch.symbol,
+                    displaySymbol: futuresMatch.displaySymbol,
+                    shortname: futuresMatch.shortname,
+                    longname: futuresMatch.shortname,
+                    type: futuresMatch.type,
+                    exchange: 'CME',
+                    currency: 'USD'
+                });
+            }
         }
 
         // Special handling for crypto pairs without dash (e.g., ETHAUD -> ETH-AUD)

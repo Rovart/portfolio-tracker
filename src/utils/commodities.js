@@ -1,11 +1,18 @@
-// Commodity symbol to name mapping
+// Commodity/Futures symbol to name mapping
 export const COMMODITY_NAMES = {
+    // Metals
     'GC=F': 'GOLD',
     'SI=F': 'SILVER',
     'HG=F': 'COPPER',
+    'PL=F': 'PLATINUM',
+    'PA=F': 'PALLADIUM',
+    // Energy
     'CL=F': 'CRUDE OIL',
     'NG=F': 'NATURAL GAS',
     'BZ=F': 'BRENT OIL',
+    'HO=F': 'HEATING OIL',
+    'RB=F': 'GASOLINE',
+    // Agriculture
     'ZW=F': 'WHEAT',
     'ZC=F': 'CORN',
     'ZS=F': 'SOYBEANS',
@@ -13,20 +20,39 @@ export const COMMODITY_NAMES = {
     'CT=F': 'COTTON',
     'SB=F': 'SUGAR',
     'CC=F': 'COCOA',
+    'LC=F': 'LIVE CATTLE',
+    'LH=F': 'LEAN HOGS',
+    // Indices - Futures
+    'ES=F': 'S&P 500 FUTURES',
+    'NQ=F': 'NASDAQ 100 FUTURES',
+    'RTY=F': 'RUSSELL 2000 FUTURES',
+    'YM=F': 'DOW JONES FUTURES',
+    'VX=F': 'VIX FUTURES',
     // Without =F suffix
     'GC': 'GOLD',
     'SI': 'SILVER',
     'HG': 'COPPER',
+    'PL': 'PLATINUM',
+    'PA': 'PALLADIUM',
     'CL': 'CRUDE OIL',
     'NG': 'NATURAL GAS',
     'BZ': 'BRENT OIL',
+    'HO': 'HEATING OIL',
+    'RB': 'GASOLINE',
     'ZW': 'WHEAT',
     'ZC': 'CORN',
     'ZS': 'SOYBEANS',
     'KC': 'COFFEE',
     'CT': 'COTTON',
     'SB': 'SUGAR',
-    'CC': 'COCOA'
+    'CC': 'COCOA',
+    'LC': 'LIVE CATTLE',
+    'LH': 'LEAN HOGS',
+    'ES': 'S&P 500 FUTURES',
+    'NQ': 'NASDAQ 100 FUTURES',
+    'RTY': 'RUSSELL 2000 FUTURES',
+    'YM': 'DOW JONES FUTURES',
+    'VX': 'VIX FUTURES'
 };
 
 /**
@@ -73,6 +99,17 @@ export function formatSymbol(symbol, name) {
     // Check if it's a commodity first
     if (isCommodity(symbol)) {
         return COMMODITY_NAMES[symbol];
+    }
+    
+    // Handle Yahoo Finance futures (XXX=F)
+    if (symbol.endsWith('=F')) {
+        const base = symbol.replace('=F', '');
+        // Check if we have a name for this future
+        if (COMMODITY_NAMES[base]) {
+            return COMMODITY_NAMES[base];
+        }
+        // Otherwise just return the base symbol
+        return base;
     }
     
     // Handle Yahoo Finance currency pairs (EURUSD=X, etc.)
