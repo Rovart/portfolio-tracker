@@ -100,7 +100,7 @@ export async function fetchAlternativeHistory(symbol, range = '1M') {
             break;
         case '1M':
             period1.setMonth(now.getMonth() - 1);
-            interval = '1d';
+            interval = '1h';
             break;
         case '3M':
             period1.setMonth(now.getMonth() - 3);
@@ -112,7 +112,9 @@ export async function fetchAlternativeHistory(symbol, range = '1M') {
             break;
         case 'YTD':
             period1 = new Date(now.getFullYear(), 0, 1);
-            interval = '1d';
+            // Use hourly data for YTD if less than 60 days into the year
+            const daysSinceYearStart = Math.floor((now - period1) / (1000 * 60 * 60 * 24));
+            interval = daysSinceYearStart < 60 ? '1h' : '1d';
             break;
         case 'ALL':
             period1.setFullYear(now.getFullYear() - 10);
