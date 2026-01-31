@@ -132,10 +132,11 @@ export function formatSymbol(symbol, name) {
         // Check if suffix looks like a currency (3 chars, all letters)
         const isCurrency = suffix.length === 3 && /^[A-Z]{3}$/i.test(suffix);
         
-        // Check if suffix looks like an exchange (2 chars, all letters, or known exchanges)
-        const knownExchanges = ['HK', 'DE', 'MI', 'PA', 'AS', 'MC', 'L', 'TO', 'T', 'SS', 'SZ', 'BO', 'NS'];
+        // Check if suffix looks like an exchange (1-2 chars, all letters, or known exchanges)
+        // .F = Frankfurt/Xetra, .DE = Germany, .HK = Hong Kong, etc.
+        const knownExchanges = ['F', 'HK', 'DE', 'MI', 'PA', 'AS', 'MC', 'L', 'TO', 'T', 'SS', 'SZ', 'BO', 'NS', 'BR', 'CN', 'IR', 'IT', 'JP', 'LN', 'NA', 'OL', 'ST', 'SW', 'TW', 'VX'];
         const isExchange = knownExchanges.includes(suffix.toUpperCase()) || 
-                          (suffix.length === 2 && /^[A-Z]{2}$/i.test(suffix));
+                          (suffix.length <= 2 && /^[A-Z]{1,2}$/i.test(suffix));
         
         if (isCurrency || isExchange) {
             // If base is purely numeric, use name if available
