@@ -86,14 +86,28 @@ export default function AssetSearch({ onSelect, onCancel }) {
                             onSelect(transformedItem);
                         };
 
-                        // Determine display: if trimmed symbol equals original, show full name
+                        // Determine display based on whether symbol was trimmed
                         const trimmedSymbol = formatSymbol(item.symbol, item.shortname || item.longname);
-                        const displayTitle = trimmedSymbol === item.symbol 
-                            ? (item.shortname || item.longname || item.symbol)  // No exchange suffix, show full name
-                            : trimmedSymbol;  // Has exchange suffix, show trimmed symbol
-                        const displaySubtitle = trimmedSymbol === item.symbol
-                            ? item.symbol  // No suffix, show symbol below
-                            : (item.shortname || item.longname || item.symbol);  // Has suffix, show name below
+                        // Check if symbol was trimmed (has exchange/currency suffix removed)
+                        const wasTrimmed = trimmedSymbol !== item.symbol;
+                        // Check if symbol starts with trimmed part (B5R.F starts with B5R)
+                        const isBaseSymbol = item.symbol.startsWith(trimmedSymbol) && item.symbol !== trimmedSymbol;
+                        
+                        let displayTitle, displaySubtitle;
+                        
+                        if (!wasTrimmed) {
+                            // No trimming occurred (e.g., AAPL), show full name as title
+                            displayTitle = item.shortname || item.longname || item.symbol;
+                            displaySubtitle = item.symbol;
+                        } else if (isBaseSymbol) {
+                            // Was trimmed and is base+suffix (e.g., B5R.F), show full name as title, full symbol as subtitle
+                            displayTitle = item.shortname || item.longname || trimmedSymbol;
+                            displaySubtitle = item.symbol;
+                        } else {
+                            // Was trimmed but not base+suffix format (commodities, etc.)
+                            displayTitle = trimmedSymbol;
+                            displaySubtitle = item.shortname || item.longname || item.symbol;
+                        }
 
                         return (
                             <div
