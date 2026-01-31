@@ -86,6 +86,15 @@ export default function AssetSearch({ onSelect, onCancel }) {
                             onSelect(transformedItem);
                         };
 
+                        // Determine display: if trimmed symbol equals original, show full name
+                        const trimmedSymbol = formatSymbol(item.symbol, item.shortname || item.longname);
+                        const displayTitle = trimmedSymbol === item.symbol 
+                            ? (item.shortname || item.longname || item.symbol)  // No exchange suffix, show full name
+                            : trimmedSymbol;  // Has exchange suffix, show trimmed symbol
+                        const displaySubtitle = trimmedSymbol === item.symbol
+                            ? item.symbol  // No suffix, show symbol below
+                            : (item.shortname || item.longname || item.symbol);  // Has suffix, show name below
+
                         return (
                             <div
                                 key={item.symbol}
@@ -93,8 +102,8 @@ export default function AssetSearch({ onSelect, onCancel }) {
                                 onClick={handleClick}
                             >
                                 <div className="flex flex-col min-w-0">
-                                    <span className="font-bold text-xl group-hover:text-white transition-colors tracking-tight">{formatSymbol(item.symbol, item.shortname || item.longname)}</span>
-                                    <span className="text-sm text-muted line-clamp-1">{item.displaySymbol || item.symbol}</span>
+                                    <span className="font-bold text-xl group-hover:text-white transition-colors tracking-tight">{displayTitle}</span>
+                                    <span className="text-sm text-muted line-clamp-1">{displaySubtitle}</span>
                                 </div>
                                 <div className="flex flex-col items-end gap-2 flex-shrink-0">
                                     <span className="text-[10px] font-bold px-2.5 py-1 bg-white/10 rounded-full text-white uppercase tracking-wider">{item.type || 'ASSET'}</span>
