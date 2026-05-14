@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { startTransition, useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
 import { Eye, EyeOff, Search, Settings } from 'lucide-react';
 import ProfitChart from './ProfitChart';
@@ -185,6 +185,16 @@ export default function Dashboard() {
         setBaseCurrency(curr);
         await setSetting('base_currency', curr);
     };
+
+    const handleTimeframeChange = useCallback((tf) => {
+        startTransition(() => setTimeframe(tf));
+        localStorage.setItem('portfolio_chart_timeframe', tf);
+    }, []);
+
+    const handleWatchlistSortChange = useCallback((newSort) => {
+        setWatchlistSort(newSort);
+        localStorage.setItem('watchlist_sort', newSort);
+    }, []);
 
     // Handle portfolio change
     const handlePortfolioChange = async (portfolioId, updatedPortfolios = null) => {
@@ -838,7 +848,7 @@ export default function Dashboard() {
             }
         }
 
-        setHistory(filtered);
+        startTransition(() => setHistory(filtered));
 
     }, [rawHistory, transactions, timeframe, prices, pricesLoading, baseCurrency]);
 
@@ -1000,34 +1010,34 @@ export default function Dashboard() {
     };
 
     // Dashboard calculations
-    const totalValue = holdings.reduce((acc, h) => acc + (h.value || 0), 0);
+    const { totalValue, displayDiffDay, displayPercentDay, safeDiff, safePercent } = useMemo(() => {
+        const currentTotal = holdings.reduce((acc, h) => acc + (h.value || 0), 0);
+        const prevValueDay = holdings.reduce((acc, h) => {
+            const changeFactor = 1 + ((h.change24h || 0) / 100);
+            if (Math.abs(changeFactor) < 0.0001) return acc + h.value;
+            return acc + (h.value / changeFactor);
+        }, 0);
+        const dayDiff = currentTotal - prevValueDay;
+        const dayPercent = prevValueDay !== 0 ? (dayDiff / prevValueDay) * 100 : 0;
 
-    // Dynamic Timeframe Performance Calculation
-    let displayDiff = 0;
-    let displayPercent = 0;
+        let displayDiff = dayDiff;
+        let displayPercent = dayPercent;
 
-    // Daily change for comparison
-    const prevValueDay = holdings.reduce((acc, h) => {
-        const changeFactor = 1 + ((h.change24h || 0) / 100);
-        if (Math.abs(changeFactor) < 0.0001) return acc + h.value;
-        return acc + (h.value / changeFactor);
-    }, 0);
-    const displayDiffDay = totalValue - prevValueDay;
-    const displayPercentDay = prevValueDay !== 0 ? (displayDiffDay / prevValueDay) * 100 : 0;
+        if (timeframe !== '1D' && history.length > 1) {
+            const startPoint = history[0].value;
+            const currentPoint = history[history.length - 1].value;
+            displayDiff = currentPoint - startPoint;
+            displayPercent = startPoint !== 0 ? (displayDiff / startPoint) * 100 : 0;
+        }
 
-    if (timeframe === '1D') {
-        displayDiff = displayDiffDay;
-        displayPercent = displayPercentDay;
-    } else if (history.length > 1) {
-        // Calculate performance from the start of the current historical view
-        const startPoint = history[0].value;
-        const currentPoint = history[history.length - 1].value;
-        displayDiff = currentPoint - startPoint;
-        if (startPoint !== 0) displayPercent = (displayDiff / startPoint) * 100;
-    }
-
-    const safeDiff = displayDiff || 0;
-    const safePercent = displayPercent || 0;
+        return {
+            totalValue: currentTotal,
+            displayDiffDay: dayDiff,
+            displayPercentDay: dayPercent,
+            safeDiff: displayDiff || 0,
+            safePercent: displayPercent || 0
+        };
+    }, [holdings, history, timeframe]);
 
     return (
         <>
@@ -1237,10 +1247,7 @@ export default function Dashboard() {
                                         {TIMEFRAMES.map((tf) => (
                                             <button
                                                 key={tf}
-                                                onClick={() => {
-                                                    setTimeframe(tf);
-                                                    localStorage.setItem('portfolio_chart_timeframe', tf);
-                                                }}
+                                                onClick={() => handleTimeframeChange(tf)}
                                                 className={`btn ${timeframe === tf ? 'bg-white text-black shadow-lg' : 'btn-ghost opacity-60 hover:opacity-100'}`}
                                                 style={{
                                                     background: timeframe === tf ? 'var(--foreground)' : 'transparent',
@@ -1276,10 +1283,7 @@ export default function Dashboard() {
                                 currentPortfolioId={currentPortfolioId}
                                 onWatchlistReorder={() => setRefreshTrigger(prev => prev + 1)}
                                 externalSort={watchlistSort}
-                                onExternalSortChange={(newSort) => {
-                                    setWatchlistSort(newSort);
-                                    localStorage.setItem('watchlist_sort', newSort);
-                                }}
+                                onExternalSortChange={handleWatchlistSortChange}
                             />
                         </div>
                     </div>

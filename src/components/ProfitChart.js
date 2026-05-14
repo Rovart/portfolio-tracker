@@ -1,9 +1,9 @@
 'use client';
 
-import { useMemo, useState, useCallback, useRef } from 'react';
+import { memo, useMemo, useState, useCallback, useRef } from 'react';
 import { AreaChart, Area, XAxis, Tooltip, ResponsiveContainer, YAxis, ReferenceArea, ReferenceLine } from 'recharts';
 
-export default function ProfitChart({ data, baseCurrency, hideBalances, loading }) {
+function ProfitChart({ data, baseCurrency, hideBalances, loading }) {
     const [selectionStart, setSelectionStart] = useState(null);
     const [selectionEnd, setSelectionEnd] = useState(null);
     const [isSelecting, setIsSelecting] = useState(false);
@@ -294,6 +294,8 @@ export default function ProfitChart({ data, baseCurrency, hideBalances, loading 
         </div>
     );
 }
+
+export default memo(ProfitChart);
 
 function LoadingChart() {
     const skeletonData = [{ v: 40 }, { v: 45 }, { v: 42 }, { v: 50 }, { v: 48 }, { v: 55 }, { v: 52 }, { v: 60 }];

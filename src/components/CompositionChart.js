@@ -1,7 +1,16 @@
 'use client';
 
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip, Legend, Sector } from 'recharts';
-import { useMemo, useState } from 'react';
+import { memo, useCallback, useMemo, useState } from 'react';
+
+const COLORS = {
+    'Currencies': '#3b82f6',
+    'ETFs': '#8b5cf6',
+    'Crypto': '#f59e0b',
+    'Shares': '#10b981',
+    'Funds': '#ec4899',
+    'Other': '#64748b'
+};
 
 const renderActiveShape = (props) => {
     const RADIAN = Math.PI / 180;
@@ -43,16 +52,33 @@ const renderActiveShape = (props) => {
     );
 };
 
-export default function CompositionChart({ holdings, baseCurrency, hideBalances, loading }) {
+function CompositionTooltip({ active, payload, hideBalances, baseCurrency }) {
+    if (active && payload && payload.length) {
+        const item = payload[0].payload;
+        return (
+            <div style={{ backgroundColor: '#171717', border: '1px solid #262626', borderRadius: '12px', padding: '12px', boxShadow: '0 10px 15px -3px rgba(0, 0, 0, 0.3)' }}>
+                <p style={{ color: '#fff', margin: 0, fontWeight: 'bold', fontSize: '0.9rem' }}>{item.name}</p>
+                <p style={{ color: payload[0].color, margin: 0, fontSize: '1rem' }}>
+                    {hideBalances ? '••••••' : `${item.value.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ${baseCurrency === 'USD' ? '$' : baseCurrency}`}
+                </p>
+            </div>
+        );
+    }
+    return null;
+}
+
+const MemoCompositionTooltip = memo(CompositionTooltip);
+
+function CompositionChart({ holdings, baseCurrency, hideBalances, loading }) {
     const [activeIndex, setActiveIndex] = useState(null);
 
-    const onPieEnter = (_, index) => {
+    const onPieEnter = useCallback((_, index) => {
         setActiveIndex(index);
-    };
+    }, []);
 
-    const onPieLeave = () => {
+    const onPieLeave = useCallback(() => {
         setActiveIndex(null);
-    };
+    }, []);
 
     const data = useMemo(() => {
         if (!holdings || holdings.length === 0) return [];
@@ -70,30 +96,6 @@ export default function CompositionChart({ holdings, baseCurrency, hideBalances,
 
     if (loading) return <LoadingPie />;
     if (!data || data.length === 0) return null;
-
-    const COLORS = {
-        'Currencies': '#3b82f6',
-        'ETFs': '#8b5cf6',
-        'Crypto': '#f59e0b',
-        'Shares': '#10b981',
-        'Funds': '#ec4899',
-        'Other': '#64748b'
-    };
-
-    const CustomTooltip = ({ active, payload }) => {
-        if (active && payload && payload.length) {
-            const item = payload[0].payload;
-            return (
-                <div style={{ backgroundColor: '#171717', border: '1px solid #262626', borderRadius: '12px', padding: '12px', boxShadow: '0 10px 15px -3px rgba(0, 0, 0, 0.3)' }}>
-                    <p style={{ color: '#fff', margin: 0, fontWeight: 'bold', fontSize: '0.9rem' }}>{item.name}</p>
-                    <p style={{ color: payload[0].color, margin: 0, fontSize: '1rem' }}>
-                        {hideBalances ? '••••••' : `${item.value.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ${baseCurrency === 'USD' ? '$' : baseCurrency}`}
-                    </p>
-                </div>
-            );
-        }
-        return null;
-    };
 
     return (
         <div style={{ height: '380px', width: '100%', display: 'flex', flexDirection: 'column', background: 'transparent' }}>
@@ -127,7 +129,7 @@ export default function CompositionChart({ holdings, baseCurrency, hideBalances,
                                 />
                             ))}
                         </Pie>
-                        <Tooltip content={<CustomTooltip />} />
+                        <Tooltip content={<MemoCompositionTooltip hideBalances={hideBalances} baseCurrency={baseCurrency} />} />
                         <Legend
                             verticalAlign="bottom"
                             align="center"
@@ -140,6 +142,8 @@ export default function CompositionChart({ holdings, baseCurrency, hideBalances,
         </div>
     );
 }
+
+export default memo(CompositionChart);
 
 function LoadingPie() {
     const dummyData = [{ value: 1 }];

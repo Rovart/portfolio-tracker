@@ -314,7 +314,41 @@ export default function TransactionModal({
                                 fetchedFxRate = fxQuote.price;
                                 actualFxRateValue = fxQuote.price;
                             } else {
-                                console.warn(`Could not get FX rate for ${expectedFxSymbol}, using 1`);
+                                // Yahoo often lacks direct USD->non-USD or cross pairs. Pivot via USD.
+                                let toUsdRate = 1;
+                                if (fetchedCurrency !== 'USD') {
+                                    const toUsdSymbol = `${fetchedCurrency}USD=X`;
+                                    let toUsdQuote = json.data?.find(q => q.symbol === toUsdSymbol);
+                                    if (!toUsdQuote) {
+                                        try {
+                                            const fxRes = await fetch(`/api/quote?symbols=${toUsdSymbol}`);
+                                            const fxJson = await fxRes.json();
+                                            toUsdQuote = fxJson.data?.[0];
+                                        } catch (e) {
+                                            console.error('Failed to fetch quote-to-USD FX rate:', e);
+                                        }
+                                    }
+                                    if (toUsdQuote?.price) toUsdRate = toUsdQuote.price;
+                                }
+
+                                let fromUsdRate = 1;
+                                if (baseCurrency !== 'USD') {
+                                    const baseToUsdSymbol = `${baseCurrency}USD=X`;
+                                    let baseToUsdQuote = json.data?.find(q => q.symbol === baseToUsdSymbol);
+                                    if (!baseToUsdQuote) {
+                                        try {
+                                            const fxRes = await fetch(`/api/quote?symbols=${baseToUsdSymbol}`);
+                                            const fxJson = await fxRes.json();
+                                            baseToUsdQuote = fxJson.data?.[0];
+                                        } catch (e) {
+                                            console.error('Failed to fetch base-to-USD FX rate:', e);
+                                        }
+                                    }
+                                    if (baseToUsdQuote?.price) fromUsdRate = 1 / baseToUsdQuote.price;
+                                }
+
+                                fetchedFxRate = toUsdRate * fromUsdRate;
+                                actualFxRateValue = fetchedFxRate;
                             }
                         }
                     }
@@ -518,6 +552,11 @@ export default function TransactionModal({
         const avgBase = buyAmount > 0 ? (totalCostBase / buyAmount) : 0;
         return { currentBalance: totalAmount, averagePurchasePrice: avgBase };
     }, [transactions, selectedAsset?.symbol, selectedAsset?.currency, selectedAsset?.isBareCurrencyOrigin, historicalFx, transactionFx, fxRate, actualFxRate, baseCurrency]);
+
+    const currentValueBase = currentBalance * (assetPrice || 0) * fxRate;
+    const currentCostBasisBase = averagePurchasePrice * currentBalance;
+    const positionProfit = currentValueBase - currentCostBasisBase;
+    const positionProfitPercent = currentCostBasisBase > 0 ? (positionProfit / currentCostBasisBase) * 100 : 0;
 
     const handleAssetSelect = (asset) => {
         // Calculate current balance for the selected asset from transaction history
@@ -820,9 +859,17 @@ export default function TransactionModal({
                                                         {loadingPrice ? (
                                                             <div className="h-7 w-24 bg-white-10 rounded animate-pulse mt-1" />
                                                         ) : (
-                                                            <span className="text sm:text-2xl text-center">
-                                                                {averagePurchasePrice.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} {baseCurrency === 'USD' ? '$' : baseCurrency}
-                                                            </span>
+                                                            <>
+                                                                <span className="text sm:text-2xl text-center">
+                                                                    {averagePurchasePrice.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} {baseCurrency === 'USD' ? '$' : baseCurrency}
+                                                                </span>
+                                                                {currentCostBasisBase > 0 && (
+                                                                    <span className={`text-xs font-medium text-center ${positionProfit >= 0 ? 'text-success' : 'text-danger'}`}>
+                                                                        {hideBalances ? '••••••' : `${positionProfit >= 0 ? '+' : '-'}${Math.abs(positionProfit).toLocaleString(undefined, { maximumFractionDigits: 2 })} ${baseCurrency === 'USD' ? '$' : baseCurrency} `}
+                                                                        ({positionProfitPercent >= 0 ? '+' : ''}{positionProfitPercent.toFixed(2)}%)
+                                                                    </span>
+                                                                )}
+                                                            </>
                                                         )}
                                                     </div>
                                                 )}
@@ -831,7 +878,7 @@ export default function TransactionModal({
                                                     {loadingPrice || !assetPrice ? (
                                                         <div className="h-7 w-32 bg-white-10 rounded animate-pulse mt-1" />
                                                     ) : (
-                                                        <span className="text sm:text-2xl text-success text-right">{hideBalances ? '••••••' : `${(currentBalance * assetPrice * fxRate).toLocaleString(undefined, { maximumFractionDigits: 2 })} ${baseCurrency === 'USD' ? '$' : baseCurrency}`}</span>
+                                                        <span className="text sm:text-2xl text-success text-right">{hideBalances ? '••••••' : `${currentValueBase.toLocaleString(undefined, { maximumFractionDigits: 2 })} ${baseCurrency === 'USD' ? '$' : baseCurrency}`}</span>
                                                     )}
                                                 </div>
                                             </>

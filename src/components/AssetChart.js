@@ -1,12 +1,37 @@
 'use client';
 
-import { useEffect, useState, useMemo, useCallback, useRef } from 'react';
+import { memo, useEffect, useState, useMemo, useCallback, useRef } from 'react';
 import { AreaChart, Area, XAxis, Tooltip, ResponsiveContainer, YAxis, ReferenceArea, ReferenceLine, ReferenceDot } from 'recharts';
 import { getCachedFxHistory, getCachedAssetHistory } from '@/utils/fxCache';
 
 const RANGES = ['1D', '1W', '1M', '3M', '1Y', 'ALL'];
 
-export default function AssetChart({ symbol, chartSymbol, baseCurrency = 'USD', fxRate = 1, parentLoading = false, assetCurrency, onRangePerformance, transactions = [] }) {
+function findClosestPoint(sortedPoints, targetTime, maxDiff) {
+    let low = 0;
+    let high = sortedPoints.length - 1;
+
+    while (low < high) {
+        const mid = Math.floor((low + high) / 2);
+        if (sortedPoints[mid].time < targetTime) low = mid + 1;
+        else high = mid;
+    }
+
+    const candidates = [sortedPoints[low], sortedPoints[low - 1]].filter(Boolean);
+    let closest = null;
+    let closestDiff = Infinity;
+
+    candidates.forEach(candidate => {
+        const diff = Math.abs(candidate.time - targetTime);
+        if (diff < closestDiff && diff <= maxDiff) {
+            closest = candidate.point;
+            closestDiff = diff;
+        }
+    });
+
+    return closest;
+}
+
+function AssetChart({ symbol, chartSymbol, baseCurrency = 'USD', fxRate = 1, parentLoading = false, assetCurrency, onRangePerformance, transactions = [] }) {
     const [rawData, setRawData] = useState([]);
     const [fxHistory, setFxHistory] = useState({});
     const [loading, setLoading] = useState(true);
@@ -63,6 +88,14 @@ export default function AssetChart({ symbol, chartSymbol, baseCurrency = 'USD', 
         if (symbol || chartSymbol) load();
     }, [symbol, range, needsFxConversion, assetCurrency, baseCurrency, chartSymbol]);
 
+    const fxLookup = useMemo(() => {
+        if (!needsFxConversion || Object.keys(fxHistory).length === 0) return null;
+
+        return Object.entries(fxHistory)
+            .map(([date, rate]) => ({ date, rate }))
+            .sort((a, b) => a.date.localeCompare(b.date));
+    }, [fxHistory, needsFxConversion]);
+
     const { chartData, offset, startPrice, yDomain, rangeChange, rangeChangePercent } = useMemo(() => {
         if (!rawData || rawData.length === 0) return { chartData: [], offset: 0, startPrice: 0, yDomain: [0, 100], rangeChange: 0, rangeChangePercent: 0 };
         let processedData = rawData;
@@ -70,26 +103,30 @@ export default function AssetChart({ symbol, chartSymbol, baseCurrency = 'USD', 
             const step = Math.ceil(rawData.length / 300);
             processedData = rawData.filter((_, i) => i % step === 0);
         }
+        const startDateKey = rawData[0].date.split('T')[0];
+        let fxIndex = 0;
+        let firstRate = fxRate;
+
+        if (fxLookup && fxLookup.length > 0) {
+            while (fxIndex < fxLookup.length && fxLookup[fxIndex].date <= startDateKey) {
+                firstRate = fxLookup[fxIndex].rate;
+                fxIndex++;
+            }
+        }
+
+        let lastFxRate = firstRate;
         const convertedData = processedData.map(d => {
             let rate = fxRate;
-            if (needsFxConversion && Object.keys(fxHistory).length > 0) {
+            if (fxLookup && fxLookup.length > 0) {
                 const dateKey = d.date.split('T')[0];
-                if (fxHistory[dateKey]) {
-                    rate = fxHistory[dateKey];
-                } else {
-                    const sortedDates = Object.keys(fxHistory).sort();
-                    for (let i = sortedDates.length - 1; i >= 0; i--) {
-                        if (sortedDates[i] <= dateKey) {
-                            rate = fxHistory[sortedDates[i]];
-                            break;
-                        }
-                    }
+                while (fxIndex < fxLookup.length && fxLookup[fxIndex].date <= dateKey) {
+                    lastFxRate = fxLookup[fxIndex].rate;
+                    fxIndex++;
                 }
+                rate = lastFxRate;
             }
             return { date: d.date, value: d.rawPrice * rate };
         });
-        const firstRate = needsFxConversion && Object.keys(fxHistory).length > 0
-            ? (fxHistory[rawData[0].date.split('T')[0]] || fxRate) : fxRate;
         const start = rawData[0].rawPrice * firstRate;
         const prices = convertedData.map(d => d.value);
         const max = Math.max(...prices);
@@ -112,7 +149,7 @@ export default function AssetChart({ symbol, chartSymbol, baseCurrency = 'USD', 
         const rangeChangePercent = start !== 0 ? (rangeChange / start) * 100 : 0;
 
         return { chartData: convertedData, offset: off, startPrice: start, yDomain: fixedYDomain, rangeChange, rangeChangePercent };
-    }, [rawData, fxRate, fxHistory, needsFxConversion]);
+    }, [rawData, fxRate, fxLookup]);
 
     // Report range performance to parent when it changes
     useEffect(() => {
@@ -148,20 +185,21 @@ export default function AssetChart({ symbol, chartSymbol, baseCurrency = 'USD', 
     }, [selectionMetrics, chartData]);
 
     // Transaction dots - map transactions to chart points using pre-built date index
-    const { transactionDots, dateIndexMap } = useMemo(() => {
-        if (chartData.length === 0) return { transactionDots: [], dateIndexMap: {} };
+    const transactionDots = useMemo(() => {
+        if (chartData.length === 0) return [];
 
-        // Build date index map for O(1) lookups
-        const indexMap = {};
+        const indexMap = new Map();
+        const sortedPoints = [];
         chartData.forEach((point, idx) => {
             const dateKey = point.date.split('T')[0];
-            if (!indexMap[dateKey]) {
-                indexMap[dateKey] = { point, idx };
+            if (!indexMap.has(dateKey)) {
+                indexMap.set(dateKey, { point, idx });
+                sortedPoints.push({ time: new Date(dateKey).getTime(), point });
             }
         });
 
         if (!transactions || transactions.length === 0) {
-            return { transactionDots: [], dateIndexMap: indexMap };
+            return [];
         }
 
         const dots = [];
@@ -173,10 +211,11 @@ export default function AssetChart({ symbol, chartSymbol, baseCurrency = 'USD', 
             const txDate = tx.date.split('T')[0];
 
             // Try exact match first (O(1))
-            if (indexMap[txDate]) {
+            const exactPoint = indexMap.get(txDate);
+            if (exactPoint) {
                 dots.push({
-                    x: indexMap[txDate].point.date,
-                    y: indexMap[txDate].point.value,
+                    x: exactPoint.point.date,
+                    y: exactPoint.point.value,
                     type: tx.type,
                     amount: tx.baseAmount,
                     isBuy: ['BUY', 'DEPOSIT'].includes(tx.type)
@@ -184,18 +223,9 @@ export default function AssetChart({ symbol, chartSymbol, baseCurrency = 'USD', 
                 return;
             }
 
-            // For non-exact matches, find closest within 2 days
+            // For non-exact matches, use binary search to find closest within 2 days
             const txTime = new Date(txDate).getTime();
-            let closestPoint = null;
-            let closestDiff = Infinity;
-
-            for (const key of Object.keys(indexMap)) {
-                const diff = Math.abs(new Date(key).getTime() - txTime);
-                if (diff < closestDiff && diff <= twoDaysMs) {
-                    closestDiff = diff;
-                    closestPoint = indexMap[key].point;
-                }
-            }
+            const closestPoint = findClosestPoint(sortedPoints, txTime, twoDaysMs);
 
             if (closestPoint) {
                 dots.push({
@@ -208,7 +238,7 @@ export default function AssetChart({ symbol, chartSymbol, baseCurrency = 'USD', 
             }
         });
 
-        return { transactionDots: dots, dateIndexMap: indexMap };
+        return dots;
     }, [transactions, chartData]);
 
     // Throttle ref for touch/mouse moves
@@ -478,6 +508,8 @@ export default function AssetChart({ symbol, chartSymbol, baseCurrency = 'USD', 
         </div>
     );
 }
+
+export default memo(AssetChart);
 
 function LoadingChart() {
     const skeletonData = [{ v: 40 }, { v: 45 }, { v: 42 }, { v: 50 }, { v: 48 }, { v: 55 }, { v: 52 }, { v: 60 }];

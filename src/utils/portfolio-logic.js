@@ -27,9 +27,55 @@ export function normalizeAsset(asset) {
     return s;
 }
 
+function getFxRate(priceMap, fromCurrency, toCurrency) {
+    const from = fromCurrency?.toUpperCase();
+    const to = toCurrency?.toUpperCase();
+
+    if (!from || !to || from === to) return 1;
+
+    const directFx = priceMap[`${from}${to}=X`];
+    if (directFx && directFx.price) return parseFloat(directFx.price);
+
+    let toUsdRate = 1;
+    if (from !== 'USD') {
+        const toUsd = priceMap[`${from}USD=X`] || priceMap[from] || priceMap[`${from}=X`];
+        if (toUsd && toUsd.price) toUsdRate = parseFloat(toUsd.price);
+    }
+
+    let fromUsdRate = 1;
+    if (to !== 'USD') {
+        const fromUsd = priceMap[`${to}USD=X`] || priceMap[to] || priceMap[`${to}=X`];
+        if (fromUsd && fromUsd.price) fromUsdRate = 1 / parseFloat(fromUsd.price);
+    }
+
+    return toUsdRate * fromUsdRate;
+}
+
+function getFxChangePercent(priceMap, fromCurrency, toCurrency) {
+    const from = fromCurrency?.toUpperCase();
+    const to = toCurrency?.toUpperCase();
+
+    if (!from || !to || from === to) return 0;
+
+    const directFx = priceMap[`${from}${to}=X`];
+    if (directFx && directFx.changePercent !== undefined) {
+        return parseFloat(directFx.changePercent) || 0;
+    }
+
+    const toUsdChange = from === 'USD' ? 0 : (parseFloat(priceMap[`${from}USD=X`]?.changePercent) || 0);
+    let fromUsdChange = 0;
+
+    if (to !== 'USD') {
+        const baseToUsdChange = parseFloat(priceMap[`${to}USD=X`]?.changePercent) || 0;
+        fromUsdChange = ((1 / (1 + baseToUsdChange / 100)) - 1) * 100;
+    }
+
+    return ((1 + toUsdChange / 100) * (1 + fromUsdChange / 100) - 1) * 100;
+}
+
 export function calculateHoldings(transactions, priceMap, baseCurrency = 'USD') {
     const balances = {};
-    const cashFlow = {}; // To calculate total amount made (in local quote currency)
+    const cashFlow = {}; // Map normalizedAsset -> quoteCurrency -> net cost basis in that quote currency
     const quoteMap = {}; // Map normalizedAsset -> quoteCurrency
     const priceSymbolMap = {}; // Map normalizedAsset -> actual symbol for price lookup
     const allQuoteCurrencies = {}; // Map normalizedAsset -> Set of all quote currencies used
@@ -45,7 +91,7 @@ export function calculateHoldings(transactions, priceMap, baseCurrency = 'USD') 
         const feeCurr = normalizeAsset(rawFee);
 
         if (base && !balances[base]) balances[base] = 0;
-        if (base && !cashFlow[base]) cashFlow[base] = 0;
+        if (base && !cashFlow[base]) cashFlow[base] = {};
 
         // Track all quote currencies used for this asset (for proper FX handling)
         if (base) {
@@ -105,12 +151,12 @@ export function calculateHoldings(transactions, priceMap, baseCurrency = 'USD') 
 
         if (type === 'BUY') {
             balances[base] += bAmt;
-            cashFlow[base] += qAmt;
+            if (quote) cashFlow[base][quote] = (cashFlow[base][quote] || 0) + qAmt;
             // Only affect quote balance if affectsFiatBalance is true (checkbox was checked)
             if (quote && tx.affectsFiatBalance !== false) balances[quote] -= qAmt;
         } else if (type === 'SELL') {
             balances[base] -= bAmt;
-            cashFlow[base] -= qAmt;
+            if (quote) cashFlow[base][quote] = (cashFlow[base][quote] || 0) - qAmt;
             // Only affect quote balance if affectsFiatBalance is true (checkbox was checked)
             if (quote && tx.affectsFiatBalance !== false) balances[quote] += qAmt;
         } else if (type === 'DEPOSIT') {
@@ -124,7 +170,7 @@ export function calculateHoldings(transactions, priceMap, baseCurrency = 'USD') 
             balances[feeCurr] -= fAmt;
             // For profit calculation we also track fees in the base asset's local flow if they match
             if (feeCurr === quote) {
-                cashFlow[base] += fAmt;
+                cashFlow[base][quote] = (cashFlow[base][quote] || 0) + fAmt;
             }
         }
     });
@@ -291,23 +337,7 @@ export function calculateHoldings(transactions, priceMap, baseCurrency = 'USD') 
             // Skip FX change calculation if asset IS the baseCurrency (no FX exposure)
             // Or if we already forced it to 0 above
             if (asset.toUpperCase() !== baseCurrency && quoteCurr !== baseCurrency) {
-                // 1. Try direct
-                const fxQuote = priceMap[`${quoteCurr}${baseCurrency}=X`] ||
-                    (quoteCurr === 'USD' ? null : priceMap[quoteCurr]) ||
-                    (quoteCurr === 'USD' ? null : priceMap[`${quoteCurr}=X`]);
-
-                if (fxQuote && fxQuote.changePercent !== undefined) {
-                    fxChangePercent = parseFloat(fxQuote.changePercent) || 0;
-                } else {
-                    // 2. Pivot Change (Composite)
-                    const toUsdChange = (quoteCurr === 'USD') ? 0 :
-                        (parseFloat(priceMap[`${quoteCurr}USD=X`]?.changePercent) || 0);
-                    const fromUsdChange = (baseCurrency === 'USD') ? 0 :
-                        (parseFloat(priceMap[`USD${baseCurrency}=X`]?.changePercent) || 0);
-
-                    // Combined change: (1+a)*(1+b)-1
-                    fxChangePercent = ((1 + toUsdChange / 100) * (1 + fromUsdChange / 100) - 1) * 100;
-                }
+                fxChangePercent = getFxChangePercent(priceMap, quoteCurr, baseCurrency);
             }
 
             // Calculate total combined change percent (forex + asset)
@@ -319,8 +349,10 @@ export function calculateHoldings(transactions, priceMap, baseCurrency = 'USD') 
             const dailyPnl = value - prevValueBase;
 
             // Total profit since inception (current base value vs historical spent)
-            const localProfit = localValue - (cashFlow[asset] || 0);
-            const totalProfit = localProfit * fxRate;
+            const costBasis = Object.entries(cashFlow[asset] || {}).reduce((total, [costCurrency, costAmount]) => {
+                return total + (costAmount * getFxRate(priceMap, costCurrency, baseCurrency));
+            }, 0);
+            const totalProfit = value - costBasis;
 
             // Categorization
             let category = 'Shares'; // Default fallback
