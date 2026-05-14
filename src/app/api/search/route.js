@@ -50,13 +50,13 @@ export async function GET(request) {
     try {
         // Use yahoo helper with rate-limit evasion
         const results = await yahooApiCall(
-            (instance) => instance.search(q),
+            (instance) => instance.search(q, undefined, { validateResult: false }),
             [],
             { maxRetries: 3 }
         );
 
         // Filter for relevant types (Equity, Crypto, ETF, Currency)
-        let filtered = results.quotes.filter(item =>
+        let filtered = (results.quotes || []).filter(item =>
             item.isYahooFinance &&
             (item.quoteType === 'EQUITY' || item.quoteType === 'CRYPTOCURRENCY' || item.quoteType === 'ETF' || item.quoteType === 'MUTUALFUND' || item.quoteType === 'CURRENCY' || item.quoteType === 'COMMODITY' || item.quoteType === 'FUTURE')
         ).map(item => {
