@@ -1,4 +1,5 @@
 import Dexie from 'dexie';
+import { getMissingQuoteCurrencyPatch } from './portfolio-logic';
 
 // Create IndexedDB database
 const db = new Dexie('PortfolioTracker');
@@ -115,6 +116,29 @@ export async function getTransactionsByPortfolio(portfolioId = null) {
 // Transaction helpers
 export async function getAllTransactions() {
     return await db.transactions.orderBy('date').reverse().toArray();
+}
+
+export async function backfillMissingQuoteCurrencies(transactions, baseCurrency = 'USD') {
+    const updates = [];
+    const repairedTransactions = (transactions || []).map(transaction => {
+        const patch = getMissingQuoteCurrencyPatch(transaction, baseCurrency);
+        if (!patch) return transaction;
+
+        updates.push({ id: transaction.id, patch });
+        return { ...transaction, ...patch };
+    });
+
+    if (updates.length > 0) {
+        await db.transaction('rw', db.transactions, async () => {
+            for (const { id, patch } of updates) {
+                if (id !== undefined && id !== null) {
+                    await db.transactions.update(id, patch);
+                }
+            }
+        });
+    }
+
+    return repairedTransactions;
 }
 
 export async function addTransaction(transaction) {

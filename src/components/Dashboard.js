@@ -27,6 +27,7 @@ import {
 import {
     getAllTransactions,
     getTransactionsByPortfolio,
+    backfillMissingQuoteCurrencies,
     addTransaction,
     updateTransaction,
     deleteTransaction,
@@ -121,6 +122,14 @@ function mergeLiveHistoryPoint(points, livePoint, timeframe) {
 
     next.push(livePoint);
     return next.sort((a, b) => a.date.localeCompare(b.date));
+}
+
+async function loadPortfolioTransactions(portfolioId, baseCurrency) {
+    const savedTransactions = portfolioId === 'all'
+        ? await getAllTransactions()
+        : await getTransactionsByPortfolio(portfolioId);
+
+    return await backfillMissingQuoteCurrencies(savedTransactions || [], baseCurrency);
 }
 
 function getLiveHistoryAdjustmentRatio(rawHistory) {
@@ -254,23 +263,21 @@ export default function Dashboard() {
                 const isWatchlist = currentPortfolio?.isWatchlist || false;
                 setIsWatchlistView(isWatchlist);
 
+                const savedCurrency = await getSetting('base_currency', 'USD');
+                setBaseCurrency(savedCurrency);
+
                 if (isWatchlist) {
                     const assets = await getWatchlistAssets(initialPortfolioId);
                     setWatchlistAssets(assets);
                     setTransactions([]);
                 } else {
                     // Load transactions for current portfolio
-                    const savedTransactions = initialPortfolioId === 'all'
-                        ? await getAllTransactions()
-                        : await getTransactionsByPortfolio(initialPortfolioId);
-                    setTransactions(savedTransactions || []);
+                    const savedTransactions = await loadPortfolioTransactions(initialPortfolioId, savedCurrency);
+                    setTransactions(savedTransactions);
                 }
 
                 const savedPrivacy = await getSetting('hide_balances', false);
                 setHideBalances(savedPrivacy);
-
-                const savedCurrency = await getSetting('base_currency', 'USD');
-                setBaseCurrency(savedCurrency);
 
                 // Load saved portfolio timeframe
                 const savedTimeframe = localStorage.getItem('portfolio_chart_timeframe');
@@ -362,10 +369,8 @@ export default function Dashboard() {
         } else {
             // Reload transactions for the new portfolio
             setWatchlistAssets([]);
-            const newTransactions = portfolioId === 'all'
-                ? await getAllTransactions()
-                : await getTransactionsByPortfolio(portfolioId);
-            setTransactions(newTransactions || []);
+            const newTransactions = await loadPortfolioTransactions(portfolioId, baseCurrency);
+            setTransactions(newTransactions);
         }
 
         // Trigger data refresh logic
@@ -1052,7 +1057,8 @@ export default function Dashboard() {
                 await importTransactions(parsed);
                 clearFxCache(); // Reset all caches since we have entirely new data
                 const updated = await getAllTransactions();
-                setTransactions(updated);
+                const repaired = await backfillMissingQuoteCurrencies(updated, baseCurrency);
+                setTransactions(repaired);
                 alert(`Imported ${parsed.length} transactions`);
             }
         });

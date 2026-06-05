@@ -264,12 +264,12 @@ function collectCashTrackedCurrencies(sortedTransactions) {
     return tracked;
 }
 
-function getTransactionCostCurrency(tx, baseCurrency) {
+export function inferTransactionCostCurrency(tx, baseCurrency = 'USD') {
     const explicitQuote = normalizeAsset(tx.quoteCurrency);
     if (explicitQuote) return explicitQuote;
 
     const qAmt = toNumber(tx.quoteAmount);
-    if (!qAmt) return null;
+    if (qAmt <= EPSILON) return null;
 
     const rawBase = upper(tx.baseCurrency);
     if (rawBase.includes('-') || rawBase.includes('/')) {
@@ -278,6 +278,30 @@ function getTransactionCostCurrency(tx, baseCurrency) {
     }
 
     return normalizeAsset(baseCurrency);
+}
+
+export function getMissingQuoteCurrencyPatch(tx, baseCurrency = 'USD') {
+    if (!tx || normalizeAsset(tx.quoteCurrency)) return null;
+    if (toNumber(tx.quoteAmount) <= EPSILON) return null;
+
+    const quoteCurrency = inferTransactionCostCurrency(tx, baseCurrency);
+    if (!quoteCurrency) return null;
+
+    const hasExplicitBalanceFlag =
+        typeof tx.affectsQuoteBalance === 'boolean' ||
+        typeof tx.affectsFiatBalance === 'boolean';
+
+    return {
+        quoteCurrency,
+        ...(hasExplicitBalanceFlag ? {} : {
+            affectsQuoteBalance: false,
+            affectsFiatBalance: false
+        })
+    };
+}
+
+function getTransactionCostCurrency(tx, baseCurrency) {
+    return inferTransactionCostCurrency(tx, baseCurrency);
 }
 
 function shouldAffectQuoteBalance(tx, quote, cashTrackedCurrencies) {
