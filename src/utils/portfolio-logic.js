@@ -264,7 +264,7 @@ function collectCashTrackedCurrencies(sortedTransactions) {
     return tracked;
 }
 
-function getTransactionQuoteCurrency(tx, baseCurrency) {
+function getTransactionCostCurrency(tx, baseCurrency) {
     const explicitQuote = normalizeAsset(tx.quoteCurrency);
     if (explicitQuote) return explicitQuote;
 
@@ -389,7 +389,8 @@ export function calculatePortfolioAccounting(transactions, baseCurrency = 'USD',
     sortedTransactions.forEach(tx => {
         const type = tx.type;
         const base = normalizeAsset(tx.baseCurrency);
-        const quote = getTransactionQuoteCurrency(tx, baseCurrency);
+        const quote = normalizeAsset(tx.quoteCurrency);
+        const costCurrency = getTransactionCostCurrency(tx, baseCurrency);
         const feeCurr = normalizeAsset(tx.feeCurrency);
         const bAmt = toNumber(tx.baseAmount);
         const qAmt = toNumber(tx.quoteAmount);
@@ -410,8 +411,8 @@ export function calculatePortfolioAccounting(transactions, baseCurrency = 'USD',
         if (feeCurr) balances[feeCurr] = balances[feeCurr] || 0;
 
         const affectsQuoteBalance = shouldAffectQuoteBalance(tx, quote, cashTrackedCurrencies);
-        const quoteValueBase = quote
-            ? convertTxAmount(qAmt, quote, baseCurrency, dateStr, convertRateForTx, accounts, base)
+        const quoteValueBase = costCurrency
+            ? convertTxAmount(qAmt, costCurrency, baseCurrency, dateStr, convertRateForTx, accounts, base)
             : 0;
         const feeValueBase = feeCurr
             ? convertTxAmount(fAmt, feeCurr, baseCurrency, dateStr, convertRateForTx, accounts, base)
