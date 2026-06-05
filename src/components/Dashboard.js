@@ -19,7 +19,7 @@ import {
 } from '@/utils/portfolio-logic';
 import { calculatePortfolioHistory } from '@/utils/portfolio-history';
 import { formatSymbol } from '@/utils/commodities';
-import { getCachedAssetHistory, setCachedAssetHistory, getCachedFxHistory, invalidateAssetCache, clearFxCache } from '@/utils/fxCache';
+import { getCachedQuotes, getCachedAssetHistory, setCachedAssetHistory, getCachedFxHistory, invalidateAssetCache, clearFxCache } from '@/utils/fxCache';
 import {
     buildHistoricalConversionMaps,
     getHistoricalConversionRate
@@ -132,6 +132,22 @@ async function loadPortfolioTransactions(portfolioId, baseCurrency) {
     return await backfillMissingQuoteCurrencies(savedTransactions || [], baseCurrency);
 }
 
+async function mapWithConcurrency(items, limit, mapper) {
+    const results = [];
+    let nextIndex = 0;
+    const workerCount = Math.min(limit, items.length);
+
+    await Promise.all(Array.from({ length: workerCount }, async () => {
+        while (nextIndex < items.length) {
+            const currentIndex = nextIndex;
+            nextIndex++;
+            results[currentIndex] = await mapper(items[currentIndex], currentIndex);
+        }
+    }));
+
+    return results;
+}
+
 function getLiveHistoryAdjustmentRatio(rawHistory) {
     for (let i = rawHistory.length - 1; i >= 0; i--) {
         const point = rawHistory[i];
@@ -183,12 +199,18 @@ export default function Dashboard() {
     const prevBaseCurrencyRef = useRef(baseCurrency);
     const prevBaseCurrencyQuotesRef = useRef(baseCurrency);
     const pricesRef = useRef(prices);
+    const rawHistoryRef = useRef(rawHistory);
+    const priceMetadataRef = useRef({});
 
     const CURRENCIES = ['USD', 'EUR', 'GBP', 'JPY', 'CAD', 'AUD', 'CHF', 'CNY', 'HKD', 'SGD', 'IDR'];
 
     useEffect(() => {
         pricesRef.current = prices;
     }, [prices]);
+
+    useEffect(() => {
+        rawHistoryRef.current = rawHistory;
+    }, [rawHistory]);
 
     const priceMetadata = useMemo(() => {
         return Object.entries(prices).reduce((acc, [symbol, quote]) => {
@@ -200,10 +222,29 @@ export default function Dashboard() {
         }, {});
     }, [prices]);
 
+    const priceMetadataKey = useMemo(() => {
+        return Object.entries(priceMetadata)
+            .map(([symbol, quote]) => `${symbol}:${quote.currency || ''}:${quote.quoteType || ''}`)
+            .sort()
+            .join('|');
+    }, [priceMetadata]);
+
+    useEffect(() => {
+        priceMetadataRef.current = priceMetadata;
+    }, [priceMetadata]);
+
     const historicalRateResolver = useCallback((from, to, dateStr) => {
         return getHistoricalConversionRate(transactionFx, from, to, dateStr) ??
             getCurrentAssetRate(pricesRef.current, from, to);
     }, [transactionFx]);
+
+    const transactionMarketSymbols = useMemo(() => (
+        getTransactionMarketSymbols(transactions)
+    ), [transactions]);
+
+    const transactionFiatCurrencies = useMemo(() => (
+        getFiatCurrenciesFromTransactions(transactions, baseCurrency)
+    ), [transactions, baseCurrency]);
 
     // Handle Android back button/gesture
     // When modals are open, close them; when on main Dashboard, exit the app
@@ -254,7 +295,11 @@ export default function Dashboard() {
                 // 1. Check for a portfolio marked as default (isDefault: true)
                 // 2. If no favorite, always default to 'all'
                 const favPortfolio = allPortfolios.find(p => p.isDefault);
-                const savedPortfolioId = await getSetting('current_portfolio');
+                const [savedPortfolioId, savedPrivacy, savedCurrency] = await Promise.all([
+                    getSetting('current_portfolio'),
+                    getSetting('hide_balances', false),
+                    getSetting('base_currency', 'USD')
+                ]);
                 const initialPortfolioId = favPortfolio ? favPortfolio.id : (savedPortfolioId || 'all');
                 setCurrentPortfolioId(initialPortfolioId);
 
@@ -263,7 +308,6 @@ export default function Dashboard() {
                 const isWatchlist = currentPortfolio?.isWatchlist || false;
                 setIsWatchlistView(isWatchlist);
 
-                const savedCurrency = await getSetting('base_currency', 'USD');
                 setBaseCurrency(savedCurrency);
 
                 if (isWatchlist) {
@@ -276,7 +320,6 @@ export default function Dashboard() {
                     setTransactions(savedTransactions);
                 }
 
-                const savedPrivacy = await getSetting('hide_balances', false);
                 setHideBalances(savedPrivacy);
 
                 // Load saved portfolio timeframe
@@ -463,10 +506,10 @@ export default function Dashboard() {
         // and fee balances can be valued, not only the transaction base asset.
         const marketAssets = isWatchlistView
             ? [...new Set(watchlistAssets.map(a => a.symbol))]
-            : getTransactionMarketSymbols(transactions);
+            : transactionMarketSymbols;
         const initialQuoteAssets = isWatchlistView
             ? new Set()
-            : getFiatCurrenciesFromTransactions(transactions, baseCurrency);
+            : transactionFiatCurrencies;
 
         if (marketAssets.length === 0) {
             setPricesLoading(false);
@@ -499,13 +542,10 @@ export default function Dashboard() {
                     fetchSet.add(`${baseCurrency}USD=X`);
                 }
 
-                const res = await fetch(`/api/quote?symbols=${[...fetchSet].join(',')}`);
+                const quoteData = await getCachedQuotes([...fetchSet]);
                 if (isCancelled) return;
 
-                const result = await res.json();
-                if (isCancelled) return;
-
-                if (!result.data) {
+                if (quoteData.length === 0) {
                     setPricesLoading(false);
                     return;
                 }
@@ -513,7 +553,7 @@ export default function Dashboard() {
                 const pxMap = {};
                 const discoveredCurrencies = new Set(initialQuoteAssets);
 
-                result.data.forEach(q => {
+                quoteData.forEach(q => {
                     pxMap[q.symbol] = {
                         price: q.price,
                         changePercent: q.changePercent,
@@ -555,33 +595,25 @@ export default function Dashboard() {
                 );
                 if (fxToFetch.length > 0) {
                     const fxSymbols = fxToFetch.map(c => `${c}USD=X`);
-                    const fxRes = await fetch(`/api/quote?symbols=${fxSymbols.join(',')}`);
+                    const fxData = await getCachedQuotes(fxSymbols);
                     if (isCancelled) return;
 
-                    const fxResult = await fxRes.json();
-                    if (isCancelled) return;
-
-                    if (fxResult.data) {
-                        fxResult.data.forEach(q => {
-                            pxMap[q.symbol] = { price: q.price, changePercent: q.changePercent, currency: 'USD', quoteType: 'CURRENCY' };
-                            const bare = q.symbol.replace('USD=X', '');
-                            if (bare.length === 3) {
-                                pxMap[bare] = { price: q.price, changePercent: q.changePercent, currency: 'USD', quoteType: 'CURRENCY' };
-                            }
-                        });
-                    }
+                    fxData.forEach(q => {
+                        pxMap[q.symbol] = { price: q.price, changePercent: q.changePercent, currency: 'USD', quoteType: 'CURRENCY' };
+                        const bare = q.symbol.replace('USD=X', '');
+                        if (bare.length === 3) {
+                            pxMap[bare] = { price: q.price, changePercent: q.changePercent, currency: 'USD', quoteType: 'CURRENCY' };
+                        }
+                    });
                 }
 
                 // Ensure we have the base currency to USD rate
                 if (baseCurrency !== 'USD' && !pxMap[`${baseCurrency}USD=X`]) {
-                    const usdRes = await fetch(`/api/quote?symbols=${baseCurrency}USD=X`);
+                    const usdData = await getCachedQuotes([`${baseCurrency}USD=X`]);
                     if (isCancelled) return;
 
-                    const usdResult = await usdRes.json();
-                    if (isCancelled) return;
-
-                    if (usdResult.data && usdResult.data[0]) {
-                        const q = usdResult.data[0];
+                    if (usdData[0]) {
+                        const q = usdData[0];
                         pxMap[`${baseCurrency}USD=X`] = { price: q.price, changePercent: q.changePercent, currency: 'USD', quoteType: 'CURRENCY' };
                         pxMap[baseCurrency] = { price: q.price, changePercent: q.changePercent, currency: 'USD', quoteType: 'CURRENCY' };
                     }
@@ -592,16 +624,19 @@ export default function Dashboard() {
 
                 // Refresh watchlist asset names from Yahoo data
                 if (isWatchlistView && watchlistAssets.length > 0 && currentPortfolioId) {
+                    const nameUpdates = [];
                     for (const asset of watchlistAssets) {
                         const quoteData = pxMap[asset.symbol];
                         if (quoteData && quoteData.name && quoteData.name !== asset.name) {
-                            // Update the name in the database
-                            await updateWatchlistAssetName(currentPortfolioId, asset.symbol, quoteData.name);
+                            nameUpdates.push(updateWatchlistAssetName(currentPortfolioId, asset.symbol, quoteData.name));
                         }
                     }
-                    // Reload watchlist assets to get updated names
-                    const updatedAssets = await getWatchlistAssets(currentPortfolioId);
-                    setWatchlistAssets(updatedAssets);
+
+                    if (nameUpdates.length > 0) {
+                        await Promise.all(nameUpdates);
+                        const updatedAssets = await getWatchlistAssets(currentPortfolioId);
+                        setWatchlistAssets(updatedAssets);
+                    }
                 }
             } catch (e) {
                 console.error('Failed to fetch quotes', e);
@@ -617,7 +652,7 @@ export default function Dashboard() {
             clearInterval(interval);
         };
 
-    }, [transactions, loading, baseCurrency, refreshTrigger, isWatchlistView, watchlistAssets, currentPortfolioId]);
+    }, [transactionMarketSymbols, transactionFiatCurrencies, loading, baseCurrency, refreshTrigger, isWatchlistView, watchlistAssets, currentPortfolioId]);
 
     // Recalculate Holdings when transactions or prices change
     useEffect(() => {
@@ -688,11 +723,11 @@ export default function Dashboard() {
                     postMarketChangePercent: priceData.postMarketChangePercent
                 };
             });
-            setHoldings(watchlistHoldings);
+            startTransition(() => setHoldings(watchlistHoldings));
         } else {
             if (transactionFxLoading) return;
             const h = calculateHoldings(transactions, prices, baseCurrency, historicalRateResolver);
-            setHoldings(h);
+            startTransition(() => setHoldings(h));
         }
     }, [transactions, prices, baseCurrency, isWatchlistView, watchlistAssets, transactionFxLoading, historicalRateResolver]);
 
@@ -711,52 +746,43 @@ export default function Dashboard() {
             return;
         }
 
+        let isCancelled = false;
+
         async function loadTrueHistory() {
             const hasChangedRange = prevTimeframeRef.current !== timeframe || prevBaseCurrencyRef.current !== baseCurrency;
-            if (hasChangedRange || rawHistory.length === 0) {
+            if (hasChangedRange || rawHistoryRef.current.length === 0) {
                 setHistoryLoading(true);
             }
             prevTimeframeRef.current = timeframe;
             prevBaseCurrencyRef.current = baseCurrency;
             // 1. Identify all assets/currencies that can appear as balances.
-            const marketAssets = getTransactionMarketSymbols(transactions);
-            const explicitQuoteAssets = getFiatCurrenciesFromTransactions(transactions, baseCurrency);
+            const marketAssets = transactionMarketSymbols;
+            const explicitQuoteAssets = transactionFiatCurrencies;
 
             const historyMap = {};
             const discoveredCurrencies = new Set(explicitQuoteAssets);
 
-            try {
-                // Pass 1: Get current quotes to discover native asset currencies.
-                const discoverySymbols = new Set();
-                marketAssets.forEach(asset => addExpandedMarketSymbols(discoverySymbols, asset));
-                const res = await fetch(`/api/quote?symbols=${[...discoverySymbols].join(',')}`);
-                const result = await res.json();
-                if (result.data) {
-                    result.data.forEach(q => {
-                        const currency = q.currency?.toUpperCase();
-                        if (
-                            currency &&
-                            COMMON_FIAT_CURRENCIES.includes(currency) &&
-                            currency !== baseCurrency
-                        ) {
-                            discoveredCurrencies.add(currency);
-                        }
-                        // Detect bare currencies (e.g., EUR=X) and add for FX conversion
-                        if (q.symbol && q.symbol.endsWith('=X')) {
-                            const base = q.symbol.replace('=X', '');
-                            if (
-                                base.length <= 4 &&
-                                COMMON_FIAT_CURRENCIES.includes(base.toUpperCase()) &&
-                                base !== baseCurrency
-                            ) {
-                                discoveredCurrencies.add(base.toUpperCase());
-                            }
-                        }
-                    });
+            Object.entries(priceMetadataRef.current).forEach(([symbol, quote]) => {
+                const currency = quote.currency?.toUpperCase();
+                if (
+                    currency &&
+                    COMMON_FIAT_CURRENCIES.includes(currency) &&
+                    currency !== baseCurrency
+                ) {
+                    discoveredCurrencies.add(currency);
                 }
-            } catch (e) {
-                console.error("Discovery error", e);
-            }
+
+                if (symbol && symbol.endsWith('=X')) {
+                    const base = symbol.replace('=X', '');
+                    if (
+                        base.length <= 4 &&
+                        COMMON_FIAT_CURRENCIES.includes(base.toUpperCase()) &&
+                        base !== baseCurrency
+                    ) {
+                        discoveredCurrencies.add(base.toUpperCase());
+                    }
+                }
+            });
 
             // Pass 2: Fetch history for all assets and discovered fiat currencies.
             // Using cached history with timeframe-aware TTLs (5min for 1D, 15min for 1W, 1hr for others)
@@ -776,11 +802,11 @@ export default function Dashboard() {
                 }
 
                 if (s.length === 3 && /^[A-Z]{3}$/.test(s)) {
-                    const quote = priceMetadata[s];
+                    const quote = priceMetadataRef.current[s];
                     if (quote && quote.quoteType && quote.quoteType !== 'CURRENCY') {
                         return sym;
                     }
-                    if (priceMetadata[`${s}USD=X`]) {
+                    if (priceMetadataRef.current[`${s}USD=X`]) {
                         return `${s}USD=X`;
                     }
                 }
@@ -797,7 +823,8 @@ export default function Dashboard() {
             }
             const allSymbolsToFetch = [...new Set([...upgradedBaseAssets, ...fxSymbols])];
 
-            await Promise.all(allSymbolsToFetch.map(async (fetchSym) => {
+            await mapWithConcurrency(allSymbolsToFetch, 6, async (fetchSym) => {
+                if (isCancelled) return;
                 if (fetchSym === 'USD' || !fetchSym) return;
                 try {
                     // Check if this is an FX symbol (now checking for USD pairs)
@@ -854,13 +881,15 @@ export default function Dashboard() {
                         historyMap[`${fxMatch[1].toUpperCase()}USD=X`] = historyData;
                     }
                 } catch (e) { console.error(e); }
-            }));
+            });
+
+            if (isCancelled) return;
 
             // Create a market quote mapping for the history calculation.
             // Market quote currency must come from the price feed first; the transaction
             // quote currency is only the payment currency and can differ from the listing.
             const quoteMap = {};
-            Object.entries(priceMetadata).forEach(([sym, quote]) => {
+            Object.entries(priceMetadataRef.current).forEach(([sym, quote]) => {
                 const normalized = normalizeAsset(sym);
                 const marketCurrency = normalizeAsset(quote?.currency || getQuoteCurrencyFromSymbol(sym));
                 if (normalized && marketCurrency) {
@@ -880,15 +909,23 @@ export default function Dashboard() {
                 }
             });
 
+            await new Promise(resolve => setTimeout(resolve, 0));
+            if (isCancelled) return;
             const chartData = calculatePortfolioHistory(transactions, historyMap, baseCurrency, quoteMap);
-            setRawHistory(chartData);
-            setHistoryLoading(false);
+            if (isCancelled) return;
+            startTransition(() => {
+                setRawHistory(chartData);
+                setHistoryLoading(false);
+            });
         }
 
         loadTrueHistory();
 
+        return () => {
+            isCancelled = true;
+        };
 
-    }, [transactions, timeframe, baseCurrency, pricesLoading, refreshTrigger, priceMetadata, rawHistory.length]);
+    }, [transactions, transactionMarketSymbols, transactionFiatCurrencies, timeframe, baseCurrency, pricesLoading, refreshTrigger, priceMetadataKey]);
 
     // DERIVED HISTORY: Apply timeframe cutoff to raw history.
     // The chart is TWR-like performance adjusted for external deposits/withdrawals;
@@ -944,8 +981,7 @@ export default function Dashboard() {
         // Using raw currentTotal directly would make the last point jump to net value.
         const hasPrices = Object.keys(prices).length > 0 && !pricesLoading;
         if (hasPrices) {
-            const realTimeHoldings = calculateHoldings(transactions, prices, baseCurrency, historicalRateResolver);
-            const currentTotal = realTimeHoldings.reduce((acc, h) => acc + h.value, 0);
+            const currentTotal = holdings.reduce((acc, h) => acc + h.value, 0);
             if (currentTotal > 0) {
                 const adjustmentRatio = getLiveHistoryAdjustmentRatio(rawHistory);
                 filtered = mergeLiveHistoryPoint(filtered, {
@@ -966,7 +1002,7 @@ export default function Dashboard() {
 
         startTransition(() => setHistory(filtered));
 
-    }, [rawHistory, transactions, timeframe, prices, pricesLoading, baseCurrency, historicalRateResolver, chartMode]);
+    }, [rawHistory, transactions, timeframe, prices, pricesLoading, holdings, chartMode]);
 
 
     const syncTransactionsToFile = async (updatedTx) => {

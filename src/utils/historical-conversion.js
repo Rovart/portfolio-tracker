@@ -11,20 +11,40 @@ function upper(value) {
     return value ? String(value).trim().toUpperCase() : '';
 }
 
+const sortedDateCache = new WeakMap();
+
+function getSortedDates(rateMap) {
+    if (!rateMap || typeof rateMap !== 'object') return [];
+    const cached = sortedDateCache.get(rateMap);
+    if (cached) return cached;
+
+    const dates = Object.keys(rateMap).sort();
+    sortedDateCache.set(rateMap, dates);
+    return dates;
+}
+
 export function getMapRateForDate(rateMap, dateStr) {
     if (!rateMap || !dateStr) return null;
     if (rateMap[dateStr]) return rateMap[dateStr];
 
-    const dates = Object.keys(rateMap).sort();
+    const dates = getSortedDates(rateMap);
     if (dates.length === 0) return null;
 
-    let match = null;
-    for (const date of dates) {
-        if (date > dateStr) break;
-        match = date;
+    let low = 0;
+    let high = dates.length - 1;
+    let matchIndex = -1;
+
+    while (low <= high) {
+        const mid = Math.floor((low + high) / 2);
+        if (dates[mid] <= dateStr) {
+            matchIndex = mid;
+            low = mid + 1;
+        } else {
+            high = mid - 1;
+        }
     }
 
-    return match ? rateMap[match] : rateMap[dates[0]];
+    return matchIndex >= 0 ? rateMap[dates[matchIndex]] : rateMap[dates[0]];
 }
 
 export function getHistoricalConversionRate(conversionMaps, currency, baseCurrency, dateStr) {

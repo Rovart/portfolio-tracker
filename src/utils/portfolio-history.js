@@ -65,19 +65,41 @@ function shouldAffectQuoteBalance(tx, quote, cashTrackedCurrencies) {
     return cashTrackedCurrencies.has(upper(quote));
 }
 
-function findPrice(history, timestamp, key, lastKnownPrices) {
-    if (!history || history.length === 0) return null;
+function buildHistoryIndexes(historicalPrices) {
+    const indexes = {};
+
+    Object.entries(historicalPrices || {}).forEach(([key, history]) => {
+        if (!Array.isArray(history) || history.length === 0) return;
+
+        const exact = new Map();
+        const daily = new Map();
+        const sorted = [...history].sort((a, b) => String(a.date).localeCompare(String(b.date)));
+
+        sorted.forEach(point => {
+            const price = toNumber(point?.price);
+            const date = String(point?.date || '');
+            if (!date || price <= 0) return;
+
+            exact.set(date, price);
+            daily.set(date.split('T')[0], price);
+        });
+
+        indexes[key] = { exact, daily };
+    });
+
+    return indexes;
+}
+
+function findPrice(historyIndexes, timestamp, key, lastKnownPrices) {
+    const index = historyIndexes?.[key];
+    if (!index) return null;
 
     const dateOnly = timestamp.split('T')[0];
-    const exactEntry = history.find(p => p.date === timestamp) ||
-        history.find(p => String(p.date).startsWith(dateOnly));
+    const price = index.exact.get(timestamp) || index.daily.get(dateOnly);
 
-    if (exactEntry && exactEntry.price) {
-        const price = toNumber(exactEntry.price);
-        if (price > 0) {
-            lastKnownPrices[key] = price;
-            return price;
-        }
+    if (price > 0) {
+        lastKnownPrices[key] = price;
+        return price;
     }
 
     return lastKnownPrices[key] || null;
@@ -100,23 +122,23 @@ function getPriceSymbol(asset, metadata, historicalPrices) {
     return priceSym;
 }
 
-function getCurrencyUsdRate(currency, timestamp, historicalPrices, lastKnownPrices) {
+function getCurrencyUsdRate(currency, timestamp, historyIndexes, lastKnownPrices) {
     const curr = upper(currency);
     if (!curr) return null;
     if (curr === 'USD') return 1;
 
     const directSym = `${curr}USD=X`;
-    const direct = findPrice(historicalPrices[directSym], timestamp, directSym, lastKnownPrices);
+    const direct = findPrice(historyIndexes, timestamp, directSym, lastKnownPrices);
     if (direct) return direct;
 
     const inverseSym = `USD${curr}=X`;
-    const inverse = findPrice(historicalPrices[inverseSym], timestamp, inverseSym, lastKnownPrices);
+    const inverse = findPrice(historyIndexes, timestamp, inverseSym, lastKnownPrices);
     if (inverse) return 1 / inverse;
 
     return null;
 }
 
-function getFxRate(currency, baseCurrency, timestamp, historicalPrices, lastKnownPrices) {
+function getFxRate(currency, baseCurrency, timestamp, historyIndexes, lastKnownPrices) {
     const from = upper(normalizeAsset(currency));
     const to = upper(normalizeAsset(baseCurrency));
 
@@ -124,21 +146,21 @@ function getFxRate(currency, baseCurrency, timestamp, historicalPrices, lastKnow
     if (from === to) return 1;
 
     const directSym = `${from}${to}=X`;
-    const direct = findPrice(historicalPrices[directSym], timestamp, directSym, lastKnownPrices);
+    const direct = findPrice(historyIndexes, timestamp, directSym, lastKnownPrices);
     if (direct) return direct;
 
     const inverseSym = `${to}${from}=X`;
-    const inverse = findPrice(historicalPrices[inverseSym], timestamp, inverseSym, lastKnownPrices);
+    const inverse = findPrice(historyIndexes, timestamp, inverseSym, lastKnownPrices);
     if (inverse) return 1 / inverse;
 
-    const fromUsd = getCurrencyUsdRate(from, timestamp, historicalPrices, lastKnownPrices);
-    const toUsd = getCurrencyUsdRate(to, timestamp, historicalPrices, lastKnownPrices);
+    const fromUsd = getCurrencyUsdRate(from, timestamp, historyIndexes, lastKnownPrices);
+    const toUsd = getCurrencyUsdRate(to, timestamp, historyIndexes, lastKnownPrices);
     if (!fromUsd || !toUsd) return null;
 
     return fromUsd / toUsd;
 }
 
-function valueBalance(asset, amount, timestamp, historicalPrices, baseCurrency, metadata, externalQuoteMap, lastKnownPrices) {
+function valueBalance(asset, amount, timestamp, historicalPrices, historyIndexes, baseCurrency, metadata, externalQuoteMap, lastKnownPrices) {
     const normalized = upper(asset);
     if (!normalized || Math.abs(amount) < EPSILON) return null;
 
@@ -147,8 +169,7 @@ function valueBalance(asset, amount, timestamp, historicalPrices, baseCurrency, 
 
     if (!isFiatAsset(normalized)) {
         const priceSym = getPriceSymbol(normalized, metadata, historicalPrices);
-        const history = historicalPrices[priceSym];
-        localPrice = findPrice(history, timestamp, priceSym, lastKnownPrices);
+        localPrice = findPrice(historyIndexes, timestamp, priceSym, lastKnownPrices);
         if (!localPrice) return null;
 
         quoteCurrency = upper(externalQuoteMap[normalized]) ||
@@ -157,7 +178,7 @@ function valueBalance(asset, amount, timestamp, historicalPrices, baseCurrency, 
             'USD';
     }
 
-    const fxRate = getFxRate(quoteCurrency, baseCurrency, timestamp, historicalPrices, lastKnownPrices);
+    const fxRate = getFxRate(quoteCurrency, baseCurrency, timestamp, historyIndexes, lastKnownPrices);
     if (!fxRate) return null;
 
     return amount * localPrice * fxRate;
@@ -166,14 +187,18 @@ function valueBalance(asset, amount, timestamp, historicalPrices, baseCurrency, 
 export function calculatePortfolioHistory(transactions, historicalPrices, baseCurrency = 'USD', externalQuoteMap = {}) {
     if (!transactions || transactions.length === 0) return [];
 
-    const historicalEntries = Object.values(historicalPrices).flat();
-    const transactionDates = transactions.map(t => String(t.date).split('T')[0]);
+    const timestampSet = new Set();
+    Object.values(historicalPrices || {}).forEach(history => {
+        if (!Array.isArray(history)) return;
+        history.forEach(point => {
+            if (point?.date) timestampSet.add(point.date);
+        });
+    });
+    transactions.forEach(t => timestampSet.add(String(t.date).split('T')[0]));
+    const historyIndexes = buildHistoryIndexes(historicalPrices);
     const nowStr = new Date().toISOString();
-    const sortedTimestamps = [...new Set([
-        ...historicalEntries.map(h => h.date),
-        ...transactionDates,
-        nowStr
-    ])].sort();
+    timestampSet.add(nowStr);
+    const sortedTimestamps = [...timestampSet].sort();
 
     const sortedTransactions = [...transactions].sort((a, b) => new Date(a.date) - new Date(b.date));
     const cashTrackedCurrencies = collectCashTrackedCurrencies(sortedTransactions);
@@ -250,6 +275,7 @@ export function calculatePortfolioHistory(transactions, historicalPrices, baseCu
                 amount,
                 timestamp,
                 historicalPrices,
+                historyIndexes,
                 baseCurrency,
                 metadata,
                 externalQuoteMap,
@@ -269,6 +295,7 @@ export function calculatePortfolioHistory(transactions, historicalPrices, baseCu
                 flow.amount,
                 timestamp,
                 historicalPrices,
+                historyIndexes,
                 baseCurrency,
                 metadata,
                 externalQuoteMap,

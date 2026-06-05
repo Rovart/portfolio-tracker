@@ -4,8 +4,12 @@
 const fxCache = {
     current: {},       // { 'EUR-USD': { data: {...}, timestamp: Date.now() } }
     history: {},       // { 'EUR-USD-ALL': { data: {...}, timestamp: Date.now() } }
-    assetHistory: {}   // { 'AAPL-1Y': { data: [...], timestamp: Date.now() } }
+    assetHistory: {},  // { 'AAPL-1Y': { data: [...], timestamp: Date.now() } }
+    quotes: {}         // { 'AAPL': { data: {...}, timestamp: Date.now() } }
 };
+
+const inFlightQuoteRequests = new Map();
+const QUOTE_CACHE_DURATION = 20 * 1000;
 
 // Cache durations based on timeframe
 // Short timeframes need more frequent updates, long timeframes can cache longer
@@ -41,6 +45,70 @@ function getCacheKey(fromCurrency, toCurrency) {
 function isCacheValid(entry, duration) {
     if (!entry || !entry.timestamp) return false;
     return Date.now() - entry.timestamp < duration;
+}
+
+function normalizeQuoteSymbol(symbol) {
+    return String(symbol || '').trim().toUpperCase();
+}
+
+export async function getCachedQuotes(symbols, maxAge = QUOTE_CACHE_DURATION) {
+    const uniqueSymbols = [...new Set((symbols || []).map(normalizeQuoteSymbol).filter(Boolean))];
+    if (uniqueSymbols.length === 0) return [];
+
+    const freshQuotes = [];
+    const missingSymbols = [];
+
+    uniqueSymbols.forEach(symbol => {
+        const cached = fxCache.quotes[symbol];
+        if (isCacheValid(cached, maxAge)) {
+            freshQuotes.push(cached.data);
+        } else {
+            missingSymbols.push(symbol);
+        }
+    });
+
+    if (missingSymbols.length === 0) return freshQuotes;
+
+    const requestKey = missingSymbols.slice().sort().join(',');
+    let request = inFlightQuoteRequests.get(requestKey);
+
+    if (!request) {
+        request = fetch(`/api/quote?symbols=${encodeURIComponent(missingSymbols.join(','))}`)
+            .then(async res => {
+                if (!res.ok) {
+                    console.warn(`Quote fetch failed ${res.status}: ${res.statusText}`);
+                    return [];
+                }
+
+                const text = await res.text();
+                if (!text) return [];
+
+                try {
+                    const json = JSON.parse(text);
+                    return Array.isArray(json.data) ? json.data : [];
+                } catch (e) {
+                    console.error('Invalid JSON from quote API:', text.substring(0, 100));
+                    return [];
+                }
+            })
+            .finally(() => {
+                inFlightQuoteRequests.delete(requestKey);
+            });
+        inFlightQuoteRequests.set(requestKey, request);
+    }
+
+    const fetchedQuotes = await request;
+    const now = Date.now();
+    fetchedQuotes.forEach(quote => {
+        if (quote?.symbol) {
+            fxCache.quotes[normalizeQuoteSymbol(quote.symbol)] = {
+                data: quote,
+                timestamp: now
+            };
+        }
+    });
+
+    return [...freshQuotes, ...fetchedQuotes];
 }
 
 /**
@@ -229,6 +297,8 @@ export function clearFxCache() {
     fxCache.current = {};
     fxCache.history = {};
     fxCache.assetHistory = {};
+    fxCache.quotes = {};
+    inFlightQuoteRequests.clear();
 }
 
 /**
@@ -356,6 +426,7 @@ export function getCacheStats() {
     return {
         currentFxEntries: Object.keys(fxCache.current).length,
         historyFxEntries: Object.keys(fxCache.history).length,
-        assetHistoryEntries: Object.keys(fxCache.assetHistory).length
+        assetHistoryEntries: Object.keys(fxCache.assetHistory).length,
+        quoteEntries: Object.keys(fxCache.quotes).length
     };
 }
