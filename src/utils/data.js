@@ -44,6 +44,11 @@ function processTransactions(rawRow) {
         }
         // STOCKS/FUNDS usually good as is (DTLA.L)
 
+        const balanceFlag = row['Affects Quote Balance'] || row['Affects Cash Balance'] || row['Affects Fiat Balance'];
+        const affectsQuoteBalance = balanceFlag
+            ? ['TRUE', '1', 'YES', 'Y'].includes(String(balanceFlag).toUpperCase())
+            : undefined;
+
         return {
             id: Math.random().toString(36).substr(2, 9),
             date: new Date(row.Date).toISOString(),
@@ -55,9 +60,8 @@ function processTransactions(rawRow) {
             exchange: row.Exchange,
             fee: row['Fee amount'] || 0,
             feeCurrency: row['Fee currency (name)'],
-            affectsFiatBalance: row['Affects Cash Balance'] || row['Affects Fiat Balance']
-                ? ['TRUE', '1', 'YES', 'Y'].includes(String(row['Affects Cash Balance'] || row['Affects Fiat Balance']).toUpperCase())
-                : undefined,
+            affectsFiatBalance: affectsQuoteBalance,
+            affectsQuoteBalance,
             originalType: type // Keep for reference
         };
     }).filter(t => t.baseCurrency) // Filter out empty lines/bad data

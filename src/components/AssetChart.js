@@ -1,10 +1,19 @@
 'use client';
 
-import { memo, useEffect, useState, useMemo, useCallback, useRef } from 'react';
+import { memo, useEffect, useId, useState, useMemo, useCallback, useRef } from 'react';
 import { AreaChart, Area, XAxis, Tooltip, ResponsiveContainer, YAxis, ReferenceArea, ReferenceLine, ReferenceDot } from 'recharts';
 import { getCachedFxHistory, getCachedAssetHistory } from '@/utils/fxCache';
 
 const RANGES = ['1D', '1W', '1M', '3M', '1Y', 'ALL'];
+
+function downsamplePreserveEdges(data, maxPoints = 300) {
+    if (!data || data.length <= maxPoints) return data || [];
+    const step = Math.ceil(data.length / maxPoints);
+    const sampled = data.filter((_, i) => i % step === 0);
+    const last = data[data.length - 1];
+    if (sampled[sampled.length - 1] !== last) sampled.push(last);
+    return sampled;
+}
 
 function findClosestPoint(sortedPoints, targetTime, maxDiff) {
     let low = 0;
@@ -47,6 +56,9 @@ function AssetChart({ symbol, chartSymbol, baseCurrency = 'USD', fxRate = 1, par
     const [selectionEnd, setSelectionEnd] = useState(null);
     const [isSelecting, setIsSelecting] = useState(false);
     const containerRef = useRef(null);
+    const chartId = useId().replace(/:/g, '');
+    const splitColorId = `splitColorAsset-${chartId}`;
+    const splitFillId = `splitFillAsset-${chartId}`;
 
     const handleRangeChange = (newRange) => {
         setRange(newRange);
@@ -98,11 +110,7 @@ function AssetChart({ symbol, chartSymbol, baseCurrency = 'USD', fxRate = 1, par
 
     const { chartData, offset, startPrice, yDomain, rangeChange, rangeChangePercent } = useMemo(() => {
         if (!rawData || rawData.length === 0) return { chartData: [], offset: 0, startPrice: 0, yDomain: [0, 100], rangeChange: 0, rangeChangePercent: 0 };
-        let processedData = rawData;
-        if (rawData.length > 300) {
-            const step = Math.ceil(rawData.length / 300);
-            processedData = rawData.filter((_, i) => i % step === 0);
-        }
+        const processedData = downsamplePreserveEdges(rawData);
         const startDateKey = rawData[0].date.split('T')[0];
         let fxIndex = 0;
         let firstRate = fxRate;
@@ -378,11 +386,11 @@ function AssetChart({ symbol, chartSymbol, baseCurrency = 'USD', fxRate = 1, par
                         onMouseLeave={handleMouseUp}
                     >
                         <defs>
-                            <linearGradient id="splitColor" x1="0" y1="0" x2="0" y2="1">
+                            <linearGradient id={splitColorId} x1="0" y1="0" x2="0" y2="1">
                                 <stop offset={offset} stopColor={green} stopOpacity={1} />
                                 <stop offset={offset} stopColor={red} stopOpacity={1} />
                             </linearGradient>
-                            <linearGradient id="splitFill" x1="0" y1="0" x2="0" y2="1">
+                            <linearGradient id={splitFillId} x1="0" y1="0" x2="0" y2="1">
                                 <stop offset={offset} stopColor={green} stopOpacity={0.2} />
                                 <stop offset={offset} stopColor={red} stopOpacity={0.2} />
                             </linearGradient>
@@ -448,8 +456,8 @@ function AssetChart({ symbol, chartSymbol, baseCurrency = 'USD', fxRate = 1, par
                         <Area
                             type="monotone"
                             dataKey="value"
-                            stroke="url(#splitColor)"
-                            fill="url(#splitFill)"
+                            stroke={`url(#${splitColorId})`}
+                            fill={`url(#${splitFillId})`}
                             strokeWidth={2}
                             baseValue={startPrice}
                             isAnimationActive={false}
@@ -512,20 +520,10 @@ function AssetChart({ symbol, chartSymbol, baseCurrency = 'USD', fxRate = 1, par
 export default memo(AssetChart);
 
 function LoadingChart() {
-    const skeletonData = [{ v: 40 }, { v: 45 }, { v: 42 }, { v: 50 }, { v: 48 }, { v: 55 }, { v: 52 }, { v: 60 }];
     return (
-        <div style={{ height: '240px', width: '100%', opacity: 0.3, filter: 'grayscale(1)', cursor: 'default' }} className="animate-pulse no-select">
-            <ResponsiveContainer width="100%" height="100%" debounce={50}>
-                <AreaChart data={skeletonData} margin={{ top: 0, right: 0, left: 0, bottom: 0 }}>
-                    <defs>
-                        <linearGradient id="skeletonGradientAsset" x1="0" y1="0" x2="0" y2="1">
-                            <stop offset="0%" stopColor="#525252" stopOpacity={0.4} />
-                            <stop offset="100%" stopColor="#525252" stopOpacity={0} />
-                        </linearGradient>
-                    </defs>
-                    <Area type="monotone" dataKey="v" stroke="#525252" fill="url(#skeletonGradientAsset)" strokeWidth={2} isAnimationActive={false} />
-                </AreaChart>
-            </ResponsiveContainer>
+        <div style={{ height: '240px', width: '100%', opacity: 0.35, cursor: 'default', position: 'relative', overflow: 'hidden' }} className="animate-pulse no-select">
+            <div style={{ position: 'absolute', left: 0, right: 0, bottom: 48, height: 2, background: '#525252', transform: 'skewY(-5deg)', transformOrigin: 'left center' }} />
+            <div style={{ position: 'absolute', left: 0, right: 0, bottom: 0, height: 105, background: 'linear-gradient(180deg, rgba(82,82,82,0.22), rgba(82,82,82,0))', clipPath: 'polygon(0 52%, 16% 45%, 32% 50%, 48% 34%, 64% 42%, 82% 24%, 100% 18%, 100% 100%, 0 100%)' }} />
         </div>
     );
 }

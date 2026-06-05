@@ -1,12 +1,11 @@
-import { useState, useMemo, useEffect, memo } from 'react';
+import Image from 'next/image';
+import { useState, useMemo, memo } from 'react';
+
+const COMMON_FIAT = ['USD', 'EUR', 'AUD', 'GBP', 'JPY', 'CAD', 'CHF', 'CNY', 'HKD', 'NZD', 'MXN', 'SGD', 'INR', 'BRL', 'RUB'];
 
 const AssetIcon = memo(function AssetIcon({ symbol, type, isFiat, size = 40, className = "" }) {
-    const [iconSrc, setIconSrc] = useState(null);
-    const [imageError, setImageError] = useState(false);
-    const [loading, setLoading] = useState(true);
-
-    // List of known fiat currencies to skip logo lookups
-    const COMMON_FIAT = ['USD', 'EUR', 'AUD', 'GBP', 'JPY', 'CAD', 'CHF', 'CNY', 'HKD', 'NZD', 'MXN', 'SGD', 'INR', 'BRL', 'RUB'];
+    const imageKey = `${symbol || ''}|${type || ''}`;
+    const [imageErrorKey, setImageErrorKey] = useState(null);
 
     // Clean symbol for icon lookup and display
     // Removes trailing =X, =F, .X, =, . and other common suffixes
@@ -40,82 +39,25 @@ const AssetIcon = memo(function AssetIcon({ symbol, type, isFiat, size = 40, cla
         return s.replace(/[=.]/g, '');
     }, [symbol]);
 
-    // Fetch icon via API to avoid console errors
-    useEffect(() => {
-        if (!symbol || shouldSkipLogo) {
-            setLoading(false);
-            return;
-        }
-
-        let active = true;
-        setLoading(true);
-        setImageError(false);
-        setIconSrc(null);
-
-        const url = `/api/icon?symbol=${encodeURIComponent(symbol)}&type=${type || ''}`;
-
-        fetch(url)
-            .then(res => {
-                if (!active) return;
-                if (res.ok) {
-                    res.blob().then(blob => {
-                        if (!active) return;
-                        const objectUrl = URL.createObjectURL(blob);
-                        setIconSrc(objectUrl);
-                        setLoading(false);
-                    });
-                } else {
-                    setImageError(true);
-                    setLoading(false);
-                }
-            })
-            .catch(() => {
-                if (active) {
-                    setImageError(true);
-                    setLoading(false);
-                }
-            });
-
-        return () => {
-            active = false;
-        };
-    }, [symbol, type, shouldSkipLogo]);
-
-    // Cleanup object URL when iconSrc changes
-    useEffect(() => {
-        return () => {
-            if (iconSrc) URL.revokeObjectURL(iconSrc);
-        };
-    }, [iconSrc]);
-
-    // Show skeleton while loading
-    if (loading) {
-        return (
-            <div
-                className={`shrink-0 rounded-full animate-pulse ${className}`}
-                style={{
-                    width: size,
-                    height: size,
-                    marginRight: '10px',
-                    backgroundColor: 'rgba(255,255,255,0.2)'
-                }}
-            />
-        );
-    }
+    const iconSrc = !shouldSkipLogo && symbol && imageErrorKey !== imageKey
+        ? `/api/icon?symbol=${encodeURIComponent(symbol)}&type=${type || ''}`
+        : null;
 
     // Skip logo and show initials if it's a fiat currency or image failed
-    if (iconSrc && !imageError && !shouldSkipLogo) {
+    if (iconSrc) {
         return (
             <div
                 className={`relative shrink-0 rounded-full overflow-hidden ${className}`}
                 style={{ width: size, height: size, backgroundColor: '#262626', marginRight: '10px' }}
             >
-                <img
+                <Image
                     src={iconSrc}
                     alt={cleanSym}
-                    className="w-full h-full"
+                    width={size}
+                    height={size}
+                    unoptimized
                     style={{ objectFit: 'contain' }}
-                    onError={() => setImageError(true)}
+                    onError={() => setImageErrorKey(imageKey)}
                 />
             </div>
         );

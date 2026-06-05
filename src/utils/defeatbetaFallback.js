@@ -183,8 +183,10 @@ export function shouldUseFallback(error) {
     );
 }
 
-export default {
+const defeatbetaFallback = {
     fetchDefeatbetaHistory,
     fetchAlternativeHistory,
     shouldUseFallback
 };
+
+export default defeatbetaFallback;

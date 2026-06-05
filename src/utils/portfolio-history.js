@@ -50,7 +50,7 @@ function collectCashTrackedCurrencies(sortedTransactions) {
             tracked.add(upper(base));
         }
 
-        if (quote && tx.affectsFiatBalance === true) {
+        if (quote && (tx.affectsQuoteBalance === true || tx.affectsFiatBalance === true)) {
             tracked.add(upper(quote));
         }
     });
@@ -59,7 +59,9 @@ function collectCashTrackedCurrencies(sortedTransactions) {
 
 function shouldAffectQuoteBalance(tx, quote, cashTrackedCurrencies) {
     if (!quote) return false;
+    if (typeof tx.affectsQuoteBalance === 'boolean') return tx.affectsQuoteBalance;
     if (typeof tx.affectsFiatBalance === 'boolean') return tx.affectsFiatBalance;
+    if (!isFiatAsset(quote)) return true;
     return cashTrackedCurrencies.has(upper(quote));
 }
 

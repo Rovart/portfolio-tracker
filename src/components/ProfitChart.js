@@ -1,13 +1,25 @@
 'use client';
 
-import { memo, useMemo, useState, useCallback, useRef } from 'react';
+import { memo, useId, useMemo, useState, useCallback, useRef } from 'react';
 import { AreaChart, Area, XAxis, Tooltip, ResponsiveContainer, YAxis, ReferenceArea, ReferenceLine } from 'recharts';
 
-function ProfitChart({ data, baseCurrency, hideBalances, loading }) {
+function downsamplePreserveEdges(data, maxPoints = 300) {
+    if (!data || data.length <= maxPoints) return data || [];
+    const step = Math.ceil(data.length / maxPoints);
+    const sampled = data.filter((_, i) => i % step === 0);
+    const last = data[data.length - 1];
+    if (sampled[sampled.length - 1] !== last) sampled.push(last);
+    return sampled;
+}
+
+function ProfitChart({ data, baseCurrency, hideBalances, loading, chartMode = 'performance' }) {
     const [selectionStart, setSelectionStart] = useState(null);
     const [selectionEnd, setSelectionEnd] = useState(null);
     const [isSelecting, setIsSelecting] = useState(false);
     const containerRef = useRef(null);
+    const chartId = useId().replace(/:/g, '');
+    const splitColorId = `splitColorProfit-${chartId}`;
+    const splitFillId = `splitFillProfit-${chartId}`;
 
     const clearSelection = useCallback(() => {
         setSelectionStart(null);
@@ -17,11 +29,7 @@ function ProfitChart({ data, baseCurrency, hideBalances, loading }) {
 
     const { chartData, offset, startValue, yDomain } = useMemo(() => {
         if (!data || data.length === 0) return { chartData: [], offset: 0, startValue: 0, yDomain: [0, 100] };
-        let processedData = data;
-        if (data.length > 300) {
-            const step = Math.ceil(data.length / 300);
-            processedData = data.filter((_, i) => i % step === 0);
-        }
+        const processedData = downsamplePreserveEdges(data);
         const start = data[0].value;
         const values = processedData.map(d => d.value);
         const max = Math.max(...values);
@@ -197,11 +205,11 @@ function ProfitChart({ data, baseCurrency, hideBalances, loading }) {
                         onMouseLeave={handleMouseUp}
                     >
                         <defs>
-                            <linearGradient id="splitColorProfit" x1="0" y1="0" x2="0" y2="1">
+                            <linearGradient id={splitColorId} x1="0" y1="0" x2="0" y2="1">
                                 <stop offset={offset} stopColor={green} stopOpacity={1} />
                                 <stop offset={offset} stopColor={red} stopOpacity={1} />
                             </linearGradient>
-                            <linearGradient id="splitFillProfit" x1="0" y1="0" x2="0" y2="1">
+                            <linearGradient id={splitFillId} x1="0" y1="0" x2="0" y2="1">
                                 <stop offset={offset} stopColor={green} stopOpacity={0.2} />
                                 <stop offset={offset} stopColor={red} stopOpacity={0.2} />
                             </linearGradient>
@@ -254,7 +262,7 @@ function ProfitChart({ data, baseCurrency, hideBalances, loading }) {
                                     <span key="val" style={{ color: value >= startValue ? green : red }}>
                                         {hideBalances ? '••••••' : `${value.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ${baseCurrency === 'USD' ? '$' : baseCurrency}`}
                                     </span>,
-                                    'Value'
+                                    chartMode === 'value' ? 'Value' : 'Performance'
                                 ]}
                                 labelFormatter={(label) => new Date(label).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
                                 labelStyle={{ color: '#a1a1aa', fontSize: '0.75rem', marginBottom: '4px' }}
@@ -267,8 +275,8 @@ function ProfitChart({ data, baseCurrency, hideBalances, loading }) {
                         <Area
                             type="monotone"
                             dataKey="value"
-                            stroke="url(#splitColorProfit)"
-                            fill="url(#splitFillProfit)"
+                            stroke={`url(#${splitColorId})`}
+                            fill={`url(#${splitFillId})`}
                             strokeWidth={2}
                             fillOpacity={1}
                             baseValue={startValue}
@@ -298,20 +306,10 @@ function ProfitChart({ data, baseCurrency, hideBalances, loading }) {
 export default memo(ProfitChart);
 
 function LoadingChart() {
-    const skeletonData = [{ v: 40 }, { v: 45 }, { v: 42 }, { v: 50 }, { v: 48 }, { v: 55 }, { v: 52 }, { v: 60 }];
     return (
-        <div style={{ height: '300px', width: '100%', opacity: 0.6, filter: 'grayscale(1)', cursor: 'default' }} className="animate-pulse no-select">
-            <ResponsiveContainer width="100%" height="100%" debounce={50}>
-                <AreaChart data={skeletonData} margin={{ top: 0, right: 0, left: 0, bottom: 0 }}>
-                    <defs>
-                        <linearGradient id="skeletonGradient" x1="0" y1="0" x2="0" y2="1">
-                            <stop offset="0%" stopColor="#525252" stopOpacity={0.4} />
-                            <stop offset="100%" stopColor="#525252" stopOpacity={0} />
-                        </linearGradient>
-                    </defs>
-                    <Area type="monotone" dataKey="v" stroke="#525252" fill="url(#skeletonGradient)" strokeWidth={2} isAnimationActive={false} />
-                </AreaChart>
-            </ResponsiveContainer>
+        <div style={{ height: '300px', width: '100%', opacity: 0.6, cursor: 'default', position: 'relative', overflow: 'hidden' }} className="animate-pulse no-select">
+            <div style={{ position: 'absolute', left: 0, right: 0, bottom: 58, height: 2, background: '#525252', transform: 'skewY(-6deg)', transformOrigin: 'left center' }} />
+            <div style={{ position: 'absolute', left: 0, right: 0, bottom: 0, height: 130, background: 'linear-gradient(180deg, rgba(82,82,82,0.22), rgba(82,82,82,0))', clipPath: 'polygon(0 48%, 14% 43%, 28% 50%, 42% 34%, 56% 40%, 70% 25%, 84% 34%, 100% 14%, 100% 100%, 0 100%)' }} />
         </div>
     );
 }

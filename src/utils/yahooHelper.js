@@ -137,7 +137,7 @@ export function resetFallbackMode() {
     fallbackInstance = null;
 }
 
-export default {
+const yahooHelper = {
     getRandomUserAgent,
     randomDelay,
     retryDelay,
@@ -147,3 +147,5 @@ export default {
     resetFallbackMode,
     FALLBACK_USER_AGENTS
 };
+
+export default yahooHelper;

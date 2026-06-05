@@ -14,6 +14,22 @@ export const COMMON_CRYPTO_ASSETS = [
 ];
 
 const PAIR_QUOTES = [...new Set([...COMMON_FIAT_CURRENCIES, ...COMMON_CRYPTO_ASSETS])];
+const EXCHANGE_SUFFIX_QUOTES = {
+    DE: 'EUR',
+    MI: 'EUR',
+    PA: 'EUR',
+    AS: 'EUR',
+    MC: 'EUR',
+    L: 'GBP',
+    HK: 'HKD',
+    TO: 'CAD',
+    SW: 'CHF',
+    SS: 'CNY',
+    SZ: 'CNY',
+    SI: 'SGD',
+    AX: 'AUD',
+    T: 'JPY'
+};
 
 function toNumber(value) {
     const parsed = parseFloat(value);
@@ -36,7 +52,7 @@ export function normalizeAsset(asset) {
     if (s.includes('-') || s.includes('/')) {
         const parts = s.split(/[-/]/);
         const lastPart = parts[parts.length - 1];
-        if (parts.length > 1 && (PAIR_QUOTES.includes(lastPart) || lastPart.length >= 3)) {
+        if (parts.length > 1 && PAIR_QUOTES.includes(lastPart)) {
             return parts[0];
         }
     }
@@ -68,6 +84,11 @@ export function getQuoteCurrencyFromSymbol(symbol) {
         const parts = s.split(/[-/]/);
         const quote = parts[parts.length - 1];
         if (PAIR_QUOTES.includes(quote) || quote.length === 3) return quote;
+    }
+
+    if (s.includes('.')) {
+        const suffix = s.split('.').pop();
+        if (EXCHANGE_SUFFIX_QUOTES[suffix]) return EXCHANGE_SUFFIX_QUOTES[suffix];
     }
 
     return null;
@@ -224,7 +245,7 @@ function collectCashTrackedCurrencies(sortedTransactions) {
             tracked.add(upper(base));
         }
 
-        if (quote && tx.affectsFiatBalance === true) {
+        if (quote && (tx.affectsQuoteBalance === true || tx.affectsFiatBalance === true)) {
             tracked.add(upper(quote));
         }
     });
@@ -234,7 +255,9 @@ function collectCashTrackedCurrencies(sortedTransactions) {
 
 function shouldAffectQuoteBalance(tx, quote, cashTrackedCurrencies) {
     if (!quote) return false;
+    if (typeof tx.affectsQuoteBalance === 'boolean') return tx.affectsQuoteBalance;
     if (typeof tx.affectsFiatBalance === 'boolean') return tx.affectsFiatBalance;
+    if (!isFiatAsset(quote)) return true;
     return cashTrackedCurrencies.has(upper(quote));
 }
 
@@ -247,7 +270,9 @@ function createAccount() {
         totalBuyCost: 0,
         realizedPnl: 0,
         transferredCost: 0,
-        missingCostFx: false
+        missingCostFx: false,
+        missingCostBasis: false,
+        oversoldQuantity: 0
     };
 }
 
@@ -270,8 +295,10 @@ function addLot(accounts, asset, quantity, costBasis, tx) {
 
 function consumeLots(accounts, asset, quantity, proceedsBase = 0, realize = false) {
     const account = getAccount(accounts, asset);
-    let remaining = Math.max(0, toNumber(quantity));
+    const requestedQuantity = Math.max(0, toNumber(quantity));
+    let remaining = requestedQuantity;
     let consumedCost = 0;
+    let consumedQuantity = 0;
 
     while (remaining > EPSILON && account.lots.length > 0) {
         const lot = account.lots[0];
@@ -283,15 +310,24 @@ function consumeLots(accounts, asset, quantity, proceedsBase = 0, realize = fals
         lot.costBasis -= cost;
         remaining -= take;
         consumedCost += cost;
+        consumedQuantity += take;
 
         if (lot.quantity <= EPSILON) account.lots.shift();
     }
 
     account.remainingCostBasis = Math.max(0, account.remainingCostBasis - consumedCost);
-    account.accountedQuantity = Math.max(0, account.accountedQuantity - (toNumber(quantity) - remaining));
+    account.accountedQuantity = Math.max(0, account.accountedQuantity - consumedQuantity);
+
+    if (remaining > EPSILON) {
+        account.oversoldQuantity += remaining;
+    }
 
     if (realize) {
-        account.realizedPnl += toNumber(proceedsBase) - consumedCost;
+        const proceeds = toNumber(proceedsBase);
+        const recognizedProceeds = requestedQuantity > EPSILON
+            ? proceeds * (consumedQuantity / requestedQuantity)
+            : 0;
+        account.realizedPnl += recognizedProceeds - consumedCost;
     } else {
         account.transferredCost += consumedCost;
     }
@@ -332,6 +368,7 @@ export function calculatePortfolioAccounting(transactions, baseCurrency = 'USD',
         const qAmt = toNumber(tx.quoteAmount);
         const fAmt = toNumber(tx.fee);
         const dateStr = tx.date ? String(tx.date).split('T')[0] : null;
+        const explicitCostBasisBase = toNumber(tx.costBasisBase);
 
         if (!base) return;
 
@@ -391,7 +428,14 @@ export function calculatePortfolioAccounting(transactions, baseCurrency = 'USD',
             }
         } else if (type === 'DEPOSIT') {
             balances[base] += bAmt;
-            if (!isFiatAsset(base)) addLot(accounts, base, bAmt, 0, tx);
+            if (!isFiatAsset(base)) {
+                let depositCostBase = explicitCostBasisBase > 0 ? explicitCostBasisBase : quoteValueBase;
+                if (feeCurr && feeCurr !== base) depositCostBase += feeValueBase;
+                addLot(accounts, base, bAmt, depositCostBase, tx);
+                if (depositCostBase <= EPSILON) {
+                    getAccount(accounts, base).missingCostBasis = true;
+                }
+            }
         } else if (type === 'WITHDRAW') {
             balances[base] -= bAmt;
             if (!isFiatAsset(base)) consumeLots(accounts, base, bAmt, 0, false);
@@ -431,7 +475,9 @@ export function calculateAssetAccounting(transactions, asset, baseCurrency = 'US
         realizedPnl: account.realizedPnl || 0,
         totalBuyQuantity: account.totalBuyQuantity || 0,
         totalBuyCost: account.totalBuyCost || 0,
-        missingCostFx: !!account.missingCostFx
+        missingCostFx: !!account.missingCostFx,
+        missingCostBasis: !!account.missingCostBasis,
+        oversoldQuantity: account.oversoldQuantity || 0
     };
 }
 
@@ -555,11 +601,11 @@ export function getCurrentAssetRate(priceMap, fromAsset, toCurrency) {
     return snapshot.price;
 }
 
-export function calculateHoldings(transactions, priceMap, baseCurrency = 'USD') {
+export function calculateHoldings(transactions, priceMap, baseCurrency = 'USD', convertRateForTx = null) {
     const accounting = calculatePortfolioAccounting(
         transactions,
         baseCurrency,
-        (from, to) => getCurrentAssetRate(priceMap, from, to)
+        convertRateForTx || ((from, to) => getCurrentAssetRate(priceMap, from, to))
     );
 
     return Object.entries(accounting.balances)
@@ -588,7 +634,9 @@ export function calculateHoldings(transactions, priceMap, baseCurrency = 'USD') 
                 unrealizedProfit,
                 realizedProfit,
                 totalProfit,
-                missingCostFx: !!position.missingCostFx
+                missingCostFx: !!position.missingCostFx,
+                missingCostBasis: !!position.missingCostBasis,
+                oversoldQuantity: position.oversoldQuantity || 0
             };
         })
         .sort((a, b) => {

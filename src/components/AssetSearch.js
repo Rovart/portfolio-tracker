@@ -59,7 +59,7 @@ export default function AssetSearch({ onSelect, onCancel }) {
 
                 {!searching && results.length === 0 && query.length >= 2 && (
                     <div className="text-muted text-center py-20 bg-[#171717]/50 rounded-3xl border border-dashed border-white/5">
-                        <p className="text-lg font-medium opacity-50">No matches found for "{query}"</p>
+                        <p className="text-lg font-medium opacity-50">No matches found for &quot;{query}&quot;</p>
                     </div>
                 )}
 

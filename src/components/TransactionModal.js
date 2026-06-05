@@ -9,68 +9,20 @@ import ConfirmModal from './ConfirmModal';
 import { Trash2, Edit2, X, Plus, ChevronLeft, ArrowLeft, Moon, Sun, Eye, EyeOff } from 'lucide-react';
 import {
     normalizeAsset,
-    calculateAssetAccounting,
-    COMMON_FIAT_CURRENCIES,
-    COMMON_CRYPTO_ASSETS
+    calculateAssetAccounting
 } from '@/utils/portfolio-logic';
+import {
+    buildHistoricalConversionMap,
+    getHistoricalConversionRate
+} from '@/utils/historical-conversion';
 import { addWatchlistAsset, removeWatchlistAsset, isSymbolInWatchlist } from '@/utils/db';
 import { COMMODITY_NAMES } from '@/utils/commodities';
 
 // Header display logic: Title = Name, Subtitle = Symbol
 
-function getMapRateForDate(rateMap, dateStr) {
-    if (!rateMap || !dateStr) return null;
-    if (rateMap[dateStr]) return rateMap[dateStr];
-
-    const dates = Object.keys(rateMap).sort();
-    let match = null;
-    for (const date of dates) {
-        if (date > dateStr) break;
-        match = date;
-    }
-    return match ? rateMap[match] : null;
-}
-
-async function buildHistoricalConversionMap(currency, baseCurrency) {
-    const curr = normalizeAsset(currency);
-    if (!curr || curr === baseCurrency) return {};
-
-    const { getCachedFxHistory, getCachedAssetHistory } = await import('@/utils/fxCache');
-
-    if (COMMON_FIAT_CURRENCIES.includes(curr)) {
-        return await getCachedFxHistory(curr, baseCurrency, 'ALL');
-    }
-
-    if (COMMON_CRYPTO_ASSETS.includes(curr)) {
-        const assetHistory = await getCachedAssetHistory(`${curr}-USD`, 'ALL');
-        if (!assetHistory || assetHistory.length === 0) return {};
-
-        const usdToBase = baseCurrency === 'USD'
-            ? {}
-            : await getCachedFxHistory('USD', baseCurrency, 'ALL');
-        const fxDates = Object.keys(usdToBase).sort();
-        let fxIndex = 0;
-        let lastFx = baseCurrency === 'USD' ? 1 : null;
-
-        return assetHistory.reduce((acc, point) => {
-            const date = point.date.split('T')[0];
-            while (fxIndex < fxDates.length && fxDates[fxIndex] <= date) {
-                lastFx = usdToBase[fxDates[fxIndex]];
-                fxIndex++;
-            }
-            if (lastFx && point.price) acc[date] = point.price * lastFx;
-            return acc;
-        }, {});
-    }
-
-    return {};
-}
-
-function getHistoricalConversionRate(transactionFx, currency, baseCurrency, dateStr) {
-    const curr = normalizeAsset(currency);
-    if (!curr) return null;
-    if (curr === baseCurrency) return 1;
-    return getMapRateForDate(transactionFx[curr], dateStr);
+function toFiniteNumber(value) {
+    const parsed = parseFloat(value);
+    return Number.isFinite(parsed) ? parsed : 0;
 }
 
 export default function TransactionModal({
@@ -129,6 +81,7 @@ export default function TransactionModal({
             });
         }
     }, [
+        holding,
         holding?.symbol,
         holding?.asset,
         holding?.amount,
@@ -156,6 +109,15 @@ export default function TransactionModal({
     });
 
     const prevSymbolRef = useRef(selectedAsset?.symbol);
+    const priceDataPriceRef = useRef(priceData.price);
+    const selectedAssetSymbol = selectedAsset?.symbol;
+    const selectedAssetCurrency = selectedAsset?.currency;
+    const selectedAssetOriginalType = selectedAsset?.originalType;
+    const selectedAssetIsBareCurrencyOrigin = selectedAsset?.isBareCurrencyOrigin;
+
+    useEffect(() => {
+        priceDataPriceRef.current = priceData.price;
+    }, [priceData.price]);
 
     // 1. Lock background scroll and reset body
     useEffect(() => {
@@ -222,33 +184,33 @@ export default function TransactionModal({
     }, [isWatchlist, selectedAsset?.symbol, currentPortfolioId, watchlistAssets]);
 
     useEffect(() => {
-        if (!selectedAsset) return;
+        if (!selectedAssetSymbol) return;
 
-        const isNewAsset = prevSymbolRef.current !== selectedAsset?.symbol;
+        const isNewAsset = prevSymbolRef.current !== selectedAssetSymbol;
 
         // Only show loading for new asset or no price
-        if (isNewAsset || !priceData.price) {
+        if (isNewAsset || !priceDataPriceRef.current) {
             setPriceData(prev => ({ ...prev, isLoading: true }));
         }
-        prevSymbolRef.current = selectedAsset?.symbol;
+        prevSymbolRef.current = selectedAssetSymbol;
 
         async function fetchData() {
             // Priority: currency from selectedAsset, then symbol split
-            let quoteCurr = selectedAsset.currency;
+            let quoteCurr = selectedAssetCurrency;
             if (!quoteCurr) {
-                const parts = selectedAsset.symbol.split(/[-/]/);
+                const parts = selectedAssetSymbol.split(/[-/]/);
                 quoteCurr = parts.length > 1 ? parts[parts.length - 1].toUpperCase() : 'USD';
             }
 
             // Normalize asset symbol for fetching
-            let fetchSym = selectedAsset.symbol;
-            if (selectedAsset.originalType === 'CRYPTOCURRENCY' && !fetchSym.includes('-')) {
+            let fetchSym = selectedAssetSymbol;
+            if (selectedAssetOriginalType === 'CRYPTOCURRENCY' && !fetchSym.includes('-')) {
                 fetchSym += '-USD';
             }
 
             // Only upgrade bare fiat symbols (e.g. AUD -> AUDUSD=X) if it is a KNOWN currency type
             // Do NOT assume 3-letter symbols are currencies - TLT, SPY, etc. are ETFs
-            const isCurrencyType = selectedAsset.originalType === 'CURRENCY' || selectedAsset.isBareCurrencyOrigin;
+            const isCurrencyType = selectedAssetOriginalType === 'CURRENCY' || selectedAssetIsBareCurrencyOrigin;
 
             if (isCurrencyType && fetchSym.toUpperCase() !== 'USD' && !fetchSym.includes('=X')) {
                 fetchSym = `${fetchSym.toUpperCase()}USD=X`;
@@ -300,7 +262,7 @@ export default function TransactionModal({
                     // The assetPrice from EURUSD=X IS already the EUR/USD conversion rate
                     // So we should NOT multiply by fxRate again!
                     let bareCurrCode = null;
-                    if ((selectedAsset.isBareCurrencyOrigin && fetchSym.endsWith('=X')) || (fetchSym.endsWith('USD=X') && fetchSym.length === 8)) {
+                    if ((selectedAssetIsBareCurrencyOrigin && fetchSym.endsWith('=X')) || (fetchSym.endsWith('USD=X') && fetchSym.length === 8)) {
                         const base = fetchSym.replace(/=X$/, '').replace(/USD$/, '');
                         bareCurrCode = base.toUpperCase();
                     }
@@ -424,7 +386,7 @@ export default function TransactionModal({
                 // For bare currencies, use the bare currency code, not the Yahoo-reported currency
                 let fetchedHMap = {};
                 let currencyForHistory = fetchedCurrency;
-                if (selectedAsset.isBareCurrencyOrigin && fetchSym.endsWith('=X')) {
+                if (selectedAssetIsBareCurrencyOrigin && fetchSym.endsWith('=X')) {
                     const base = fetchSym.replace('=X', '');
                     currencyForHistory = base.length > 4 ? base.substring(0, 3).toUpperCase() : base.toUpperCase();
                 }
@@ -462,7 +424,7 @@ export default function TransactionModal({
                 }
 
                 // Update currency in selectedAsset if needed (won't re-trigger effect)
-                if (fetchedCurrency !== selectedAsset.currency) {
+                if (fetchedCurrency !== selectedAssetCurrency) {
                     setSelectedAsset(prev => prev ? { ...prev, currency: fetchedCurrency } : prev);
                 }
                 // Update name if we don't have a descriptive one yet (missing or same as symbol)
@@ -502,7 +464,14 @@ export default function TransactionModal({
         fetchData();
         const interval = setInterval(fetchData, 30000);
         return () => clearInterval(interval);
-    }, [selectedAsset?.symbol, baseCurrency, transactions]);
+    }, [
+        selectedAssetSymbol,
+        selectedAssetCurrency,
+        selectedAssetOriginalType,
+        selectedAssetIsBareCurrencyOrigin,
+        baseCurrency,
+        transactions
+    ]);
 
     // Destructure for easy access throughout component
     const {
@@ -518,6 +487,42 @@ export default function TransactionModal({
         postMarketPrice: currentPostPrice,
         postMarketChange: currentPostChange
     } = priceData;
+
+    const livePriceSnapshot = useMemo(() => {
+        let localPrice = toFiniteNumber(assetPrice);
+        let localChangePercent = toFiniteNumber(changePercent);
+        let localAbsChange = toFiniteNumber(assetChange);
+
+        if (currentMarketState?.includes('PRE') && toFiniteNumber(currentPrePrice) > 0) {
+            localPrice = toFiniteNumber(currentPrePrice);
+            localChangePercent = toFiniteNumber(currentPreChange);
+            localAbsChange = localPrice - (localPrice / (1 + (localChangePercent / 100)));
+        } else if (currentMarketState?.includes('POST') && toFiniteNumber(currentPostPrice) > 0) {
+            localPrice = toFiniteNumber(currentPostPrice);
+            localChangePercent = toFiniteNumber(currentPostChange);
+            localAbsChange = localPrice - (localPrice / (1 + (localChangePercent / 100)));
+        }
+
+        return {
+            localPrice,
+            changePercent: localChangePercent,
+            absChange: localAbsChange,
+            priceBase: localPrice * fxRate,
+            absChangeBase: localAbsChange * fxRate
+        };
+    }, [
+        assetPrice,
+        assetChange,
+        changePercent,
+        currentMarketState,
+        currentPrePrice,
+        currentPreChange,
+        currentPostPrice,
+        currentPostChange,
+        fxRate
+    ]);
+
+    const liveAssetPrice = livePriceSnapshot.localPrice;
 
     const assetTransactions = selectedAsset
         ? transactions.filter(t => {
@@ -571,7 +576,7 @@ export default function TransactionModal({
         missingCostFx
     } = assetAccounting;
 
-    const currentValueBase = currentBalance * (assetPrice || 0) * fxRate;
+    const currentValueBase = currentBalance * liveAssetPrice * fxRate;
     const positionProfit = currentValueBase - currentCostBasisBase;
     const positionProfitPercent = currentCostBasisBase > 0 ? (positionProfit / currentCostBasisBase) * 100 : 0;
 
@@ -821,41 +826,28 @@ export default function TransactionModal({
                                                     </span>
                                                 )}
                                             </span>
-                                            {loadingPrice || !assetPrice ? (
+                                            {loadingPrice || !liveAssetPrice ? (
                                                 <div className="h-7 w-24 bg-white-10 rounded animate-pulse mt-1" />
                                             ) : (() => {
-                                                // Use best available price
-                                                let displayPrice = assetPrice;
-                                                let displayChange = changePercent || 0;
-                                                let displayAbsChange = assetChange || 0;
-
-                                                if (currentMarketState?.includes('PRE') && currentPrePrice) {
-                                                    displayPrice = currentPrePrice;
-                                                    displayChange = currentPreChange || 0;
-                                                    // Estimated abs change for pre-market (price - (price / 1+change))
-                                                    displayAbsChange = displayPrice - (displayPrice / (1 + (displayChange / 100)));
-                                                } else if ((currentMarketState?.includes('POST')) && currentPostPrice) {
-                                                    displayPrice = currentPostPrice;
-                                                    displayChange = currentPostChange || 0;
-                                                    displayAbsChange = displayPrice - (displayPrice / (1 + (displayChange / 100)));
-                                                }
+                                                const displayChange = livePriceSnapshot.changePercent;
+                                                const displayAbsChange = livePriceSnapshot.absChange;
                                                 return (
                                                     <div className="flex flex-col">
                                                         <div className="flex items-baseline gap-2">
                                                             <span className={`text sm:text-2xl font-bold`}>
-                                                                {(displayPrice * fxRate).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} {baseCurrency === 'USD' ? '$' : baseCurrency}
+                                                                {livePriceSnapshot.priceBase.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} {baseCurrency === 'USD' ? '$' : baseCurrency}
                                                             </span>
                                                             {/* 1D change on the right when viewing different timeframe - ONLY FOR WATCHLIST */}
                                                             {rangePerformance && rangePerformance.range !== '1D' && isWatchlist && (
                                                                 <span className={`text-xs font-medium ${displayChange >= 0 ? 'text-success' : 'text-danger'}`}>
-                                                                    {displayAbsChange >= 0 ? '+' : ''}{(displayAbsChange * fxRate).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ({displayChange >= 0 ? '+' : ''}{displayChange.toFixed(2)}%)
+                                                                    {displayAbsChange >= 0 ? '+' : ''}{livePriceSnapshot.absChangeBase.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ({displayChange >= 0 ? '+' : ''}{displayChange.toFixed(2)}%)
                                                                 </span>
                                                             )}
                                                         </div>
                                                         {/* Show 1D change below when viewing 1D, or selected timeframe when not 1D */}
                                                         {(!rangePerformance || rangePerformance.range === '1D') ? (
                                                             <span className={`text-xs font-medium ${displayChange >= 0 ? 'text-success' : 'text-danger'}`}>
-                                                                {displayAbsChange >= 0 ? '+' : ''}{(displayAbsChange * fxRate).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ({displayChange >= 0 ? '+' : ''}{displayChange.toFixed(2)}%)
+                                                                {displayAbsChange >= 0 ? '+' : ''}{livePriceSnapshot.absChangeBase.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ({displayChange >= 0 ? '+' : ''}{displayChange.toFixed(2)}%)
                                                             </span>
                                                         ) : (
                                                             <span className={`text-xs font-medium ${rangePerformance.changePercent >= 0 ? 'text-success' : 'text-danger'}`}>
@@ -900,7 +892,7 @@ export default function TransactionModal({
                                                 )}
                                                 <div className="flex flex-col flex-1 items-end">
                                                     <span className="text-xs sm:text-sm text-muted uppercase tracking-wider text-right">Total Value</span>
-                                                    {loadingPrice || !assetPrice ? (
+                                                    {loadingPrice || !liveAssetPrice ? (
                                                         <div className="h-7 w-32 bg-white-10 rounded animate-pulse mt-1" />
                                                     ) : (
                                                         <span className="text sm:text-2xl text-success text-right">{hideBalances ? '••••••' : `${currentValueBase.toLocaleString(undefined, { maximumFractionDigits: 2 })} ${baseCurrency === 'USD' ? '$' : baseCurrency}`}</span>
@@ -976,7 +968,7 @@ export default function TransactionModal({
                                                             <div className="flex-1 flex flex-col items-end">
                                                                 {tx.type === 'BUY' && !tx.isReverse && (
                                                                     <>
-                                                                        {loadingPrice || !assetPrice ? (
+                                                                        {loadingPrice || !liveAssetPrice ? (
                                                                             <div className="h-5 w-20 bg-white-10 rounded animate-pulse ml-auto" style={{ marginRight: '10px' }} />
                                                                         ) : (
                                                                             (() => {
@@ -984,7 +976,7 @@ export default function TransactionModal({
                                                                                 const txQuoteCurrency = (tx.quoteCurrency || selectedAsset.currency || 'USD').toUpperCase();
                                                                                 const costFx = getHistoricalConversionRate(transactionFx, txQuoteCurrency, baseCurrency, dateStr) || 0;
                                                                                 const costBase = tx.quoteAmount * costFx;
-                                                                                const currentValBase = tx.baseAmount * assetPrice * fxRate;
+                                                                                const currentValBase = tx.baseAmount * liveAssetPrice * fxRate;
                                                                                 const pnlBase = currentValBase - costBase;
                                                                                 const pnlPercent = costBase > 0 ? (pnlBase / costBase) * 100 : 0;
                                                                                 if (costBase <= 0) {
@@ -1026,10 +1018,10 @@ export default function TransactionModal({
                                                                                 </span>
                                                                             )}
                                                                             {tx.type === 'BUY' && (
-                                                                                loadingPrice || !assetPrice ? (
+                                                                                loadingPrice || !liveAssetPrice ? (
                                                                                     <div className="h-3 w-8 bg-white-10 rounded animate-pulse ml-auto" style={{ marginLeft: '5px' }} />
                                                                                 ) : (
-                                                                                    <span className={`text-xs text-[10px] ${tx.affectsFiatBalance === false ? 'text-muted/50 decoration-line-through' : 'text-muted'}`} title={tx.affectsFiatBalance === false ? "Did not deduct from balance" : "Deducted from balance"}>
+                                                                                    <span className={`text-xs text-[10px] ${(tx.affectsQuoteBalance ?? tx.affectsFiatBalance) === false ? 'text-muted/50 decoration-line-through' : 'text-muted'}`} title={(tx.affectsQuoteBalance ?? tx.affectsFiatBalance) === false ? "Did not affect balance" : "Affected balance"}>
                                                                                         | {hideBalances ? '••••••' : (() => {
                                                                                             const dateStr = tx.date.split('T')[0];
                                                                                             const txQuoteCurrency = (tx.quoteCurrency || selectedAsset.currency || 'USD').toUpperCase();
@@ -1217,12 +1209,17 @@ function TransactionForm({ holding, existingTx, transactions, onSave, onCancel, 
         if (existingTx?.type) return existingTx.type;
         return isBareCurrency ? 'DEPOSIT' : 'BUY';
     });
+    const usesPrice = type === 'BUY' || type === 'SELL' || (type === 'DEPOSIT' && !isBareCurrency);
+    const affectsQuoteBalance = type === 'BUY' || type === 'SELL';
+    const priceLabel = type === 'DEPOSIT' ? 'Cost basis per unit' : 'Price per unit';
+    const totalLabel = type === 'DEPOSIT' ? 'Cost basis' : 'Total';
     const [amount, setAmount] = useState(existingTx?.baseAmount || '');
     const [price, setPrice] = useState(existingTx ? (existingTx.quoteAmount / (existingTx.baseAmount || 1)) : '');
     const [date, setDate] = useState(existingTx?.date ? new Date(existingTx.date).toISOString().split('T')[0] : new Date().toISOString().split('T')[0]);
     const [notes, setNotes] = useState(existingTx?.notes || '');
     const [fee, setFee] = useState(existingTx?.fee || '');
     const [feeCurrency, setFeeCurrency] = useState(existingTx?.feeCurrency || '');
+    const [formError, setFormError] = useState('');
     const feeCurrencyOptions = useMemo(() => (
         Array.from(new Set([feeCurrency, ...quoteCurrencyOptions].filter(Boolean)))
     ), [feeCurrency, quoteCurrencyOptions]);
@@ -1250,8 +1247,7 @@ function TransactionForm({ holding, existingTx, transactions, onSave, onCancel, 
             }
 
             // 2. Indirect impact (this currency is the quote of another transaction)
-            // ONLY if affectsFiatBalance is not false
-            if (quote === q && t.affectsFiatBalance !== false) {
+            if (quote === q && (t.affectsQuoteBalance ?? t.affectsFiatBalance) !== false) {
                 const qAmt = parseFloat(t.quoteAmount) || 0;
                 if (t.type === 'BUY') return acc - qAmt;
                 if (t.type === 'SELL') return acc + qAmt;
@@ -1263,8 +1259,9 @@ function TransactionForm({ holding, existingTx, transactions, onSave, onCancel, 
 
     const [useFiat, setUseFiat] = useState(() => {
         if (existingTx) {
-            // For existing tx, respect affectsFiatBalance if it exists, 
+            // For existing tx, respect quote/cash balance flags if they exist,
             // otherwise default to true if it has a quoteCurrency
+            if (existingTx.affectsQuoteBalance !== undefined) return !!existingTx.affectsQuoteBalance;
             if (existingTx.affectsFiatBalance !== undefined) return !!existingTx.affectsFiatBalance;
             return !!existingTx.quoteCurrency;
         }
@@ -1338,7 +1335,7 @@ function TransactionForm({ holding, existingTx, transactions, onSave, onCancel, 
         } else if (existingTx && existingTx.quoteAmount && existingTx.baseAmount) {
             setPrice(existingTx.quoteAmount / existingTx.baseAmount);
         }
-    }, [sym, existingTx, isBareCurrency, bareCurrencyCode, baseCurrency]);
+    }, [sym, existingTx, isBareCurrency, isManualPrice, holding.originalType]);
 
     // Historical price fetch when date changes - ONLY if NOT editing and NOT manually set
     useEffect(() => {
@@ -1368,7 +1365,7 @@ function TransactionForm({ holding, existingTx, transactions, onSave, onCancel, 
 
         const tId = setTimeout(fetchHistorical, 500);
         return () => clearTimeout(tId);
-    }, [date, sym]);
+    }, [date, sym, existingTx, isManualPrice, holding.originalType]);
 
     const handleMax = () => {
         if (holding.amount) {
@@ -1378,12 +1375,20 @@ function TransactionForm({ holding, existingTx, transactions, onSave, onCancel, 
 
     const handleSubmit = (e) => {
         e.preventDefault();
+        setFormError('');
         const cleanPrice = parseFloat(price);
         const cleanAmount = parseFloat(amount);
 
         // Validate
         if (!amount || isNaN(cleanAmount)) return;
         if ((type === 'BUY' || type === 'SELL') && (!price || isNaN(cleanPrice))) return;
+        if (['SELL', 'WITHDRAW'].includes(type) && cleanAmount > (parseFloat(holding.amount) || 0) + 0.00001) {
+            setFormError(`Amount exceeds current position (${(parseFloat(holding.amount) || 0).toLocaleString(undefined, { maximumFractionDigits: 8 })})`);
+            return;
+        }
+
+        const hasCostBasis = usesPrice && price && !isNaN(cleanPrice);
+        const shouldAffectQuoteBalance = affectsQuoteBalance ? useFiat : false;
 
         const tx = {
             // Merge with existing transaction to preserve fields like 'notes'
@@ -1393,15 +1398,16 @@ function TransactionForm({ holding, existingTx, transactions, onSave, onCancel, 
             type,
             baseAmount: cleanAmount,
             baseCurrency: sym,
-            quoteAmount: (type === 'BUY' || type === 'SELL') ? (cleanAmount * cleanPrice) : 0,
+            quoteAmount: hasCostBasis ? (cleanAmount * cleanPrice) : 0,
             // Store the selected quote currency so mixed-currency crypto pairs stay explicit.
-            quoteCurrency: (type === 'BUY' || type === 'SELL') ? quoteCurrency : null,
+            quoteCurrency: hasCostBasis ? quoteCurrency : null,
             exchange: existingTx?.exchange || 'MANUAL',
             originalType: holding.originalType || existingTx?.originalType || (quoteCurrency === 'USD' ? 'CRYPTOCURRENCY' : 'MANUAL'),
             fee: parseFloat(fee) || 0,
             feeCurrency: (parseFloat(fee) || 0) > 0 ? (feeCurrency || quoteCurrency) : null,
-            // Track if this transaction should affect fiat balance
-            affectsFiatBalance: useFiat,
+            // Keep the old field for CSV/backwards compatibility, but use quote balance semantics internally.
+            affectsFiatBalance: shouldAffectQuoteBalance,
+            affectsQuoteBalance: shouldAffectQuoteBalance,
             // Portfolio ID - use selected if in 'All' view, otherwise use current
             portfolioId: showPortfolioSelector ? selectedPortfolioId : (existingTx?.portfolioId || (currentPortfolioId === 'all' ? 1 : currentPortfolioId)),
             // Notes
@@ -1487,7 +1493,7 @@ function TransactionForm({ holding, existingTx, transactions, onSave, onCancel, 
             </div>
 
             <div className="relative">
-                <label style={labelStyle}>Amount ({sym.split(/[-/]/)[0]}-{quoteCurrency})</label>
+                <label style={labelStyle}>Amount ({sym.split(/[-/]/)[0]})</label>
                 <div className="relative">
                     <input
                         type="number"
@@ -1528,7 +1534,7 @@ function TransactionForm({ holding, existingTx, transactions, onSave, onCancel, 
                 </div>
             </div>
 
-            {(type === 'BUY' || type === 'SELL') && (
+            {usesPrice && (
                 <>
                     <div>
                         <div className="flex items-center justify-between gap-3" style={{ marginBottom: '0.5rem' }}>
@@ -1536,7 +1542,7 @@ function TransactionForm({ holding, existingTx, transactions, onSave, onCancel, 
                                 htmlFor="transaction-price"
                                 style={{ ...labelStyle, marginBottom: 0 }}
                             >
-                                Price per unit
+                                {priceLabel}
                             </label>
                             <div className="flex items-center gap-2">
                                 {fetchingPrice && <span className="animate-pulse text-xs font-bold uppercase tracking-wider" style={{ color: '#3b82f6' }}>Fetching...</span>}
@@ -1561,7 +1567,7 @@ function TransactionForm({ holding, existingTx, transactions, onSave, onCancel, 
                             id="transaction-price"
                             type="number"
                             step="any"
-                            required
+                            required={type === 'BUY' || type === 'SELL'}
                             className="input-reset"
                             value={price}
                             onChange={e => {
@@ -1572,7 +1578,7 @@ function TransactionForm({ holding, existingTx, transactions, onSave, onCancel, 
                         />
                         {amount && price && !isNaN(parseFloat(amount)) && !isNaN(parseFloat(price)) && (
                             <div className="mt-2 ml-1 flex gap-1 items-center">
-                                <span className="text-xs text-muted font-medium uppercase tracking-wider">Total:</span>
+                                <span className="text-xs text-muted font-medium uppercase tracking-wider">{totalLabel}:</span>
                                 <span className="text-xs font-bold text-white">
                                     {(parseFloat(amount) * parseFloat(price)).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} {quoteCurrency}
                                 </span>
@@ -1580,30 +1586,32 @@ function TransactionForm({ holding, existingTx, transactions, onSave, onCancel, 
                         )}
                     </div>
 
-                    <div
-                        className="flex items-center justify-between p-4 rounded-2xl hover-bg-surface transition-all"
-                        style={{ border: '1px solid #262626', background: '#171717', cursor: 'pointer' }}
-                        onClick={() => {
-                            setUseFiat(!useFiat);
-                            setUserModifiedUseFiat(true);
-                        }}
-                    >
-                        <span className="text-sm font-medium text-white select-none">
-                            {type === 'BUY' ? `Deduct from ${quoteCurrency} balance` : `Add to ${quoteCurrency} balance`}
-                        </span>
-                        <div style={{
-                            width: '48px', height: '24px', borderRadius: '999px', padding: '2px',
-                            backgroundColor: useFiat ? '#3b82f6' : '#262626',
-                            transition: 'background-color 0.2s'
-                        }}>
+                    {affectsQuoteBalance && (
+                        <div
+                            className="flex items-center justify-between p-4 rounded-2xl hover-bg-surface transition-all"
+                            style={{ border: '1px solid #262626', background: '#171717', cursor: 'pointer' }}
+                            onClick={() => {
+                                setUseFiat(!useFiat);
+                                setUserModifiedUseFiat(true);
+                            }}
+                        >
+                            <span className="text-sm font-medium text-white select-none">
+                                {type === 'BUY' ? `Deduct from ${quoteCurrency} balance` : `Add to ${quoteCurrency} balance`}
+                            </span>
                             <div style={{
-                                width: '20px', height: '20px', borderRadius: '50%', background: 'white',
-                                transform: useFiat ? 'translateX(24px)' : 'translateX(0)',
-                                transition: 'transform 0.2s',
-                                boxShadow: '0 1px 2px 0 rgba(0, 0, 0, 0.05)'
-                            }} />
+                                width: '48px', height: '24px', borderRadius: '999px', padding: '2px',
+                                backgroundColor: useFiat ? '#3b82f6' : '#262626',
+                                transition: 'background-color 0.2s'
+                            }}>
+                                <div style={{
+                                    width: '20px', height: '20px', borderRadius: '50%', background: 'white',
+                                    transform: useFiat ? 'translateX(24px)' : 'translateX(0)',
+                                    transition: 'transform 0.2s',
+                                    boxShadow: '0 1px 2px 0 rgba(0, 0, 0, 0.05)'
+                                }} />
+                            </div>
                         </div>
-                    </div>
+                    )}
                 </>
             )}
 
@@ -1665,6 +1673,12 @@ function TransactionForm({ holding, existingTx, transactions, onSave, onCancel, 
                     style={{ resize: 'vertical', minHeight: '60px' }}
                 />
             </div>
+
+            {formError && (
+                <div className="text-danger text-sm font-medium">
+                    {formError}
+                </div>
+            )}
 
             <div className="flex gap-4 mt-8 pt-4 border-t border-white/5">
                 <button

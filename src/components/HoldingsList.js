@@ -165,7 +165,7 @@ export default function HoldingsList({ holdings, onSelect, onAddAsset, loading, 
             // Set default based on type
             setSortBy(isWatchlist ? 'custom' : 'size');
         }
-    }, [isWatchlist, currentPortfolioId]); // Also reset when portfolio changes
+    }, [isWatchlist, currentPortfolioId, setSortBy]); // Also reset when portfolio changes
 
     // Save fiat collapsed state
     const toggleFiatCollapsed = () => {

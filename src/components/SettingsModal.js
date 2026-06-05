@@ -316,7 +316,8 @@ export default function SettingsModal({ onClose, onPortfolioChange, currentPortf
         let csvPortfolioNames = new Set();
 
         for (const row of rows) {
-            const cashFlag = row['Affects Cash Balance'] || row['Affects Fiat Balance'];
+            const cashFlag = row['Affects Quote Balance'] || row['Affects Cash Balance'] || row['Affects Fiat Balance'];
+            const affectsQuoteBalance = parseCsvBoolean(cashFlag);
             const tx = {
                 date: row.Date,
                 type: row.Way,
@@ -328,7 +329,8 @@ export default function SettingsModal({ onClose, onPortfolioChange, currentPortf
                 exchange: row.Exchange || null,
                 fee: parseFloat(row['Fee amount']) || 0,
                 feeCurrency: row['Fee currency (name)'] || null,
-                affectsFiatBalance: parseCsvBoolean(cashFlag),
+                affectsFiatBalance: affectsQuoteBalance,
+                affectsQuoteBalance,
                 notes: row.Notes || null,
                 portfolioId: parseInt(row['Portfolio ID']) || null,
                 csvPortfolioName: row['Portfolio Name'] || null

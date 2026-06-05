@@ -168,22 +168,26 @@ export async function exportToCsv(portfolioId = null) {
     const portfolios = await getAllPortfolios();
     const portfolioMap = portfolios.reduce((acc, p) => ({ ...acc, [p.id]: p.name }), {});
 
-    const csvRows = transactions.map(tx => ({
-        'Date': new Date(tx.date).toISOString().split('T')[0],
-        'Way': tx.type,
-        'Base amount': tx.baseAmount,
-        'Base currency (name)': tx.baseCurrency,
-        'Base type': tx.originalType || 'MANUAL',
-        'Quote amount': tx.quoteAmount || '',
-        'Quote currency': tx.quoteCurrency || '',
-        'Exchange': tx.exchange || '',
-        'Fee amount': tx.fee || 0,
-        'Fee currency (name)': tx.feeCurrency || '',
-        'Affects Cash Balance': tx.affectsFiatBalance === undefined ? '' : (tx.affectsFiatBalance ? 'TRUE' : 'FALSE'),
-        'Notes': tx.notes || '',
-        'Portfolio Name': portfolioMap[tx.portfolioId] || 'Default',
-        'Portfolio ID': tx.portfolioId || 1
-    }));
+    const csvRows = transactions.map(tx => {
+        const quoteBalanceFlag = tx.affectsQuoteBalance ?? tx.affectsFiatBalance;
+        return {
+            'Date': new Date(tx.date).toISOString().split('T')[0],
+            'Way': tx.type,
+            'Base amount': tx.baseAmount,
+            'Base currency (name)': tx.baseCurrency,
+            'Base type': tx.originalType || 'MANUAL',
+            'Quote amount': tx.quoteAmount || '',
+            'Quote currency': tx.quoteCurrency || '',
+            'Exchange': tx.exchange || '',
+            'Fee amount': tx.fee || 0,
+            'Fee currency (name)': tx.feeCurrency || '',
+            'Affects Quote Balance': quoteBalanceFlag === undefined ? '' : (quoteBalanceFlag ? 'TRUE' : 'FALSE'),
+            'Affects Cash Balance': quoteBalanceFlag === undefined ? '' : (quoteBalanceFlag ? 'TRUE' : 'FALSE'),
+            'Notes': tx.notes || '',
+            'Portfolio Name': portfolioMap[tx.portfolioId] || 'Default',
+            'Portfolio ID': tx.portfolioId || 1
+        };
+    });
 
     // Convert to CSV string
     if (csvRows.length === 0) return '';

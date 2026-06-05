@@ -22,6 +22,7 @@ export async function POST(request) {
         // Map app transactions back to the CSV headers
         // Header: Date,Way,Base amount,Base currency (name),Base type,Quote amount,Quote currency,Exchange,Sent/Received from,Sent to,Fee amount,Fee currency (name),Broker,Notes,Sync Base Holding,Leverage Metadata
         const csvRows = transactions.map(tx => {
+            const quoteBalanceFlag = tx.affectsQuoteBalance ?? tx.affectsFiatBalance;
             // Remove suffixes for CSV storage if they were added by processTransactions
             let symbol = tx.baseCurrency || '';
             if (tx.originalType === 'CRYPTO') symbol = symbol.replace('-USD', '');
@@ -38,7 +39,8 @@ export async function POST(request) {
                 'Exchange': tx.exchange,
                 'Fee amount': tx.fee || 0,
                 'Fee currency (name)': tx.feeCurrency,
-                'Affects Cash Balance': tx.affectsFiatBalance === undefined ? '' : (tx.affectsFiatBalance ? 'TRUE' : 'FALSE'),
+                'Affects Quote Balance': quoteBalanceFlag === undefined ? '' : (quoteBalanceFlag ? 'TRUE' : 'FALSE'),
+                'Affects Cash Balance': quoteBalanceFlag === undefined ? '' : (quoteBalanceFlag ? 'TRUE' : 'FALSE'),
                 'Notes': tx.notes || ''
             };
         });

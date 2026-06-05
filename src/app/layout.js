@@ -16,21 +16,22 @@ export const metadata = {
   title: "Monetra - Portfolio Tracker",
   description: "Simplest way to track your investment portfolio",
   manifest: "/manifest.json",
-  themeColor: "#000000",
   appleWebApp: {
     capable: true,
     statusBarStyle: "black-translucent",
     title: "Monetra",
   },
-  viewport: {
-    width: "device-width",
-    initialScale: 1,
-    viewportFit: "cover",
-  },
   icons: {
     icon: "/icon-192.png",
     apple: "/icon-192.png",
   },
+};
+
+export const viewport = {
+  width: "device-width",
+  initialScale: 1,
+  viewportFit: "cover",
+  themeColor: "#000000",
 };
 
 export default function RootLayout({ children }) {

@@ -11,13 +11,20 @@ import SettingsModal from './SettingsModal';
 import PullToRefresh from './PullToRefresh';
 import {
     calculateHoldings,
+    calculatePortfolioAccounting,
     normalizeAsset,
+    getCurrentAssetRate,
+    getQuoteCurrencyFromSymbol,
     COMMON_FIAT_CURRENCIES,
     COMMON_CRYPTO_ASSETS
 } from '@/utils/portfolio-logic';
 import { calculatePortfolioHistory } from '@/utils/portfolio-history';
 import { formatSymbol } from '@/utils/commodities';
 import { getCachedAssetHistory, setCachedAssetHistory, getCachedFxHistory, invalidateAssetCache, clearFxCache } from '@/utils/fxCache';
+import {
+    buildHistoricalConversionMaps,
+    getHistoricalConversionRate
+} from '@/utils/historical-conversion';
 import {
     getAllTransactions,
     getTransactionsByPortfolio,
@@ -81,6 +88,54 @@ function getFiatCurrenciesFromTransactions(transactions, baseCurrency) {
     return currencies;
 }
 
+function getHistoryBucketKey(dateValue, timeframe) {
+    const date = new Date(dateValue);
+    if (Number.isNaN(date.getTime())) return null;
+
+    if (timeframe === '1D') {
+        const mins = Math.floor(date.getMinutes() / 30) * 30;
+        date.setMinutes(mins, 0, 0);
+        return date.toISOString();
+    }
+
+    if (timeframe === '1W') {
+        const hrs = Math.floor(date.getHours() / 2) * 2;
+        date.setHours(hrs, 0, 0, 0);
+        return date.toISOString();
+    }
+
+    return date.toISOString().split('T')[0];
+}
+
+function mergeLiveHistoryPoint(points, livePoint, timeframe) {
+    const next = [...points];
+    if (next.length === 0) return [livePoint];
+
+    const last = next[next.length - 1];
+    const lastBucket = getHistoryBucketKey(last.date, timeframe);
+    const liveBucket = getHistoryBucketKey(livePoint.date, timeframe);
+
+    if (lastBucket && liveBucket && lastBucket === liveBucket) {
+        next[next.length - 1] = livePoint;
+        return next;
+    }
+
+    next.push(livePoint);
+    return next.sort((a, b) => a.date.localeCompare(b.date));
+}
+
+function getLiveHistoryAdjustmentRatio(rawHistory) {
+    for (let i = rawHistory.length - 1; i >= 0; i--) {
+        const point = rawHistory[i];
+        const rawValue = parseFloat(point?.rawValue);
+        const value = parseFloat(point?.value);
+        if (Number.isFinite(rawValue) && rawValue > 0 && Number.isFinite(value) && value > 0) {
+            return value / rawValue;
+        }
+    }
+    return 1;
+}
+
 export default function Dashboard() {
     const [transactions, setTransactions] = useState([]);
     const [holdings, setHoldings] = useState([]);
@@ -105,6 +160,8 @@ export default function Dashboard() {
     const [pricesLoading, setPricesLoading] = useState(true);
     const [historyLoading, setHistoryLoading] = useState(false);
     const [rawHistory, setRawHistory] = useState([]);
+    const [transactionFx, setTransactionFx] = useState({});
+    const [transactionFxLoading, setTransactionFxLoading] = useState(false);
     const [hideBalances, setHideBalances] = useState(false);
     const [baseCurrency, setBaseCurrency] = useState('USD');
     const [refreshTrigger, setRefreshTrigger] = useState(0);
@@ -113,11 +170,32 @@ export default function Dashboard() {
     const [isWatchlistView, setIsWatchlistView] = useState(false);
     const [watchlistAssets, setWatchlistAssets] = useState([]);
     const [watchlistSort, setWatchlistSort] = useState('custom');
+    const [summaryMetric, setSummaryMetric] = useState('value'); // 'value' | 'profit'
+    const [chartMode, setChartMode] = useState('performance'); // 'performance' | 'value'
     const prevTimeframeRef = useRef(timeframe);
     const prevBaseCurrencyRef = useRef(baseCurrency);
     const prevBaseCurrencyQuotesRef = useRef(baseCurrency);
+    const pricesRef = useRef(prices);
 
     const CURRENCIES = ['USD', 'EUR', 'GBP', 'JPY', 'CAD', 'AUD', 'CHF', 'CNY', 'HKD', 'SGD', 'IDR'];
+
+    useEffect(() => {
+        pricesRef.current = prices;
+    }, [prices]);
+
+    const priceMetadata = useMemo(() => {
+        return Object.entries(prices).reduce((acc, [symbol, quote]) => {
+            acc[symbol] = {
+                currency: quote?.currency,
+                quoteType: quote?.quoteType
+            };
+            return acc;
+        }, {});
+    }, [prices]);
+
+    const historicalRateResolver = useCallback((from, to, dateStr) => {
+        return getHistoricalConversionRate(transactionFx, from, to, dateStr);
+    }, [transactionFx]);
 
     // Handle Android back button/gesture
     // When modals are open, close them; when on main Dashboard, exit the app
@@ -201,6 +279,11 @@ export default function Dashboard() {
                     setTimeframe(savedTimeframe);
                 }
 
+                const savedChartMode = localStorage.getItem('portfolio_chart_mode');
+                if (savedChartMode === 'performance' || savedChartMode === 'value') {
+                    setChartMode(savedChartMode);
+                }
+
                 // Load saved watchlist sort preference
                 const savedWatchlistSort = localStorage.getItem('watchlist_sort');
                 if (savedWatchlistSort && WATCHLIST_SORT_OPTIONS.find(o => o.id === savedWatchlistSort)) {
@@ -241,6 +324,11 @@ export default function Dashboard() {
     const handleTimeframeChange = useCallback((tf) => {
         startTransition(() => setTimeframe(tf));
         localStorage.setItem('portfolio_chart_timeframe', tf);
+    }, []);
+
+    const handleChartModeChange = useCallback((mode) => {
+        startTransition(() => setChartMode(mode));
+        localStorage.setItem('portfolio_chart_mode', mode);
     }, []);
 
     const handleWatchlistSortChange = useCallback((newSort) => {
@@ -334,6 +422,35 @@ export default function Dashboard() {
         await new Promise(resolve => setTimeout(resolve, 300));
     }, []);
 
+    useEffect(() => {
+        if (loading || isWatchlistView || !transactions || transactions.length === 0) {
+            setTransactionFx({});
+            setTransactionFxLoading(false);
+            return;
+        }
+
+        let isCancelled = false;
+
+        async function loadTransactionFx() {
+            setTransactionFxLoading(true);
+            try {
+                const maps = await buildHistoricalConversionMaps(transactions, baseCurrency);
+                if (!isCancelled) setTransactionFx(maps);
+            } catch (e) {
+                console.error('Failed to fetch transaction conversion history', e);
+                if (!isCancelled) setTransactionFx({});
+            } finally {
+                if (!isCancelled) setTransactionFxLoading(false);
+            }
+        }
+
+        loadTransactionFx();
+
+        return () => {
+            isCancelled = true;
+        };
+    }, [transactions, baseCurrency, loading, isWatchlistView, refreshTrigger]);
+
     // Fetch Prices when transactions change (implies holdings might change)
     useEffect(() => {
         if (loading) return;
@@ -364,7 +481,7 @@ export default function Dashboard() {
 
             // If prices are empty (portfolio switch) or currency changed, show loading
             // Prevent loading state on background refreshes to avoid UI flash
-            if (!isBackground && ((Object.keys(prices).length === 0) || currencyChanged)) {
+            if (!isBackground && ((Object.keys(pricesRef.current).length === 0) || currencyChanged)) {
                 setPricesLoading(true);
             }
             prevBaseCurrencyQuotesRef.current = baseCurrency;
@@ -496,7 +613,7 @@ export default function Dashboard() {
             clearInterval(interval);
         };
 
-    }, [transactions, loading, baseCurrency, refreshTrigger, isWatchlistView, watchlistAssets]);
+    }, [transactions, loading, baseCurrency, refreshTrigger, isWatchlistView, watchlistAssets, currentPortfolioId]);
 
     // Recalculate Holdings when transactions or prices change
     useEffect(() => {
@@ -510,29 +627,10 @@ export default function Dashboard() {
                 // Get the asset's native currency (usually USD for most assets)
                 const assetCurrency = (priceData.currency || asset.currency || 'USD').toUpperCase();
 
-                // Apply FX conversion if needed
-                let fxRate = 1;
-                if (assetCurrency !== baseCurrency) {
-                    // Pivot via USD: assetCurrency -> USD -> baseCurrency
-                    let toUsdRate = 1;
-                    if (assetCurrency !== 'USD') {
-                        const toUsdPair = prices[`${assetCurrency}USD=X`] || prices[assetCurrency];
-                        if (toUsdPair && toUsdPair.price) {
-                            toUsdRate = parseFloat(toUsdPair.price);
-                        }
-                    }
-
-                    let fromUsdRate = 1;
-                    if (baseCurrency !== 'USD') {
-                        const fromUsdPair = prices[`${baseCurrency}USD=X`] || prices[baseCurrency];
-                        if (fromUsdPair && fromUsdPair.price) {
-                            // baseCurrency/USD gives us "1 base = X USD", we need USD/base = 1/X
-                            fromUsdRate = 1 / parseFloat(fromUsdPair.price);
-                        }
-                    }
-
-                    fxRate = toUsdRate * fromUsdRate;
-                }
+                const fxRate = assetCurrency === baseCurrency
+                    ? 1
+                    : (getCurrentAssetRate(prices, assetCurrency, baseCurrency) || 1);
+                const fxMissing = assetCurrency !== baseCurrency && !getCurrentAssetRate(prices, assetCurrency, baseCurrency);
 
                 const price = rawPrice * fxRate;
 
@@ -575,6 +673,7 @@ export default function Dashboard() {
                     originalType: asset.type,
                     currency: asset.currency,
                     quoteCurrency: assetCurrency, // Track original currency for display
+                    fxMissing,
                     isFiat: false, // Watchlists don't have fiat treatment
                     isWatchlistItem: true,
                     // Extended hours data for TransactionModal
@@ -587,10 +686,11 @@ export default function Dashboard() {
             });
             setHoldings(watchlistHoldings);
         } else {
-            const h = calculateHoldings(transactions, prices, baseCurrency);
+            if (transactionFxLoading) return;
+            const h = calculateHoldings(transactions, prices, baseCurrency, historicalRateResolver);
             setHoldings(h);
         }
-    }, [transactions, prices, baseCurrency, isWatchlistView, watchlistAssets]);
+    }, [transactions, prices, baseCurrency, isWatchlistView, watchlistAssets, transactionFxLoading, historicalRateResolver]);
 
     // UI Scroll reset: Only on timeframe change
     useEffect(() => {
@@ -672,11 +772,11 @@ export default function Dashboard() {
                 }
 
                 if (s.length === 3 && /^[A-Z]{3}$/.test(s)) {
-                    const quote = prices[s];
+                    const quote = priceMetadata[s];
                     if (quote && quote.quoteType && quote.quoteType !== 'CURRENCY') {
                         return sym;
                     }
-                    if (prices[`${s}USD=X`]) {
+                    if (priceMetadata[`${s}USD=X`]) {
                         return `${s}USD=X`;
                     }
                 }
@@ -752,18 +852,27 @@ export default function Dashboard() {
                 } catch (e) { console.error(e); }
             }));
 
-            // Create a quote mapping for the history calculation
+            // Create a market quote mapping for the history calculation.
+            // Market quote currency must come from the price feed first; the transaction
+            // quote currency is only the payment currency and can differ from the listing.
             const quoteMap = {};
-            transactions.forEach(t => {
-                if (t.baseCurrency && t.quoteCurrency) {
-                    quoteMap[normalizeAsset(t.baseCurrency)] = normalizeAsset(t.quoteCurrency);
+            Object.entries(priceMetadata).forEach(([sym, quote]) => {
+                const normalized = normalizeAsset(sym);
+                const marketCurrency = normalizeAsset(quote?.currency || getQuoteCurrencyFromSymbol(sym));
+                if (normalized && marketCurrency) {
+                    quoteMap[normalized] = marketCurrency;
                 }
             });
 
-            // Fallback: use live prices to fill in missing currencies in quoteMap
-            Object.keys(prices).forEach(sym => {
-                if (!quoteMap[sym] && prices[sym].currency) {
-                    quoteMap[sym] = prices[sym].currency;
+            transactions.forEach(t => {
+                const base = normalizeAsset(t.baseCurrency);
+                if (!base || quoteMap[base]) return;
+
+                const symbolQuote = normalizeAsset(getQuoteCurrencyFromSymbol(t.baseCurrency));
+                if (symbolQuote) {
+                    quoteMap[base] = symbolQuote;
+                } else if (t.quoteCurrency) {
+                    quoteMap[base] = normalizeAsset(t.quoteCurrency);
                 }
             });
 
@@ -775,11 +884,11 @@ export default function Dashboard() {
         loadTrueHistory();
 
 
-    }, [transactions, timeframe, baseCurrency, pricesLoading, refreshTrigger]);
+    }, [transactions, timeframe, baseCurrency, pricesLoading, refreshTrigger, priceMetadata, rawHistory.length]);
 
-    // DERIVED HISTORY: Apply timeframe cutoff to raw history
-    // NOTE: We no longer append a "real-time" point as it was causing value mismatches.
-    // The chart shows historical performance; the header shows the live total.
+    // DERIVED HISTORY: Apply timeframe cutoff to raw history.
+    // The chart is TWR-like performance adjusted for external deposits/withdrawals;
+    // the header shows the live net liquidation value.
     useEffect(() => {
         if (!rawHistory.length) {
             setHistory([]);
@@ -820,30 +929,40 @@ export default function Dashboard() {
                     d.setHours(hrs, 0, 0, 0);
                 }
                 const bucketKey = d.toISOString();
-                // Keep last value in each bucket
-                buckets[bucketKey] = point.value;
+                // Keep the last full point in each bucket so rawValue survives mode changes.
+                buckets[bucketKey] = { ...point, date: bucketKey };
             });
-            filtered = Object.entries(buckets)
-                .map(([date, value]) => ({ date, value }))
+            filtered = Object.values(buckets)
                 .sort((a, b) => a.date.localeCompare(b.date));
         }
 
-        // Append live price point if prices are stable
+        // Append/replace a live point in the same adjusted scale as the history.
+        // Using raw currentTotal directly would make the last point jump to net value.
         const hasPrices = Object.keys(prices).length > 0 && !pricesLoading;
         if (hasPrices) {
-            const realTimeHoldings = calculateHoldings(transactions, prices, baseCurrency);
+            const realTimeHoldings = calculateHoldings(transactions, prices, baseCurrency, historicalRateResolver);
             const currentTotal = realTimeHoldings.reduce((acc, h) => acc + h.value, 0);
             if (currentTotal > 0) {
-                filtered.push({
+                const adjustmentRatio = getLiveHistoryAdjustmentRatio(rawHistory);
+                filtered = mergeLiveHistoryPoint(filtered, {
                     date: new Date().toISOString(),
-                    value: currentTotal
-                });
+                    value: currentTotal * adjustmentRatio,
+                    rawValue: currentTotal,
+                    isLive: true
+                }, timeframe);
             }
+        }
+
+        if (chartMode === 'value') {
+            filtered = filtered.map(point => ({
+                ...point,
+                value: Number.isFinite(parseFloat(point.rawValue)) ? point.rawValue : point.value
+            }));
         }
 
         startTransition(() => setHistory(filtered));
 
-    }, [rawHistory, transactions, timeframe, prices, pricesLoading, baseCurrency]);
+    }, [rawHistory, transactions, timeframe, prices, pricesLoading, baseCurrency, historicalRateResolver, chartMode]);
 
 
     const syncTransactionsToFile = async (updatedTx) => {
@@ -909,6 +1028,11 @@ export default function Dashboard() {
                     if (type === 'CRYPTO' && !symbol.includes('-')) symbol += '-USD';
                     else if (type === 'FIAT' && symbol !== 'USD') symbol += '=X';
 
+                    const balanceFlag = row['Affects Quote Balance'] || row['Affects Cash Balance'] || row['Affects Fiat Balance'];
+                    const affectsQuoteBalance = balanceFlag
+                        ? ['TRUE', '1', 'YES', 'Y'].includes(String(balanceFlag).toUpperCase())
+                        : undefined;
+
                     return {
                         date: new Date(row.Date).toISOString(),
                         type: row.Way,
@@ -919,9 +1043,8 @@ export default function Dashboard() {
                         exchange: row.Exchange || '',
                         fee: parseFloat(row['Fee amount']) || 0,
                         feeCurrency: row['Fee currency (name)'] || '',
-                        affectsFiatBalance: row['Affects Cash Balance'] || row['Affects Fiat Balance']
-                            ? ['TRUE', '1', 'YES', 'Y'].includes(String(row['Affects Cash Balance'] || row['Affects Fiat Balance']).toUpperCase())
-                            : undefined,
+                        affectsFiatBalance: affectsQuoteBalance,
+                        affectsQuoteBalance,
                         originalType: type || 'MANUAL'
                     };
                 }).filter(t => t.baseCurrency);
@@ -1005,12 +1128,43 @@ export default function Dashboard() {
         setIsModalOpen(true);
     };
 
+    const toggleSummaryMetric = useCallback(() => {
+        setSummaryMetric(prev => prev === 'value' ? 'profit' : 'value');
+    }, []);
+
     // Dashboard calculations
-    const { totalValue, grossAssetsValue, cashValue, missingValuations, displayDiffDay, displayPercentDay, safeDiff, safePercent } = useMemo(() => {
+    const {
+        totalValue,
+        grossAssetsValue,
+        cashValue,
+        totalProfit,
+        realizedProfit,
+        unrealizedProfit,
+        missingProfitFx,
+        missingValuations,
+        displayDiffDay,
+        displayPercentDay,
+        safeDiff,
+        safePercent
+    } = useMemo(() => {
         const currentTotal = holdings.reduce((acc, h) => acc + (h.value || 0), 0);
         const grossAssets = holdings.reduce((acc, h) => acc + (!h.isFiat ? (h.value || 0) : 0), 0);
         const cash = holdings.reduce((acc, h) => acc + (h.isFiat ? (h.value || 0) : 0), 0);
         const missing = holdings.filter(h => h.fxMissing || h.priceMissing).length;
+        const accounting = calculatePortfolioAccounting(
+            transactions,
+            baseCurrency,
+            historicalRateResolver
+        );
+        const realized = Object.values(accounting.positions)
+            .reduce((acc, position) => acc + (position.realizedPnl || 0), 0);
+        const unrealized = holdings
+            .reduce((acc, h) => acc + (!h.isFiat ? (h.unrealizedProfit || 0) : 0), 0);
+        const profitFxMissing = transactionFxLoading ||
+            holdings.some(h => h.missingCostFx || h.missingCostBasis || h.oversoldQuantity > 0) ||
+            Object.values(accounting.positions).some(position =>
+                position.missingCostFx || position.missingCostBasis || position.oversoldQuantity > 0
+            );
         const prevValueDay = holdings.reduce((acc, h) => {
             const changeFactor = 1 + ((h.change24h || 0) / 100);
             if (Math.abs(changeFactor) < 0.0001) return acc + h.value;
@@ -1033,13 +1187,38 @@ export default function Dashboard() {
             totalValue: currentTotal,
             grossAssetsValue: grossAssets,
             cashValue: cash,
+            totalProfit: realized + unrealized,
+            realizedProfit: realized,
+            unrealizedProfit: unrealized,
+            missingProfitFx: profitFxMissing,
             missingValuations: missing,
             displayDiffDay: dayDiff,
             displayPercentDay: dayPercent,
             safeDiff: displayDiff || 0,
             safePercent: displayPercent || 0
         };
-    }, [holdings, history, timeframe]);
+    }, [holdings, history, timeframe, transactions, baseCurrency, historicalRateResolver, transactionFxLoading]);
+
+    const currencyLabel = baseCurrency === 'USD' ? '$' : baseCurrency;
+    const isProfitMetric = summaryMetric === 'profit';
+    const summaryValue = isProfitMetric ? totalProfit : totalValue;
+    const summaryLabel = isProfitMetric ? 'Total Profit' : 'Total Value';
+    const summaryTitle = isProfitMetric ? 'Show Total Value' : 'Show Total Profit';
+    const summaryValueClass = isProfitMetric
+        ? (totalProfit >= 0 ? 'text-success' : 'text-danger')
+        : '';
+    const summarySign = isProfitMetric
+        ? (summaryValue >= 0 ? '+' : '-')
+        : (summaryValue < 0 ? '-' : '');
+    const formattedSummaryValue = hideBalances
+        ? '••••••'
+        : `${summarySign}${Math.abs(summaryValue).toLocaleString(undefined, { maximumFractionDigits: 2 })} ${currencyLabel}`;
+    const formattedRealizedProfit = hideBalances
+        ? '******'
+        : `${realizedProfit >= 0 ? '+' : '-'}${Math.abs(realizedProfit).toLocaleString(undefined, { maximumFractionDigits: 2 })} ${currencyLabel}`;
+    const formattedUnrealizedProfit = hideBalances
+        ? '******'
+        : `${unrealizedProfit >= 0 ? '+' : '-'}${Math.abs(unrealizedProfit).toLocaleString(undefined, { maximumFractionDigits: 2 })} ${currencyLabel}`;
 
     return (
         <>
@@ -1183,9 +1362,21 @@ export default function Dashboard() {
                                             <>
                                                 {!isWatchlistView && (
                                                     <div className="flex flex-wrap items-center gap-3">
-                                                        <div className="text-2xl font-bold tracking-tight">
-                                                            {hideBalances ? '••••••' : `${totalValue.toLocaleString(undefined, { maximumFractionDigits: 2 })} ${baseCurrency === 'USD' ? '$' : baseCurrency}`}
-                                                        </div>
+                                                        <button
+                                                            type="button"
+                                                            onClick={toggleSummaryMetric}
+                                                            className="text-left active-scale"
+                                                            style={{ background: 'transparent', border: 'none', padding: 0, cursor: 'pointer' }}
+                                                            title={summaryTitle}
+                                                            aria-label={`${summaryLabel}: ${hideBalances ? 'hidden' : formattedSummaryValue}`}
+                                                        >
+                                                            <span className="text-xs text-muted uppercase tracking-wider font-bold" style={{ display: 'block', marginBottom: '2px' }}>
+                                                                {summaryLabel}
+                                                            </span>
+                                                            <span className={`text-2xl font-bold tracking-tight ${summaryValueClass}`}>
+                                                                {formattedSummaryValue}
+                                                            </span>
+                                                        </button>
                                                     </div>
                                                 )}
                                                 {!isWatchlistView && (
@@ -1202,10 +1393,22 @@ export default function Dashboard() {
                                         {!isWatchlistView && (
                                             <>
                                                 <div className="flex flex-wrap items-center gap-3">
-                                                    <div className="text-2xl font-bold tracking-tight">
-                                                        {hideBalances ? '••••••' : `${totalValue.toLocaleString(undefined, { maximumFractionDigits: 2 })} ${baseCurrency === 'USD' ? '$' : baseCurrency}`}
-                                                    </div>
-                                                    {timeframe !== '1D' && (
+                                                    <button
+                                                        type="button"
+                                                        onClick={toggleSummaryMetric}
+                                                        className="text-left active-scale"
+                                                        style={{ background: 'transparent', border: 'none', padding: 0, cursor: 'pointer' }}
+                                                        title={summaryTitle}
+                                                        aria-label={`${summaryLabel}: ${hideBalances ? 'hidden' : formattedSummaryValue}`}
+                                                    >
+                                                        <span className="text-xs text-muted uppercase tracking-wider font-bold" style={{ display: 'block', marginBottom: '2px' }}>
+                                                            {summaryLabel}
+                                                        </span>
+                                                        <span className={`text-2xl font-bold tracking-tight ${summaryValueClass}`}>
+                                                            {formattedSummaryValue}
+                                                        </span>
+                                                    </button>
+                                                    {!isProfitMetric && timeframe !== '1D' && (
                                                         <div style={{ marginLeft: '5px' }} className={`text-xs px-2 py-0.5 rounded-md font-medium ${displayDiffDay >= 0 ? 'bg-success/10 text-success' : 'bg-danger/10 text-danger'}`}>
                                                             {hideBalances ? (
                                                                 `(${displayPercentDay >= 0 ? '+' : ''}${displayPercentDay.toFixed(2)}%)`
@@ -1216,22 +1419,35 @@ export default function Dashboard() {
                                                     )}
                                                 </div>
                                                 <div className={`text font-medium flex flex-wrap items-center gap-x-3`}>
-                                                    <div className={safeDiff >= 0 ? 'text-success' : 'text-danger'}>
-                                                        {hideBalances ? (
-                                                            <span className="flex items-center gap-1">
-                                                                {safePercent >= 0 ? '+' : ''}{safePercent.toFixed(2)}%
+                                                    {isProfitMetric ? (
+                                                        <div className={totalProfit >= 0 ? 'text-success' : 'text-danger'}>
+                                                            <span>
+                                                                FIFO · Realized: {formattedRealizedProfit} | Unrealized: {formattedUnrealizedProfit}
                                                             </span>
-                                                        ) : (
-                                                            <span>{safeDiff >= 0 ? '+' : '-'}{Math.abs(safeDiff).toLocaleString(undefined, { maximumFractionDigits: 2 })} {baseCurrency === 'USD' ? '$' : baseCurrency} ({safePercent >= 0 ? '+' : ''}{safePercent.toFixed(2)}%)</span>
-                                                        )}
-                                                    </div>
+                                                        </div>
+                                                    ) : (
+                                                        <div className={safeDiff >= 0 ? 'text-success' : 'text-danger'}>
+                                                            {hideBalances ? (
+                                                                <span className="flex items-center gap-1">
+                                                                    {safePercent >= 0 ? '+' : ''}{safePercent.toFixed(2)}%
+                                                                </span>
+                                                            ) : (
+                                                                <span>{safeDiff >= 0 ? '+' : '-'}{Math.abs(safeDiff).toLocaleString(undefined, { maximumFractionDigits: 2 })} {currencyLabel} ({safePercent >= 0 ? '+' : ''}{safePercent.toFixed(2)}%)</span>
+                                                            )}
+                                                        </div>
+                                                    )}
                                                     <div className="text-muted text-xs" style={{ width: '100%', marginTop: '2px' }}>
                                                         {hideBalances ? (
                                                             'Assets: ****** | Cash: ******'
                                                         ) : (
-                                                            `Assets: ${grossAssetsValue.toLocaleString(undefined, { maximumFractionDigits: 2 })} ${baseCurrency === 'USD' ? '$' : baseCurrency} | Cash: ${cashValue.toLocaleString(undefined, { maximumFractionDigits: 2 })} ${baseCurrency === 'USD' ? '$' : baseCurrency}`
+                                                            `Assets: ${grossAssetsValue.toLocaleString(undefined, { maximumFractionDigits: 2 })} ${currencyLabel} | Cash: ${cashValue.toLocaleString(undefined, { maximumFractionDigits: 2 })} ${currencyLabel}`
                                                         )}
                                                     </div>
+                                                    {isProfitMetric && missingProfitFx && (
+                                                        <div className="text-muted text-xs" style={{ width: '100%', marginTop: '2px' }}>
+                                                            Profit FX incomplete
+                                                        </div>
+                                                    )}
                                                     {missingValuations > 0 && (
                                                         <div className="text-muted text-xs">
                                                             {missingValuations} missing price/FX
@@ -1253,9 +1469,34 @@ export default function Dashboard() {
                                             baseCurrency={baseCurrency}
                                             hideBalances={hideBalances}
                                             loading={historyLoading}
+                                            chartMode={chartMode}
                                         />
                                     </div>
 
+                                    <div className="flex gap-1 mb-3 no-select" style={{ maxWidth: '260px' }}>
+                                        {[
+                                            { id: 'performance', label: 'Performance' },
+                                            { id: 'value', label: 'Value' }
+                                        ].map(mode => (
+                                            <button
+                                                key={mode.id}
+                                                type="button"
+                                                onClick={() => handleChartModeChange(mode.id)}
+                                                className={`btn ${chartMode === mode.id ? 'bg-white text-black shadow-lg' : 'btn-ghost opacity-60 hover:opacity-100'}`}
+                                                style={{
+                                                    background: chartMode === mode.id ? 'var(--foreground)' : 'transparent',
+                                                    color: chartMode === mode.id ? 'var(--background)' : 'var(--muted)',
+                                                    border: '1px solid rgba(255,255,255,0.08)',
+                                                    borderRadius: '8px',
+                                                    flex: 1,
+                                                    padding: '7px 10px',
+                                                    fontSize: '0.72rem'
+                                                }}
+                                            >
+                                                {mode.label}
+                                            </button>
+                                        ))}
+                                    </div>
 
                                     <div className="flex justify-between mb-8 overflow-x-auto gap-1 sm:gap-2 no-scrollbar">
                                         {TIMEFRAMES.map((tf) => (
