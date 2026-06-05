@@ -192,7 +192,8 @@ export default function Dashboard() {
     }, [prices]);
 
     const historicalRateResolver = useCallback((from, to, dateStr) => {
-        return getHistoricalConversionRate(transactionFx, from, to, dateStr);
+        return getHistoricalConversionRate(transactionFx, from, to, dateStr) ??
+            getCurrentAssetRate(pricesRef.current, from, to);
     }, [transactionFx]);
 
     // Handle Android back button/gesture

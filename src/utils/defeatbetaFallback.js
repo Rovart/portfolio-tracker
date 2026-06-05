@@ -127,7 +127,7 @@ export async function fetchAlternativeHistory(symbol, range = '1M') {
             interval = daysSinceYearStart < 60 ? '1h' : '1d';
             break;
         case 'ALL':
-            period1.setFullYear(now.getFullYear() - 10);
+            period1 = new Date(1970, 0, 1);
             interval = '1wk';
             break;
         default:

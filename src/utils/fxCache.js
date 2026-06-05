@@ -149,7 +149,7 @@ export async function getCachedFxHistory(fromCurrency, toCurrency, range = 'ALL'
                 if (text) {
                     try {
                         const json = JSON.parse(text);
-                        if (json.history) {
+                        if (json.history?.length > 0) {
                             json.history.forEach(d => { finalData[d.date.split('T')[0]] = d.price; });
                         }
                     } catch (e) { console.error('JSON parse error 1', e); }
@@ -167,7 +167,7 @@ export async function getCachedFxHistory(fromCurrency, toCurrency, range = 'ALL'
                 if (text) {
                     try {
                         const json = JSON.parse(text);
-                        if (json.history) {
+                        if (json.history?.length > 0) {
                             json.history.forEach(d => { finalData[d.date.split('T')[0]] = d.price; });
                             succeeded = true;
                         }
@@ -184,7 +184,7 @@ export async function getCachedFxHistory(fromCurrency, toCurrency, range = 'ALL'
                     if (text) {
                         try {
                             const invJson = JSON.parse(text);
-                            if (invJson.history) {
+                            if (invJson.history?.length > 0) {
                                 invJson.history.forEach(d => {
                                     if (d.price) finalData[d.date.split('T')[0]] = 1 / d.price;
                                 });

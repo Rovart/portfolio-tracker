@@ -16,13 +16,15 @@ export function getMapRateForDate(rateMap, dateStr) {
     if (rateMap[dateStr]) return rateMap[dateStr];
 
     const dates = Object.keys(rateMap).sort();
+    if (dates.length === 0) return null;
+
     let match = null;
     for (const date of dates) {
         if (date > dateStr) break;
         match = date;
     }
 
-    return match ? rateMap[match] : null;
+    return match ? rateMap[match] : rateMap[dates[0]];
 }
 
 export function getHistoricalConversionRate(conversionMaps, currency, baseCurrency, dateStr) {

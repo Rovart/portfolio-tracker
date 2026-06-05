@@ -88,7 +88,7 @@ export async function GET(request) {
             period1 = new Date(now.getFullYear(), 0, 1);
             break;
         case 'ALL':
-            period1.setFullYear(now.getFullYear() - 10);
+            period1 = new Date(1970, 0, 1);
             break;
         default:
             period1.setMonth(now.getMonth() - 1);

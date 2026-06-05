@@ -20,7 +20,7 @@ import { addWatchlistAsset, removeWatchlistAsset, isSymbolInWatchlist } from '@/
 import { COMMODITY_NAMES } from '@/utils/commodities';
 
 // Header display logic: Title = Name, Subtitle = Symbol
-const ASSET_SUMMARY_METRICS = ['value', 'profit', 'realized'];
+const ASSET_SUMMARY_METRICS = ['value', 'total', 'realized', 'unrealized'];
 
 function toFiniteNumber(value) {
     const parsed = parseFloat(value);
@@ -63,7 +63,7 @@ export default function TransactionModal({
     const [assetTab, setAssetTab] = useState('overview'); // 'overview' | 'financials'
     const [isInWatchlist, setIsInWatchlist] = useState(false);
     const [rangePerformance, setRangePerformance] = useState(null); // { range, change, changePercent }
-    const [assetSummaryMetric, setAssetSummaryMetric] = useState('value'); // 'value' | 'profit' | 'realized'
+    const [assetSummaryMetric, setAssetSummaryMetric] = useState('value'); // 'value' | 'total' | 'realized' | 'unrealized'
 
     // Sync selectedAsset when holding prop changes (e.g. if name is loaded late in Dashboard)
     // Use primitive dependencies to minimize re-runs
@@ -569,9 +569,20 @@ export default function TransactionModal({
             transactions,
             selectedSymbol,
             baseCurrency,
-            (from, to, dateStr) => getHistoricalConversionRate(transactionFx, from, to, dateStr)
+            (from, to, dateStr) => {
+                const historicalRate = getHistoricalConversionRate(transactionFx, from, to, dateStr);
+                if (historicalRate) return historicalRate;
+
+                const fromAsset = normalizeAsset(from);
+                const selectedCurrency = normalizeAsset(selectedAsset?.currency);
+                if (fromAsset && selectedCurrency && fromAsset === selectedCurrency) {
+                    return fxRate || null;
+                }
+
+                return null;
+            }
         );
-    }, [transactions, selectedSymbol, transactionFx, baseCurrency]);
+    }, [transactions, selectedSymbol, transactionFx, baseCurrency, selectedAsset?.currency, fxRate]);
 
     const {
         currentBalance = 0,
@@ -592,27 +603,34 @@ export default function TransactionModal({
         });
     };
 
-    const isAssetProfitMetric = assetSummaryMetric === 'profit';
+    const isAssetProfitMetric = assetSummaryMetric !== 'value';
     const isAssetRealizedMetric = assetSummaryMetric === 'realized';
+    const isAssetUnrealizedMetric = assetSummaryMetric === 'unrealized';
     const assetSummaryValue = isAssetRealizedMetric
         ? realizedProfitBase
-        : isAssetProfitMetric
-            ? totalProfitBase
-            : currentValueBase;
+        : isAssetUnrealizedMetric
+            ? unrealizedProfitBase
+            : assetSummaryMetric === 'total'
+                ? totalProfitBase
+                : currentValueBase;
     const assetSummaryLabel = isAssetRealizedMetric
-        ? 'Realized Profit'
-        : isAssetProfitMetric
-            ? 'Total Profit'
-            : 'Total Value';
+        ? 'Realized P/L'
+        : isAssetUnrealizedMetric
+            ? 'Unrealized P/L'
+            : assetSummaryMetric === 'total'
+                ? 'Total P/L'
+                : 'Total Value';
     const nextAssetSummaryLabel = assetSummaryMetric === 'value'
-        ? 'Total Profit'
-        : assetSummaryMetric === 'profit'
-            ? 'Realized Profit'
-            : 'Total Value';
+        ? 'Total P/L'
+        : assetSummaryMetric === 'total'
+            ? 'Realized P/L'
+            : assetSummaryMetric === 'realized'
+                ? 'Unrealized P/L'
+                : 'Total Value';
     const assetSummarySign = isAssetProfitMetric || isAssetRealizedMetric
         ? (assetSummaryValue >= 0 ? '+' : '-')
         : (assetSummaryValue < 0 ? '-' : '');
-    const assetSummaryClass = isAssetProfitMetric || isAssetRealizedMetric
+    const assetSummaryClass = isAssetProfitMetric
         ? (assetSummaryValue >= 0 ? 'text-success' : 'text-danger')
         : 'text-success';
     const canShowAssetSummary = !loadingPrice && (isAssetRealizedMetric || liveAssetPrice);
