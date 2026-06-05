@@ -57,6 +57,22 @@ function collectCashTrackedCurrencies(sortedTransactions) {
     return tracked;
 }
 
+function getTransactionQuoteCurrency(tx, baseCurrency) {
+    const explicitQuote = normalizeAsset(tx.quoteCurrency);
+    if (explicitQuote) return explicitQuote;
+
+    const qAmt = toNumber(tx.quoteAmount);
+    if (!qAmt) return null;
+
+    const rawBase = upper(tx.baseCurrency);
+    if (rawBase.includes('-') || rawBase.includes('/')) {
+        const pairQuote = getQuoteCurrencyFromSymbol(rawBase);
+        if (pairQuote) return normalizeAsset(pairQuote);
+    }
+
+    return normalizeAsset(baseCurrency);
+}
+
 function shouldAffectQuoteBalance(tx, quote, cashTrackedCurrencies) {
     if (!quote) return false;
     if (typeof tx.affectsQuoteBalance === 'boolean') return tx.affectsQuoteBalance;
@@ -181,7 +197,7 @@ export function calculatePortfolioHistory(transactions, historicalPrices, baseCu
 
     sortedTransactions.forEach(tx => {
         const base = normalizeAsset(tx.baseCurrency);
-        const quote = normalizeAsset(tx.quoteCurrency);
+        const quote = getTransactionQuoteCurrency(tx, baseCurrency);
         registerMetadata(metadata, base, tx.baseCurrency, tx.quoteCurrency);
         if (quote) registerMetadata(metadata, quote, tx.quoteCurrency || quote, 'USD');
     });
@@ -205,7 +221,7 @@ export function calculatePortfolioHistory(transactions, historicalPrices, baseCu
             if (txDateOnly > timestampDate) break;
 
             const base = normalizeAsset(tx.baseCurrency);
-            const quote = normalizeAsset(tx.quoteCurrency);
+            const quote = getTransactionQuoteCurrency(tx, baseCurrency);
             const feeCurr = normalizeAsset(tx.feeCurrency);
             const bAmt = toNumber(tx.baseAmount);
             const qAmt = toNumber(tx.quoteAmount);

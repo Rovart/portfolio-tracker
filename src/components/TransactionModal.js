@@ -10,6 +10,7 @@ import { Trash2, Edit2, X, Plus, ChevronLeft, ArrowLeft, Moon, Sun, Eye, EyeOff 
 import {
     normalizeAsset,
     isFiatAsset,
+    getQuoteCurrencyFromSymbol,
     calculateAssetAccounting
 } from '@/utils/portfolio-logic';
 import {
@@ -596,6 +597,18 @@ export default function TransactionModal({
     const unrealizedProfitBase = isSelectedFiat ? 0 : currentValueBase - currentCostBasisBase;
     const totalProfitBase = isSelectedFiat ? 0 : unrealizedProfitBase + realizedProfitBase;
 
+    const getDisplayQuoteCurrency = (tx) => {
+        const explicitQuote = normalizeAsset(tx.quoteCurrency);
+        if (explicitQuote) return explicitQuote;
+
+        const rawBase = String(tx.baseCurrency || '').toUpperCase();
+        if (rawBase.includes('-') || rawBase.includes('/')) {
+            return getQuoteCurrencyFromSymbol(rawBase) || baseCurrency;
+        }
+
+        return baseCurrency;
+    };
+
     const toggleAssetSummaryMetric = () => {
         setAssetSummaryMetric(prev => {
             const index = ASSET_SUMMARY_METRICS.indexOf(prev);
@@ -1028,7 +1041,7 @@ export default function TransactionModal({
                                                                         ) : (
                                                                             (() => {
                                                                                 const dateStr = tx.date.split('T')[0];
-                                                                                const txQuoteCurrency = (tx.quoteCurrency || selectedAsset.currency || 'USD').toUpperCase();
+                                                                                const txQuoteCurrency = getDisplayQuoteCurrency(tx);
                                                                                 const costFx = getHistoricalConversionRate(transactionFx, txQuoteCurrency, baseCurrency, dateStr) || 0;
                                                                                 const costBase = tx.quoteAmount * costFx;
                                                                                 const currentValBase = tx.baseAmount * liveAssetPrice * fxRate;
@@ -1062,7 +1075,7 @@ export default function TransactionModal({
                                                                                 <span className="text-xs text-muted">
                                                                                     {(() => {
                                                                                         const dateStr = tx.date.split('T')[0];
-                                                                                        const txQuoteCurrency = (tx.quoteCurrency || selectedAsset.currency || 'USD').toUpperCase();
+                                                                                        const txQuoteCurrency = getDisplayQuoteCurrency(tx);
                                                                                         const costFx = getHistoricalConversionRate(transactionFx, txQuoteCurrency, baseCurrency, dateStr) || 0;
                                                                                         return `${((tx.quoteAmount / tx.baseAmount) * costFx).toLocaleString(undefined, { maximumFractionDigits: 2 })} ${baseCurrency === 'USD' ? '$' : baseCurrency}`;
                                                                                     })()}
@@ -1075,7 +1088,7 @@ export default function TransactionModal({
                                                                                     <span className={`text-xs text-[10px] ${(tx.affectsQuoteBalance ?? tx.affectsFiatBalance) === false ? 'text-muted/50 decoration-line-through' : 'text-muted'}`} title={(tx.affectsQuoteBalance ?? tx.affectsFiatBalance) === false ? "Did not affect balance" : "Affected balance"}>
                                                                                         | {hideBalances ? '••••••' : (() => {
                                                                                             const dateStr = tx.date.split('T')[0];
-                                                                                            const txQuoteCurrency = (tx.quoteCurrency || selectedAsset.currency || 'USD').toUpperCase();
+                                                                                            const txQuoteCurrency = getDisplayQuoteCurrency(tx);
                                                                                             const hFx = getHistoricalConversionRate(transactionFx, txQuoteCurrency, baseCurrency, dateStr) || 0;
                                                                                             return `${(tx.quoteAmount * hFx).toLocaleString(undefined, { maximumFractionDigits: 2 })} ${baseCurrency === 'USD' ? '$' : baseCurrency}`;
                                                                                         })()}
