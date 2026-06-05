@@ -38,6 +38,7 @@ export async function POST(request) {
                 'Exchange': tx.exchange,
                 'Fee amount': tx.fee || 0,
                 'Fee currency (name)': tx.feeCurrency,
+                'Affects Cash Balance': tx.affectsFiatBalance === undefined ? '' : (tx.affectsFiatBalance ? 'TRUE' : 'FALSE'),
                 'Notes': tx.notes || ''
             };
         });

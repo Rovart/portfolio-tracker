@@ -18,6 +18,11 @@ import {
 } from '@/utils/db';
 import { checkPermissions, requestPermissions, scheduleDailyNotifications, cancelAllNotifications, scheduleTestNotification } from '@/utils/notifications';
 
+function parseCsvBoolean(value) {
+    if (!value) return undefined;
+    return ['TRUE', '1', 'YES', 'Y'].includes(String(value).toUpperCase());
+}
+
 export default function SettingsModal({ onClose, onPortfolioChange, currentPortfolioId }) {
     const [activeTab, setActiveTab] = useState('portfolios');
     const [portfolios, setPortfolios] = useState([]);
@@ -298,42 +303,38 @@ export default function SettingsModal({ onClose, onPortfolioChange, currentPortf
         if (!file) return;
 
         const text = await file.text();
-        const lines = text.split('\n').filter(line => line.trim());
+        const Papa = (await import('papaparse')).default;
+        const parsedCsv = Papa.parse(text, { header: true, skipEmptyLines: true });
+        const rows = parsedCsv.data || [];
 
-        if (lines.length < 2) {
+        if (rows.length === 0) {
             alert('CSV file is empty or invalid');
             return;
         }
 
-        const headers = lines[0].split(',').map(h => h.trim().replace(/^"|"$/g, ''));
         const transactions = [];
         let csvPortfolioNames = new Set();
 
-        for (let i = 1; i < lines.length; i++) {
-            const values = lines[i].split(',').map(v => v.trim().replace(/^"|"$/g, ''));
-            const tx = {};
+        for (const row of rows) {
+            const cashFlag = row['Affects Cash Balance'] || row['Affects Fiat Balance'];
+            const tx = {
+                date: row.Date,
+                type: row.Way,
+                baseAmount: parseFloat(row['Base amount']) || 0,
+                baseCurrency: row['Base currency (name)'] || row['Base currency'] || '',
+                originalType: row['Base type'] || 'MANUAL',
+                quoteAmount: row['Quote amount'] ? parseFloat(row['Quote amount']) : null,
+                quoteCurrency: row['Quote currency'] || null,
+                exchange: row.Exchange || null,
+                fee: parseFloat(row['Fee amount']) || 0,
+                feeCurrency: row['Fee currency (name)'] || null,
+                affectsFiatBalance: parseCsvBoolean(cashFlag),
+                notes: row.Notes || null,
+                portfolioId: parseInt(row['Portfolio ID']) || null,
+                csvPortfolioName: row['Portfolio Name'] || null
+            };
 
-            headers.forEach((header, idx) => {
-                const val = values[idx] || '';
-                switch (header) {
-                    case 'Date': tx.date = val; break;
-                    case 'Way': tx.type = val; break;
-                    case 'Base amount': tx.baseAmount = parseFloat(val) || 0; break;
-                    case 'Base currency (name)': tx.baseCurrency = val; break;
-                    case 'Base type': tx.originalType = val; break;
-                    case 'Quote amount': tx.quoteAmount = val ? parseFloat(val) : null; break;
-                    case 'Quote currency': tx.quoteCurrency = val || null; break;
-                    case 'Exchange': tx.exchange = val || null; break;
-                    case 'Fee amount': tx.fee = parseFloat(val) || 0; break;
-                    case 'Fee currency (name)': tx.feeCurrency = val || null; break;
-                    case 'Notes': tx.notes = val || null; break;
-                    case 'Portfolio ID': tx.portfolioId = parseInt(val) || null; break;
-                    case 'Portfolio Name':
-                        tx.csvPortfolioName = val || null;
-                        if (val) csvPortfolioNames.add(val);
-                        break;
-                }
-            });
+            if (tx.csvPortfolioName) csvPortfolioNames.add(tx.csvPortfolioName);
 
             if (tx.date && tx.baseCurrency) {
                 transactions.push(tx);

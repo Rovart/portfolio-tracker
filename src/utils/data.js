@@ -55,6 +55,9 @@ function processTransactions(rawRow) {
             exchange: row.Exchange,
             fee: row['Fee amount'] || 0,
             feeCurrency: row['Fee currency (name)'],
+            affectsFiatBalance: row['Affects Cash Balance'] || row['Affects Fiat Balance']
+                ? ['TRUE', '1', 'YES', 'Y'].includes(String(row['Affects Cash Balance'] || row['Affects Fiat Balance']).toUpperCase())
+                : undefined,
             originalType: type // Keep for reference
         };
     }).filter(t => t.baseCurrency) // Filter out empty lines/bad data

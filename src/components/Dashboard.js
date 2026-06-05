@@ -9,7 +9,12 @@ import HoldingsList, { WATCHLIST_SORT_OPTIONS } from './HoldingsList';
 import TransactionModal from './TransactionModal';
 import SettingsModal from './SettingsModal';
 import PullToRefresh from './PullToRefresh';
-import { calculateHoldings } from '@/utils/portfolio-logic';
+import {
+    calculateHoldings,
+    normalizeAsset,
+    COMMON_FIAT_CURRENCIES,
+    COMMON_CRYPTO_ASSETS
+} from '@/utils/portfolio-logic';
 import { calculatePortfolioHistory } from '@/utils/portfolio-history';
 import { formatSymbol } from '@/utils/commodities';
 import { getCachedAssetHistory, setCachedAssetHistory, getCachedFxHistory, invalidateAssetCache, clearFxCache } from '@/utils/fxCache';
@@ -28,6 +33,53 @@ import {
 } from '@/utils/db';
 
 const TIMEFRAMES = ['1D', '1W', '1M', '1Y', 'YTD', 'ALL'];
+
+function addExpandedMarketSymbols(target, symbol) {
+    if (!symbol) return;
+
+    const raw = String(symbol).trim();
+    const upper = raw.toUpperCase();
+    const normalized = normalizeAsset(upper);
+    if (!normalized) return;
+
+    target.add(raw);
+
+    if (COMMON_FIAT_CURRENCIES.includes(normalized)) {
+        if (normalized !== 'USD') target.add(`${normalized}USD=X`);
+        return;
+    }
+
+    if (COMMON_CRYPTO_ASSETS.includes(normalized) && upper === normalized) {
+        target.add(`${normalized}-USD`);
+    }
+}
+
+function getTransactionMarketSymbols(transactions) {
+    const symbols = new Set();
+    transactions.forEach(tx => {
+        addExpandedMarketSymbols(symbols, tx.baseCurrency);
+        addExpandedMarketSymbols(symbols, tx.quoteCurrency);
+        addExpandedMarketSymbols(symbols, tx.feeCurrency);
+    });
+    return [...symbols].filter(Boolean);
+}
+
+function getFiatCurrenciesFromTransactions(transactions, baseCurrency) {
+    const currencies = new Set();
+    transactions.forEach(tx => {
+        [tx.baseCurrency, tx.quoteCurrency, tx.feeCurrency].forEach(symbol => {
+            const normalized = normalizeAsset(symbol);
+            if (
+                normalized &&
+                COMMON_FIAT_CURRENCIES.includes(normalized) &&
+                normalized !== baseCurrency
+            ) {
+                currencies.add(normalized);
+            }
+        });
+    });
+    return currencies;
+}
 
 export default function Dashboard() {
     const [transactions, setTransactions] = useState([]);
@@ -286,24 +338,22 @@ export default function Dashboard() {
     useEffect(() => {
         if (loading) return;
 
-        // Identification of unique assets - include watchlist assets if in watchlist mode
-        const baseAssets = isWatchlistView
+        // Identification of unique assets - include quote/fee assets so crypto-to-crypto
+        // and fee balances can be valued, not only the transaction base asset.
+        const marketAssets = isWatchlistView
             ? [...new Set(watchlistAssets.map(a => a.symbol))]
-            : [...new Set(transactions.map(t => t.baseCurrency))];
+            : getTransactionMarketSymbols(transactions);
         const initialQuoteAssets = isWatchlistView
-            ? []
-            : [...new Set(transactions.map(t => t.quoteCurrency))].filter(c => c && c !== baseCurrency);
+            ? new Set()
+            : getFiatCurrenciesFromTransactions(transactions, baseCurrency);
 
-        if (baseAssets.length === 0) {
+        if (marketAssets.length === 0) {
             setPricesLoading(false);
             return;
         }
 
         // Cancellation flag to prevent race conditions during portfolio switching
         let isCancelled = false;
-
-        // 2. Fetch prices
-        let isInitialFetch = Object.keys(prices).length === 0;
 
         async function fetchQuotes(isBackground = false) {
             if (isCancelled) return;
@@ -321,19 +371,14 @@ export default function Dashboard() {
 
             try {
                 // Pass 1: Fetch asset prices and discover currencies
-                const fetchList = [...baseAssets];
-                baseAssets.forEach(asset => {
-                    const s = asset.toUpperCase();
-                    if (s.length === 3 && /^[A-Z]{3}$/.test(s) && s !== 'USD') {
-                        fetchList.push(`${s}USD=X`);
-                    }
-                });
+                const fetchSet = new Set();
+                marketAssets.forEach(asset => addExpandedMarketSymbols(fetchSet, asset));
 
                 if (baseCurrency !== 'USD') {
-                    fetchList.push(`${baseCurrency}USD=X`);
+                    fetchSet.add(`${baseCurrency}USD=X`);
                 }
 
-                const res = await fetch(`/api/quote?symbols=${[...new Set(fetchList)].join(',')}`);
+                const res = await fetch(`/api/quote?symbols=${[...fetchSet].join(',')}`);
                 if (isCancelled) return;
 
                 const result = await res.json();
@@ -384,7 +429,9 @@ export default function Dashboard() {
                 });
 
                 // Pass 2: Fetch any missing exchange rates
-                const fxToFetch = [...discoveredCurrencies].filter(c => c !== 'USD' && c !== baseCurrency);
+                const fxToFetch = [...discoveredCurrencies].filter(c =>
+                    COMMON_FIAT_CURRENCIES.includes(c) && c !== 'USD' && c !== baseCurrency
+                );
                 if (fxToFetch.length > 0) {
                     const fxSymbols = fxToFetch.map(c => `${c}USD=X`);
                     const fxRes = await fetch(`/api/quote?symbols=${fxSymbols.join(',')}`);
@@ -567,26 +614,37 @@ export default function Dashboard() {
             }
             prevTimeframeRef.current = timeframe;
             prevBaseCurrencyRef.current = baseCurrency;
-            // 1. Identify all assets and explicit quote currencies
-            const baseAssets = [...new Set(transactions.map(t => t.baseCurrency))];
-            const explicitQuoteAssets = [...new Set(transactions.map(t => t.quoteCurrency))].filter(c => c && c !== baseCurrency);
+            // 1. Identify all assets/currencies that can appear as balances.
+            const marketAssets = getTransactionMarketSymbols(transactions);
+            const explicitQuoteAssets = getFiatCurrenciesFromTransactions(transactions, baseCurrency);
 
             const historyMap = {};
             const discoveredCurrencies = new Set(explicitQuoteAssets);
 
             try {
-                // Pass 1: Get current quotes to discover currencies for baseAssets
-                const res = await fetch(`/api/quote?symbols=${baseAssets.join(',')}`);
+                // Pass 1: Get current quotes to discover native asset currencies.
+                const discoverySymbols = new Set();
+                marketAssets.forEach(asset => addExpandedMarketSymbols(discoverySymbols, asset));
+                const res = await fetch(`/api/quote?symbols=${[...discoverySymbols].join(',')}`);
                 const result = await res.json();
                 if (result.data) {
                     result.data.forEach(q => {
-                        if (q.currency && q.currency.toUpperCase() !== baseCurrency) {
-                            discoveredCurrencies.add(q.currency.toUpperCase());
+                        const currency = q.currency?.toUpperCase();
+                        if (
+                            currency &&
+                            COMMON_FIAT_CURRENCIES.includes(currency) &&
+                            currency !== baseCurrency
+                        ) {
+                            discoveredCurrencies.add(currency);
                         }
                         // Detect bare currencies (e.g., EUR=X) and add for FX conversion
                         if (q.symbol && q.symbol.endsWith('=X')) {
                             const base = q.symbol.replace('=X', '');
-                            if (base.length <= 4 && base !== baseCurrency) {
+                            if (
+                                base.length <= 4 &&
+                                COMMON_FIAT_CURRENCIES.includes(base.toUpperCase()) &&
+                                base !== baseCurrency
+                            ) {
                                 discoveredCurrencies.add(base.toUpperCase());
                             }
                         }
@@ -596,22 +654,28 @@ export default function Dashboard() {
                 console.error("Discovery error", e);
             }
 
-            // Pass 2: Fetch history for all base assets and discovered quote currencies
+            // Pass 2: Fetch history for all assets and discovered fiat currencies.
             // Using cached history with timeframe-aware TTLs (5min for 1D, 15min for 1W, 1hr for others)
-            // Only upgrade 3-letter symbols to USD pairs if they are currencies (based on prices state quoteType)
-            const upgradedBaseAssets = baseAssets.map(sym => {
-                const s = sym.toUpperCase();
+            const upgradedBaseAssets = marketAssets.map(sym => {
+                const s = String(sym).toUpperCase();
+                const normalized = normalizeAsset(s);
                 // Skip already-formatted symbols
                 if (s.includes('=X') || s.includes('-') || s === 'USD') return sym;
 
-                // For 3-letter symbols, check if it's a currency or a stock
+                if (COMMON_FIAT_CURRENCIES.includes(normalized)) {
+                    if (normalized === 'USD') return 'USD';
+                    return `${normalized}USD=X`;
+                }
+
+                if (COMMON_CRYPTO_ASSETS.includes(normalized)) {
+                    return `${normalized}-USD`;
+                }
+
                 if (s.length === 3 && /^[A-Z]{3}$/.test(s)) {
-                    // If prices state has this symbol with quoteType that's NOT currency, keep as stock
                     const quote = prices[s];
                     if (quote && quote.quoteType && quote.quoteType !== 'CURRENCY') {
-                        return sym; // It's a stock/ETF like TLT, keep as-is
+                        return sym;
                     }
-                    // Otherwise, try the USD pair (for currencies like AUD)
                     if (prices[`${s}USD=X`]) {
                         return `${s}USD=X`;
                     }
@@ -619,7 +683,10 @@ export default function Dashboard() {
                 return sym;
             });
             // Build FX symbols to fetch - include discovered currencies AND base currency for USD-to-base conversion
-            const fxSymbols = [...discoveredCurrencies].map(c => c === 'USD' ? null : `${c}USD=X`).filter(Boolean);
+            const fxSymbols = [...discoveredCurrencies]
+                .filter(c => COMMON_FIAT_CURRENCIES.includes(c))
+                .map(c => c === 'USD' ? null : `${c}USD=X`)
+                .filter(Boolean);
             // IMPORTANT: Always include baseCurrency's USD pair for portfolio history calculations
             if (baseCurrency !== 'USD') {
                 fxSymbols.push(`${baseCurrency}USD=X`);
@@ -673,47 +740,6 @@ export default function Dashboard() {
                         }
                     }
 
-                    // PRE-SMOOTH: Apply aggressive IQR + V-shape detection to individual asset prices
-                    // This catches dividend spikes, splits, and API errors BEFORE portfolio aggregation
-                    if (historyData.length > 10) {
-                        const pricesArr = historyData.map(d => d.price).filter(p => p > 0).sort((a, b) => a - b);
-                        const q1 = pricesArr[Math.floor(pricesArr.length * 0.25)];
-                        const q3 = pricesArr[Math.floor(pricesArr.length * 0.75)];
-                        const iqr = q3 - q1;
-                        const lower = q1 - (1.5 * iqr);
-                        const upper = q3 + (1.5 * iqr);
-
-                        // Pass 1: IQR outlier replacement
-                        historyData = historyData.map((point, i, arr) => {
-                            if (point.price < lower || point.price > upper) {
-                                const start = Math.max(0, i - 2);
-                                const end = Math.min(arr.length, i + 3);
-                                const neighborPrices = arr.slice(start, end).map(p => p.price).filter(p => p > 0).sort((a, b) => a - b);
-                                if (neighborPrices.length > 0) {
-                                    const median = neighborPrices[Math.floor(neighborPrices.length / 2)];
-                                    return { ...point, price: median };
-                                }
-                            }
-                            return point;
-                        });
-
-                        // Pass 2-4: V-shape spike detection (catches 15%+ deviations from neighbors)
-                        for (let pass = 0; pass < 3; pass++) {
-                            for (let i = 1; i < historyData.length - 1; i++) {
-                                const prev = historyData[i - 1].price;
-                                const curr = historyData[i].price;
-                                const next = historyData[i + 1].price;
-                                if (prev > 0 && next > 0) {
-                                    const diffPrev = Math.abs(curr - prev) / prev;
-                                    const diffNext = Math.abs(curr - next) / next;
-                                    if (diffPrev > 0.15 && diffNext > 0.15) {
-                                        historyData[i] = { ...historyData[i], price: (prev + next) / 2 };
-                                    }
-                                }
-                            }
-                        }
-                    }
-
                     historyMap[fetchSym] = historyData;
 
                     // Map back from 'XXXUSD=X' to 'XXX' for portfolio-history lookup
@@ -730,7 +756,7 @@ export default function Dashboard() {
             const quoteMap = {};
             transactions.forEach(t => {
                 if (t.baseCurrency && t.quoteCurrency) {
-                    quoteMap[t.baseCurrency] = t.quoteCurrency;
+                    quoteMap[normalizeAsset(t.baseCurrency)] = normalizeAsset(t.quoteCurrency);
                 }
             });
 
@@ -800,39 +826,6 @@ export default function Dashboard() {
             filtered = Object.entries(buckets)
                 .map(([date, value]) => ({ date, value }))
                 .sort((a, b) => a.date.localeCompare(b.date));
-        }
-
-        // MOVING AVERAGE SMOOTHING for daily view
-        if (timeframe === '1D' && filtered.length > 5) {
-            const windowSize = 3; // 3-point moving average
-            filtered = filtered.map((point, i, arr) => {
-                if (i < 1 || i >= arr.length - 1) return point;
-                const values = arr.slice(Math.max(0, i - 1), Math.min(arr.length, i + 2)).map(p => p.value);
-                const avg = values.reduce((a, b) => a + b, 0) / values.length;
-                return { ...point, value: avg };
-            });
-        }
-
-        // SPIKE REMOVAL: Multiple passes with lower threshold for smoother result
-        const spikeThreshold = timeframe === '1D' ? 0.10 : 0.15; // 10% for daily, 15% for weekly
-        const spikePasses = timeframe === '1D' ? 4 : 3;
-
-        if (filtered.length > 5) {
-            for (let pass = 0; pass < spikePasses; pass++) {
-                filtered = filtered.map((point, i, arr) => {
-                    if (i === 0 || i === arr.length - 1) return point;
-                    const prev = arr[i - 1].value;
-                    const curr = point.value;
-                    const next = arr[i + 1].value;
-                    if (prev === 0 || next === 0) return point;
-                    const diffPrev = Math.abs(curr - prev) / prev;
-                    const diffNext = Math.abs(curr - next) / next;
-                    if ((diffPrev > spikeThreshold && diffNext > spikeThreshold) || (curr === 0 && prev > 0 && next > 0)) {
-                        return { ...point, value: (prev + next) / 2 };
-                    }
-                    return point;
-                });
-            }
         }
 
         // Append live price point if prices are stable
@@ -926,6 +919,9 @@ export default function Dashboard() {
                         exchange: row.Exchange || '',
                         fee: parseFloat(row['Fee amount']) || 0,
                         feeCurrency: row['Fee currency (name)'] || '',
+                        affectsFiatBalance: row['Affects Cash Balance'] || row['Affects Fiat Balance']
+                            ? ['TRUE', '1', 'YES', 'Y'].includes(String(row['Affects Cash Balance'] || row['Affects Fiat Balance']).toUpperCase())
+                            : undefined,
                         originalType: type || 'MANUAL'
                     };
                 }).filter(t => t.baseCurrency);
@@ -1010,8 +1006,11 @@ export default function Dashboard() {
     };
 
     // Dashboard calculations
-    const { totalValue, displayDiffDay, displayPercentDay, safeDiff, safePercent } = useMemo(() => {
+    const { totalValue, grossAssetsValue, cashValue, missingValuations, displayDiffDay, displayPercentDay, safeDiff, safePercent } = useMemo(() => {
         const currentTotal = holdings.reduce((acc, h) => acc + (h.value || 0), 0);
+        const grossAssets = holdings.reduce((acc, h) => acc + (!h.isFiat ? (h.value || 0) : 0), 0);
+        const cash = holdings.reduce((acc, h) => acc + (h.isFiat ? (h.value || 0) : 0), 0);
+        const missing = holdings.filter(h => h.fxMissing || h.priceMissing).length;
         const prevValueDay = holdings.reduce((acc, h) => {
             const changeFactor = 1 + ((h.change24h || 0) / 100);
             if (Math.abs(changeFactor) < 0.0001) return acc + h.value;
@@ -1032,6 +1031,9 @@ export default function Dashboard() {
 
         return {
             totalValue: currentTotal,
+            grossAssetsValue: grossAssets,
+            cashValue: cash,
+            missingValuations: missing,
             displayDiffDay: dayDiff,
             displayPercentDay: dayPercent,
             safeDiff: displayDiff || 0,
@@ -1223,6 +1225,18 @@ export default function Dashboard() {
                                                             <span>{safeDiff >= 0 ? '+' : '-'}{Math.abs(safeDiff).toLocaleString(undefined, { maximumFractionDigits: 2 })} {baseCurrency === 'USD' ? '$' : baseCurrency} ({safePercent >= 0 ? '+' : ''}{safePercent.toFixed(2)}%)</span>
                                                         )}
                                                     </div>
+                                                    <div className="text-muted text-xs" style={{ width: '100%', marginTop: '2px' }}>
+                                                        {hideBalances ? (
+                                                            'Assets: ****** | Cash: ******'
+                                                        ) : (
+                                                            `Assets: ${grossAssetsValue.toLocaleString(undefined, { maximumFractionDigits: 2 })} ${baseCurrency === 'USD' ? '$' : baseCurrency} | Cash: ${cashValue.toLocaleString(undefined, { maximumFractionDigits: 2 })} ${baseCurrency === 'USD' ? '$' : baseCurrency}`
+                                                        )}
+                                                    </div>
+                                                    {missingValuations > 0 && (
+                                                        <div className="text-muted text-xs">
+                                                            {missingValuations} missing price/FX
+                                                        </div>
+                                                    )}
                                                 </div>
                                             </>
                                         )}

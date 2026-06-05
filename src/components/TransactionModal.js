@@ -7,11 +7,71 @@ import FinancialInfo from './FinancialInfo';
 import EarningsEvent from './EarningsEvent';
 import ConfirmModal from './ConfirmModal';
 import { Trash2, Edit2, X, Plus, ChevronLeft, ArrowLeft, Moon, Sun, Eye, EyeOff } from 'lucide-react';
-import { normalizeAsset } from '@/utils/portfolio-logic';
+import {
+    normalizeAsset,
+    calculateAssetAccounting,
+    COMMON_FIAT_CURRENCIES,
+    COMMON_CRYPTO_ASSETS
+} from '@/utils/portfolio-logic';
 import { addWatchlistAsset, removeWatchlistAsset, isSymbolInWatchlist } from '@/utils/db';
 import { COMMODITY_NAMES } from '@/utils/commodities';
 
 // Header display logic: Title = Name, Subtitle = Symbol
+
+function getMapRateForDate(rateMap, dateStr) {
+    if (!rateMap || !dateStr) return null;
+    if (rateMap[dateStr]) return rateMap[dateStr];
+
+    const dates = Object.keys(rateMap).sort();
+    let match = null;
+    for (const date of dates) {
+        if (date > dateStr) break;
+        match = date;
+    }
+    return match ? rateMap[match] : null;
+}
+
+async function buildHistoricalConversionMap(currency, baseCurrency) {
+    const curr = normalizeAsset(currency);
+    if (!curr || curr === baseCurrency) return {};
+
+    const { getCachedFxHistory, getCachedAssetHistory } = await import('@/utils/fxCache');
+
+    if (COMMON_FIAT_CURRENCIES.includes(curr)) {
+        return await getCachedFxHistory(curr, baseCurrency, 'ALL');
+    }
+
+    if (COMMON_CRYPTO_ASSETS.includes(curr)) {
+        const assetHistory = await getCachedAssetHistory(`${curr}-USD`, 'ALL');
+        if (!assetHistory || assetHistory.length === 0) return {};
+
+        const usdToBase = baseCurrency === 'USD'
+            ? {}
+            : await getCachedFxHistory('USD', baseCurrency, 'ALL');
+        const fxDates = Object.keys(usdToBase).sort();
+        let fxIndex = 0;
+        let lastFx = baseCurrency === 'USD' ? 1 : null;
+
+        return assetHistory.reduce((acc, point) => {
+            const date = point.date.split('T')[0];
+            while (fxIndex < fxDates.length && fxDates[fxIndex] <= date) {
+                lastFx = usdToBase[fxDates[fxIndex]];
+                fxIndex++;
+            }
+            if (lastFx && point.price) acc[date] = point.price * lastFx;
+            return acc;
+        }, {});
+    }
+
+    return {};
+}
+
+function getHistoricalConversionRate(transactionFx, currency, baseCurrency, dateStr) {
+    const curr = normalizeAsset(currency);
+    if (!curr) return null;
+    if (curr === baseCurrency) return 1;
+    return getMapRateForDate(transactionFx[curr], dateStr);
+}
 
 export default function TransactionModal({
     mode,
@@ -371,36 +431,30 @@ export default function TransactionModal({
 
                 if (currencyForHistory && currencyForHistory !== baseCurrency) {
                     try {
-                        // Use FX cache for historical data
-                        const { getCachedFxHistory } = await import('@/utils/fxCache');
-                        fetchedHMap = await getCachedFxHistory(currencyForHistory, baseCurrency, 'ALL');
+                        fetchedHMap = await buildHistoricalConversionMap(currencyForHistory, baseCurrency);
                     } catch (e) {
                         console.error('Failed to fetch historical FX:', e);
                     }
                 }
 
-                // BUG FIX: Fetch FX rates for ALL transaction quote currencies
-                // This ensures proper cost basis calculation when viewing ETH-USD
-                // but having transactions in ETH-AUD, ETH-EUR, etc.
+                // Fetch conversion history for every quote/fee currency used by the ledger.
+                // This is needed for FIFO cost basis, mixed quote currencies and crypto-to-crypto trades.
                 const fetchedTransactionFx = {};
                 if (transactions && transactions.length > 0) {
-                    const normalizedSymbol = normalizeAsset(selectedAsset.symbol);
-                    // Find all unique quote currencies used in transactions for this asset
-                    const quoteCurrencies = new Set();
+                    const conversionCurrencies = new Set();
                     transactions.forEach(t => {
-                        if (normalizeAsset(t.baseCurrency) === normalizedSymbol && t.quoteCurrency) {
-                            quoteCurrencies.add(t.quoteCurrency.toUpperCase());
-                        }
+                        [t.quoteCurrency, t.feeCurrency].forEach(curr => {
+                            const normalized = normalizeAsset(curr);
+                            if (normalized && normalized !== baseCurrency) conversionCurrencies.add(normalized);
+                        });
                     });
 
-                    // Fetch historical FX for each unique quote currency
-                    const { getCachedFxHistory } = await import('@/utils/fxCache');
-                    await Promise.all([...quoteCurrencies].map(async (curr) => {
+                    await Promise.all([...conversionCurrencies].map(async (curr) => {
                         if (curr !== baseCurrency) {
                             try {
-                                fetchedTransactionFx[curr] = await getCachedFxHistory(curr, baseCurrency, 'ALL');
+                                fetchedTransactionFx[curr] = await buildHistoricalConversionMap(curr, baseCurrency);
                             } catch (e) {
-                                console.error(`Failed to fetch FX history for ${curr}:`, e);
+                                console.error(`Failed to fetch conversion history for ${curr}:`, e);
                                 fetchedTransactionFx[curr] = {};
                             }
                         }
@@ -456,8 +510,6 @@ export default function TransactionModal({
         change: assetChange,
         changePercent,
         fxRate,
-        actualFxRate,
-        historicalFx,
         transactionFx,
         isLoading: loadingPrice,
         marketState: currentMarketState,
@@ -490,71 +542,36 @@ export default function TransactionModal({
             .sort((a, b) => new Date(b.date) - new Date(a.date))
         : [];
 
-    const { currentBalance, averagePurchasePrice } = useMemo(() => {
-        if (!selectedAsset) return { currentBalance: 0, averagePurchasePrice: 0 };
-        let totalAmount = 0;
-        let totalCostBase = 0; // Total cost in baseCurrency
-        let buyAmount = 0;
+    const selectedSymbol = selectedAsset?.symbol;
 
-        const normalizedSymbol = normalizeAsset(selectedAsset.symbol);
-
-        // Detect if this is a bare currency (EURUSD=X for EUR holdings)
-        const sym = selectedAsset.symbol || '';
-        const isBareOrigin = selectedAsset.isBareCurrencyOrigin;
-        let bareCurrCode = null;
-        if (isBareOrigin && sym.endsWith('=X')) {
-            // Extract EUR from EURUSD=X
-            const base = sym.replace('=X', '');
-            if (base.length > 4) {
-                bareCurrCode = base.substring(0, 3).toUpperCase();
-            } else {
-                bareCurrCode = base.toUpperCase();
-            }
+    const assetAccounting = useMemo(() => {
+        if (!selectedSymbol) {
+            return {
+                currentBalance: 0,
+                averagePurchasePrice: 0,
+                remainingCostBasis: 0,
+                realizedPnl: 0,
+                missingCostFx: false
+            };
         }
 
-        transactions
-            .filter(t => normalizeAsset(t.baseCurrency) === normalizedSymbol)
-            .forEach(t => {
-                const bAmt = parseFloat(t.baseAmount) || 0;
-                const qAmt = parseFloat(t.quoteAmount) || 0;
-                const dateStr = t.date.split('T')[0];
+        return calculateAssetAccounting(
+            transactions,
+            selectedSymbol,
+            baseCurrency,
+            (from, to, dateStr) => getHistoricalConversionRate(transactionFx, from, to, dateStr)
+        );
+    }, [transactions, selectedSymbol, transactionFx, baseCurrency]);
 
-                // For bare currencies (deposits), the asset currency is the bare currency code (e.g., EUR)
-                // For regular assets, use the transaction's quote currency or asset's currency
-                const txQuoteCurr = (t.quoteCurrency || selectedAsset.currency || 'USD').toUpperCase();
-
-                // Get FX rate to convert from txQuoteCurrency to baseCurrency
-                let hFx = 1;
-                if (txQuoteCurr !== baseCurrency) {
-                    // BUG FIX: Use transactionFx for the specific quote currency
-                    // This ensures proper conversion when viewing ETH-USD but transaction was in ETH-AUD
-                    const txFxHistory = transactionFx[txQuoteCurr];
-                    if (txFxHistory && txFxHistory[dateStr]) {
-                        hFx = txFxHistory[dateStr];
-                    } else {
-                        // Fallback to current rate if no historical data
-                        hFx = actualFxRate || fxRate || 1;
-                    }
-                }
-
-                if (['BUY', 'DEPOSIT'].includes(t.type)) {
-                    totalAmount += bAmt;
-                    // Only BUY contributes to avg price (not DEPOSIT)
-                    if (t.type === 'BUY') {
-                        totalCostBase += qAmt * hFx;
-                        buyAmount += bAmt;
-                    }
-                } else if (['SELL', 'WITHDRAW'].includes(t.type)) {
-                    totalAmount -= bAmt;
-                }
-            });
-
-        const avgBase = buyAmount > 0 ? (totalCostBase / buyAmount) : 0;
-        return { currentBalance: totalAmount, averagePurchasePrice: avgBase };
-    }, [transactions, selectedAsset?.symbol, selectedAsset?.currency, selectedAsset?.isBareCurrencyOrigin, historicalFx, transactionFx, fxRate, actualFxRate, baseCurrency]);
+    const {
+        currentBalance,
+        averagePurchasePrice,
+        remainingCostBasis: currentCostBasisBase,
+        realizedPnl: realizedProfitBase,
+        missingCostFx
+    } = assetAccounting;
 
     const currentValueBase = currentBalance * (assetPrice || 0) * fxRate;
-    const currentCostBasisBase = averagePurchasePrice * currentBalance;
     const positionProfit = currentValueBase - currentCostBasisBase;
     const positionProfitPercent = currentCostBasisBase > 0 ? (positionProfit / currentCostBasisBase) * 100 : 0;
 
@@ -869,6 +886,14 @@ export default function TransactionModal({
                                                                         ({positionProfitPercent >= 0 ? '+' : ''}{positionProfitPercent.toFixed(2)}%)
                                                                     </span>
                                                                 )}
+                                                                {Math.abs(realizedProfitBase) > 0.005 && (
+                                                                    <span className={`text-[10px] font-medium text-center ${realizedProfitBase >= 0 ? 'text-success' : 'text-danger'}`}>
+                                                                        Realized: {hideBalances ? '******' : `${realizedProfitBase >= 0 ? '+' : '-'}${Math.abs(realizedProfitBase).toLocaleString(undefined, { maximumFractionDigits: 2 })} ${baseCurrency === 'USD' ? '$' : baseCurrency}`}
+                                                                    </span>
+                                                                )}
+                                                                {missingCostFx && (
+                                                                    <span className="text-[10px] text-muted text-center">Cost FX incomplete</span>
+                                                                )}
                                                             </>
                                                         )}
                                                     </div>
@@ -957,22 +982,18 @@ export default function TransactionModal({
                                                                             (() => {
                                                                                 const dateStr = tx.date.split('T')[0];
                                                                                 const txQuoteCurrency = (tx.quoteCurrency || selectedAsset.currency || 'USD').toUpperCase();
-                                                                                let costFx = 1;
-                                                                                if (txQuoteCurrency !== baseCurrency) {
-                                                                                    // BUG FIX: Use transactionFx for the specific quote currency
-                                                                                    // This ensures proper conversion when viewing ETH-USD but transaction was in ETH-AUD
-                                                                                    const txFxHistory = transactionFx[txQuoteCurrency];
-                                                                                    if (txFxHistory && txFxHistory[dateStr]) {
-                                                                                        costFx = txFxHistory[dateStr];
-                                                                                    } else {
-                                                                                        // Fallback to current rate if no historical data
-                                                                                        costFx = actualFxRate || fxRate || 1;
-                                                                                    }
-                                                                                }
+                                                                                const costFx = getHistoricalConversionRate(transactionFx, txQuoteCurrency, baseCurrency, dateStr) || 0;
                                                                                 const costBase = tx.quoteAmount * costFx;
                                                                                 const currentValBase = tx.baseAmount * assetPrice * fxRate;
                                                                                 const pnlBase = currentValBase - costBase;
-                                                                                const pnlPercent = (pnlBase / costBase) * 100;
+                                                                                const pnlPercent = costBase > 0 ? (pnlBase / costBase) * 100 : 0;
+                                                                                if (costBase <= 0) {
+                                                                                    return (
+                                                                                        <span style={{ textAlign: 'right', marginRight: '10px' }} className="text-sm font-bold text-muted">
+                                                                                            FX missing
+                                                                                        </span>
+                                                                                    );
+                                                                                }
                                                                                 return (
                                                                                     <span style={{ textAlign: 'right', marginRight: '10px' }} className={`text-sm font-bold ${pnlBase >= 0 ? 'text-success' : 'text-danger'}`}>
                                                                                         {hideBalances ? '' : `${pnlBase >= 0 ? '+' : '-'}${Math.abs(pnlBase).toLocaleString(undefined, { maximumFractionDigits: 2 })} ${baseCurrency === 'USD' ? '$' : baseCurrency} `}
@@ -999,17 +1020,7 @@ export default function TransactionModal({
                                                                                     {(() => {
                                                                                         const dateStr = tx.date.split('T')[0];
                                                                                         const txQuoteCurrency = (tx.quoteCurrency || selectedAsset.currency || 'USD').toUpperCase();
-                                                                                        let costFx = 1;
-                                                                                        if (txQuoteCurrency !== baseCurrency) {
-                                                                                            // BUG FIX: Use transactionFx for the specific quote currency
-                                                                                            const txFxHistory = transactionFx[txQuoteCurrency];
-                                                                                            if (txFxHistory && txFxHistory[dateStr]) {
-                                                                                                costFx = txFxHistory[dateStr];
-                                                                                            } else {
-                                                                                                // Fallback to current rate if no historical data
-                                                                                                costFx = actualFxRate || fxRate || 1;
-                                                                                            }
-                                                                                        }
+                                                                                        const costFx = getHistoricalConversionRate(transactionFx, txQuoteCurrency, baseCurrency, dateStr) || 0;
                                                                                         return `${((tx.quoteAmount / tx.baseAmount) * costFx).toLocaleString(undefined, { maximumFractionDigits: 2 })} ${baseCurrency === 'USD' ? '$' : baseCurrency}`;
                                                                                     })()}
                                                                                 </span>
@@ -1022,17 +1033,7 @@ export default function TransactionModal({
                                                                                         | {hideBalances ? '••••••' : (() => {
                                                                                             const dateStr = tx.date.split('T')[0];
                                                                                             const txQuoteCurrency = (tx.quoteCurrency || selectedAsset.currency || 'USD').toUpperCase();
-                                                                                            let hFx = 1;
-                                                                                            if (txQuoteCurrency !== baseCurrency) {
-                                                                                                // BUG FIX: Use transactionFx for the specific quote currency
-                                                                                                const txFxHistory = transactionFx[txQuoteCurrency];
-                                                                                                if (txFxHistory && txFxHistory[dateStr]) {
-                                                                                                    hFx = txFxHistory[dateStr];
-                                                                                                } else {
-                                                                                                    // Fallback to current rate if no historical data
-                                                                                                    hFx = actualFxRate || fxRate || 1;
-                                                                                                }
-                                                                                            }
+                                                                                            const hFx = getHistoricalConversionRate(transactionFx, txQuoteCurrency, baseCurrency, dateStr) || 0;
                                                                                             return `${(tx.quoteAmount * hFx).toLocaleString(undefined, { maximumFractionDigits: 2 })} ${baseCurrency === 'USD' ? '$' : baseCurrency}`;
                                                                                         })()}
                                                                                     </span>
@@ -1186,6 +1187,30 @@ function TransactionForm({ holding, existingTx, transactions, onSave, onCancel, 
         }
         return 'USD';
     }, [sym, holding.currency, fetchedCurrency, existingTx]);
+    const [quoteCurrency, setQuoteCurrency] = useState(detectedQuote);
+    const [userModifiedQuoteCurrency, setUserModifiedQuoteCurrency] = useState(false);
+
+    useEffect(() => {
+        if (!userModifiedQuoteCurrency && detectedQuote && quoteCurrency !== detectedQuote) {
+            setQuoteCurrency(detectedQuote);
+        }
+    }, [detectedQuote, quoteCurrency, userModifiedQuoteCurrency]);
+
+    const quoteCurrencyOptions = useMemo(() => {
+        const commonQuotes = [
+            'USD', 'EUR', 'GBP', 'CHF', 'JPY', 'AUD', 'CAD', 'HKD', 'SGD',
+            'USDT', 'USDC', 'BTC', 'ETH', 'BNB', 'SOL'
+        ];
+
+        return Array.from(new Set([
+            quoteCurrency,
+            detectedQuote,
+            holding.currency?.toUpperCase(),
+            fetchedCurrency?.toUpperCase(),
+            baseCurrency,
+            ...commonQuotes
+        ].filter(Boolean)));
+    }, [quoteCurrency, detectedQuote, holding.currency, fetchedCurrency, baseCurrency]);
 
     // Default type: DEPOSIT for bare currencies, else existing or BUY
     const [type, setType] = useState(() => {
@@ -1196,11 +1221,22 @@ function TransactionForm({ holding, existingTx, transactions, onSave, onCancel, 
     const [price, setPrice] = useState(existingTx ? (existingTx.quoteAmount / (existingTx.baseAmount || 1)) : '');
     const [date, setDate] = useState(existingTx?.date ? new Date(existingTx.date).toISOString().split('T')[0] : new Date().toISOString().split('T')[0]);
     const [notes, setNotes] = useState(existingTx?.notes || '');
+    const [fee, setFee] = useState(existingTx?.fee || '');
+    const [feeCurrency, setFeeCurrency] = useState(existingTx?.feeCurrency || '');
+    const feeCurrencyOptions = useMemo(() => (
+        Array.from(new Set([feeCurrency, ...quoteCurrencyOptions].filter(Boolean)))
+    ), [feeCurrency, quoteCurrencyOptions]);
+
+    useEffect(() => {
+        if (!existingTx && (!feeCurrency || feeCurrency === detectedQuote) && quoteCurrency) {
+            setFeeCurrency(quoteCurrency);
+        }
+    }, [quoteCurrency, detectedQuote, existingTx, feeCurrency]);
 
     // Calculate quote balance to determine default toggle state
     const quoteBalance = useMemo(() => {
-        if (!transactions || !detectedQuote) return 0;
-        const q = detectedQuote.toUpperCase();
+        if (!transactions || !quoteCurrency) return 0;
+        const q = quoteCurrency.toUpperCase();
 
         return transactions.reduce((acc, t) => {
             const base = (t.baseCurrency || '').toUpperCase();
@@ -1223,7 +1259,7 @@ function TransactionForm({ holding, existingTx, transactions, onSave, onCancel, 
 
             return acc;
         }, 0);
-    }, [transactions, detectedQuote]);
+    }, [transactions, quoteCurrency]);
 
     const [useFiat, setUseFiat] = useState(() => {
         if (existingTx) {
@@ -1266,7 +1302,7 @@ function TransactionForm({ holding, existingTx, transactions, onSave, onCancel, 
                 setUseFiat(true);
             }
         }
-    }, [detectedQuote, quoteBalance, existingTx, amount, price, type, userModifiedUseFiat]);
+    }, [quoteCurrency, quoteBalance, existingTx, amount, price, type, userModifiedUseFiat]);
 
     const [fetchingPrice, setFetchingPrice] = useState(false);
     const [isManualPrice, setIsManualPrice] = useState(false);
@@ -1358,10 +1394,12 @@ function TransactionForm({ holding, existingTx, transactions, onSave, onCancel, 
             baseAmount: cleanAmount,
             baseCurrency: sym,
             quoteAmount: (type === 'BUY' || type === 'SELL') ? (cleanAmount * cleanPrice) : 0,
-            // Use existing quote currency if editing, otherwise detected
-            quoteCurrency: (type === 'BUY' || type === 'SELL') ? (existingTx?.quoteCurrency || detectedQuote) : null,
+            // Store the selected quote currency so mixed-currency crypto pairs stay explicit.
+            quoteCurrency: (type === 'BUY' || type === 'SELL') ? quoteCurrency : null,
             exchange: existingTx?.exchange || 'MANUAL',
-            originalType: holding.originalType || existingTx?.originalType || (detectedQuote === 'USD' ? 'CRYPTOCURRENCY' : 'MANUAL'),
+            originalType: holding.originalType || existingTx?.originalType || (quoteCurrency === 'USD' ? 'CRYPTOCURRENCY' : 'MANUAL'),
+            fee: parseFloat(fee) || 0,
+            feeCurrency: (parseFloat(fee) || 0) > 0 ? (feeCurrency || quoteCurrency) : null,
             // Track if this transaction should affect fiat balance
             affectsFiatBalance: useFiat,
             // Portfolio ID - use selected if in 'All' view, otherwise use current
@@ -1374,6 +1412,21 @@ function TransactionForm({ holding, existingTx, transactions, onSave, onCancel, 
     };
 
     const labelStyle = { fontSize: '0.75rem', fontWeight: 'bold', color: '#a1a1aa', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '0.5rem', display: 'block' };
+    const compactSelectStyle = {
+        background: `#171717 url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='rgba(255,255,255,0.55)' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E") no-repeat right 10px center`,
+        border: '1px solid rgba(255, 255, 255, 0.1)',
+        borderRadius: '12px',
+        color: 'white',
+        cursor: 'pointer',
+        fontSize: '0.75rem',
+        fontWeight: 700,
+        minWidth: '92px',
+        outline: 'none',
+        padding: '8px 30px 8px 12px',
+        appearance: 'none',
+        WebkitAppearance: 'none',
+        MozAppearance: 'none'
+    };
 
     return (
         <form onSubmit={handleSubmit} className="flex flex-col gap-4">
@@ -1434,7 +1487,7 @@ function TransactionForm({ holding, existingTx, transactions, onSave, onCancel, 
             </div>
 
             <div className="relative">
-                <label style={labelStyle}>Amount ({sym.split(/[-/]/)[0]}-{detectedQuote})</label>
+                <label style={labelStyle}>Amount ({sym.split(/[-/]/)[0]}-{quoteCurrency})</label>
                 <div className="relative">
                     <input
                         type="number"
@@ -1478,13 +1531,34 @@ function TransactionForm({ holding, existingTx, transactions, onSave, onCancel, 
             {(type === 'BUY' || type === 'SELL') && (
                 <>
                     <div>
-                        <label style={labelStyle}>
-                            <div className="flex justify-between">
-                                <span>Price per unit ({detectedQuote})</span>
-                                {fetchingPrice && <span className="animate-pulse" style={{ color: '#3b82f6' }}>Fetching...</span>}
+                        <div className="flex items-center justify-between gap-3" style={{ marginBottom: '0.5rem' }}>
+                            <label
+                                htmlFor="transaction-price"
+                                style={{ ...labelStyle, marginBottom: 0 }}
+                            >
+                                Price per unit
+                            </label>
+                            <div className="flex items-center gap-2">
+                                {fetchingPrice && <span className="animate-pulse text-xs font-bold uppercase tracking-wider" style={{ color: '#3b82f6' }}>Fetching...</span>}
+                                <select
+                                    aria-label="Price currency"
+                                    value={quoteCurrency}
+                                    onChange={e => {
+                                        setQuoteCurrency(e.target.value);
+                                        setUserModifiedQuoteCurrency(true);
+                                    }}
+                                    style={compactSelectStyle}
+                                >
+                                    {quoteCurrencyOptions.map(currency => (
+                                        <option key={currency} value={currency} style={{ background: '#121212', color: 'white' }}>
+                                            {currency}
+                                        </option>
+                                    ))}
+                                </select>
                             </div>
-                        </label>
+                        </div>
                         <input
+                            id="transaction-price"
                             type="number"
                             step="any"
                             required
@@ -1500,7 +1574,7 @@ function TransactionForm({ holding, existingTx, transactions, onSave, onCancel, 
                             <div className="mt-2 ml-1 flex gap-1 items-center">
                                 <span className="text-xs text-muted font-medium uppercase tracking-wider">Total:</span>
                                 <span className="text-xs font-bold text-white">
-                                    {(parseFloat(amount) * parseFloat(price)).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} {detectedQuote}
+                                    {(parseFloat(amount) * parseFloat(price)).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} {quoteCurrency}
                                 </span>
                             </div>
                         )}
@@ -1515,7 +1589,7 @@ function TransactionForm({ holding, existingTx, transactions, onSave, onCancel, 
                         }}
                     >
                         <span className="text-sm font-medium text-white select-none">
-                            {type === 'BUY' ? `Deduct from ${detectedQuote} balance` : `Add to ${detectedQuote} balance`}
+                            {type === 'BUY' ? `Deduct from ${quoteCurrency} balance` : `Add to ${quoteCurrency} balance`}
                         </span>
                         <div style={{
                             width: '48px', height: '24px', borderRadius: '999px', padding: '2px',
@@ -1532,6 +1606,42 @@ function TransactionForm({ holding, existingTx, transactions, onSave, onCancel, 
                     </div>
                 </>
             )}
+
+            <div
+                className="grid grid-cols-[1fr_120px] gap-3"
+                style={{
+                    display: 'grid',
+                    gap: '12px',
+                    gridTemplateColumns: 'minmax(0, 1fr) 120px',
+                    marginBottom: '0.5rem'
+                }}
+            >
+                <div>
+                    <label style={labelStyle}>Fee</label>
+                    <input
+                        type="number"
+                        step="any"
+                        className="input-reset"
+                        value={fee}
+                        onChange={e => setFee(e.target.value)}
+                        placeholder="0.00"
+                    />
+                </div>
+                <div>
+                    <label style={labelStyle}>Fee currency</label>
+                    <select
+                        value={feeCurrency}
+                        onChange={e => setFeeCurrency(e.target.value)}
+                        style={{ ...compactSelectStyle, width: '100%', minHeight: '47px', minWidth: 0, paddingTop: '13px', paddingBottom: '13px' }}
+                    >
+                        {feeCurrencyOptions.map(currency => (
+                            <option key={currency} value={currency} style={{ background: '#121212', color: 'white' }}>
+                                {currency}
+                            </option>
+                        ))}
+                    </select>
+                </div>
+            </div>
 
             <div>
                 <label style={labelStyle}>Date</label>

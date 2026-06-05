@@ -1,240 +1,299 @@
-import { normalizeAsset } from './portfolio-logic';
+import {
+    normalizeAsset,
+    getQuoteCurrencyFromSymbol,
+    COMMON_FIAT_CURRENCIES,
+    COMMON_CRYPTO_ASSETS,
+    isFiatAsset
+} from './portfolio-logic';
+
+const EPSILON = 0.00001;
+
+function toNumber(value) {
+    const parsed = parseFloat(value);
+    return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function upper(value) {
+    return value ? String(value).trim().toUpperCase() : '';
+}
+
+function choosePriceSymbol(existingSymbol, candidateSymbol) {
+    if (!existingSymbol) return candidateSymbol;
+    const existingQuote = getQuoteCurrencyFromSymbol(existingSymbol);
+    const candidateQuote = getQuoteCurrencyFromSymbol(candidateSymbol);
+    if (candidateQuote === 'USD' && existingQuote !== 'USD') return candidateSymbol;
+    return existingSymbol;
+}
+
+function registerMetadata(metadata, asset, symbol, quoteCurrency) {
+    const normalized = upper(asset);
+    if (!normalized) return;
+
+    const rawSymbol = upper(symbol || asset);
+    metadata.priceSymbolMap[normalized] = choosePriceSymbol(metadata.priceSymbolMap[normalized], rawSymbol);
+
+    const quote = upper(quoteCurrency) || getQuoteCurrencyFromSymbol(rawSymbol);
+    if (quote) {
+        if (!metadata.quoteMap[normalized] || quote === 'USD') {
+            metadata.quoteMap[normalized] = quote;
+        }
+    }
+}
+
+function collectCashTrackedCurrencies(sortedTransactions) {
+    const tracked = new Set();
+    sortedTransactions.forEach(tx => {
+        const base = normalizeAsset(tx.baseCurrency);
+        const quote = normalizeAsset(tx.quoteCurrency);
+
+        if (['DEPOSIT', 'WITHDRAW'].includes(tx.type) && isFiatAsset(base)) {
+            tracked.add(upper(base));
+        }
+
+        if (quote && tx.affectsFiatBalance === true) {
+            tracked.add(upper(quote));
+        }
+    });
+    return tracked;
+}
+
+function shouldAffectQuoteBalance(tx, quote, cashTrackedCurrencies) {
+    if (!quote) return false;
+    if (typeof tx.affectsFiatBalance === 'boolean') return tx.affectsFiatBalance;
+    return cashTrackedCurrencies.has(upper(quote));
+}
+
+function findPrice(history, timestamp, key, lastKnownPrices) {
+    if (!history || history.length === 0) return null;
+
+    const dateOnly = timestamp.split('T')[0];
+    const exactEntry = history.find(p => p.date === timestamp) ||
+        history.find(p => String(p.date).startsWith(dateOnly));
+
+    if (exactEntry && exactEntry.price) {
+        const price = toNumber(exactEntry.price);
+        if (price > 0) {
+            lastKnownPrices[key] = price;
+            return price;
+        }
+    }
+
+    return lastKnownPrices[key] || null;
+}
+
+function getPriceSymbol(asset, metadata, historicalPrices) {
+    const normalized = upper(asset);
+    let priceSym = metadata.priceSymbolMap[normalized] || normalized;
+
+    if (historicalPrices[priceSym]?.length > 0) return priceSym;
+
+    if (COMMON_FIAT_CURRENCIES.includes(normalized)) {
+        return normalized === 'USD' ? 'USD' : `${normalized}USD=X`;
+    }
+
+    if (COMMON_CRYPTO_ASSETS.includes(normalized)) {
+        return `${normalized}-USD`;
+    }
+
+    return priceSym;
+}
+
+function getCurrencyUsdRate(currency, timestamp, historicalPrices, lastKnownPrices) {
+    const curr = upper(currency);
+    if (!curr) return null;
+    if (curr === 'USD') return 1;
+
+    const directSym = `${curr}USD=X`;
+    const direct = findPrice(historicalPrices[directSym], timestamp, directSym, lastKnownPrices);
+    if (direct) return direct;
+
+    const inverseSym = `USD${curr}=X`;
+    const inverse = findPrice(historicalPrices[inverseSym], timestamp, inverseSym, lastKnownPrices);
+    if (inverse) return 1 / inverse;
+
+    return null;
+}
+
+function getFxRate(currency, baseCurrency, timestamp, historicalPrices, lastKnownPrices) {
+    const from = upper(normalizeAsset(currency));
+    const to = upper(normalizeAsset(baseCurrency));
+
+    if (!from || !to) return null;
+    if (from === to) return 1;
+
+    const directSym = `${from}${to}=X`;
+    const direct = findPrice(historicalPrices[directSym], timestamp, directSym, lastKnownPrices);
+    if (direct) return direct;
+
+    const inverseSym = `${to}${from}=X`;
+    const inverse = findPrice(historicalPrices[inverseSym], timestamp, inverseSym, lastKnownPrices);
+    if (inverse) return 1 / inverse;
+
+    const fromUsd = getCurrencyUsdRate(from, timestamp, historicalPrices, lastKnownPrices);
+    const toUsd = getCurrencyUsdRate(to, timestamp, historicalPrices, lastKnownPrices);
+    if (!fromUsd || !toUsd) return null;
+
+    return fromUsd / toUsd;
+}
+
+function valueBalance(asset, amount, timestamp, historicalPrices, baseCurrency, metadata, externalQuoteMap, lastKnownPrices) {
+    const normalized = upper(asset);
+    if (!normalized || Math.abs(amount) < EPSILON) return null;
+
+    let localPrice = 1;
+    let quoteCurrency = normalized;
+
+    if (!isFiatAsset(normalized)) {
+        const priceSym = getPriceSymbol(normalized, metadata, historicalPrices);
+        const history = historicalPrices[priceSym];
+        localPrice = findPrice(history, timestamp, priceSym, lastKnownPrices);
+        if (!localPrice) return null;
+
+        quoteCurrency = getQuoteCurrencyFromSymbol(priceSym) ||
+            upper(externalQuoteMap[normalized]) ||
+            metadata.quoteMap[normalized] ||
+            'USD';
+    }
+
+    const fxRate = getFxRate(quoteCurrency, baseCurrency, timestamp, historicalPrices, lastKnownPrices);
+    if (!fxRate) return null;
+
+    return amount * localPrice * fxRate;
+}
 
 export function calculatePortfolioHistory(transactions, historicalPrices, baseCurrency = 'USD', externalQuoteMap = {}) {
     if (!transactions || transactions.length === 0) return [];
 
-    // 1. Identify all unique timestamps across all history entries
-    // Preserve full timestamps (including time) for intraday granularity (1D/1W charts)
     const historicalEntries = Object.values(historicalPrices).flat();
-    const transactionDates = transactions.map(t => t.date.split('T')[0]); // Transactions are date-only
+    const transactionDates = transactions.map(t => String(t.date).split('T')[0]);
     const nowStr = new Date().toISOString();
-
-    // Use full timestamps from history, but dedupe by the full string
     const sortedTimestamps = [...new Set([
         ...historicalEntries.map(h => h.date),
         ...transactionDates,
         nowStr
     ])].sort();
 
-    const quoteMap = {};
-    const priceSymbolMap = {};
+    const sortedTransactions = [...transactions].sort((a, b) => new Date(a.date) - new Date(b.date));
+    const cashTrackedCurrencies = collectCashTrackedCurrencies(sortedTransactions);
+    const metadata = { priceSymbolMap: {}, quoteMap: {} };
 
-    transactions.forEach(tx => {
+    sortedTransactions.forEach(tx => {
         const base = normalizeAsset(tx.baseCurrency);
         const quote = normalizeAsset(tx.quoteCurrency);
-        if (base && !quoteMap[base]) {
-            if (tx.quoteCurrency) quoteMap[base] = tx.quoteCurrency;
-            else {
-                const parts = tx.baseCurrency.split(/[-/]/);
-                if (parts.length > 1) quoteMap[base] = parts[parts.length - 1].toUpperCase();
-            }
-        }
-        if (base && !priceSymbolMap[base]) priceSymbolMap[base] = tx.baseCurrency;
-        if (quote && !quoteMap[quote]) quoteMap[quote] = 'USD';
+        registerMetadata(metadata, base, tx.baseCurrency, tx.quoteCurrency);
+        if (quote) registerMetadata(metadata, quote, tx.quoteCurrency || quote, 'USD');
     });
 
-    const sortedTx = [...transactions].sort((a, b) => new Date(a.date) - new Date(b.date));
-    const dailyData = [];
     const currentBalances = {};
-    let txIndex = 0;
-
-    // Simple forward-fill: only value assets once we have seen a price for them
+    const dailyData = [];
     const lastKnownPrices = {};
+    let txIndex = 0;
+    let units = 0;
+    let unitValue = 1;
+    let initialChartValue = 0;
+    let initialized = false;
 
     for (const timestamp of sortedTimestamps) {
-        // Process all transactions that occurred at or before this timestamp
-        while (txIndex < sortedTx.length) {
-            const tx = sortedTx[txIndex];
-            const txDateOnly = tx.date.split('T')[0];
+        const timestampDate = String(timestamp).split('T')[0];
+        const externalFlows = [];
 
-            // If tx is definitively in the future compared to this timestamp
-            if (txDateOnly > timestamp) break;
+        while (txIndex < sortedTransactions.length) {
+            const tx = sortedTransactions[txIndex];
+            const txDateOnly = String(tx.date).split('T')[0];
+            if (txDateOnly > timestampDate) break;
 
-            const { type, baseAmount, baseCurrency: rawBase, quoteAmount, quoteCurrency: rawQuote, fee, feeCurrency: rawFee } = tx;
-            const base = normalizeAsset(rawBase);
-            const quote = normalizeAsset(rawQuote);
-            const feeCurr = normalizeAsset(rawFee);
-
-            const bAmt = parseFloat(baseAmount) || 0;
-            const qAmt = parseFloat(quoteAmount) || 0;
-            const fAmt = parseFloat(fee) || 0;
+            const base = normalizeAsset(tx.baseCurrency);
+            const quote = normalizeAsset(tx.quoteCurrency);
+            const feeCurr = normalizeAsset(tx.feeCurrency);
+            const bAmt = toNumber(tx.baseAmount);
+            const qAmt = toNumber(tx.quoteAmount);
+            const fAmt = toNumber(tx.fee);
 
             if (base && !currentBalances[base]) currentBalances[base] = 0;
             if (quote && !currentBalances[quote]) currentBalances[quote] = 0;
+            if (feeCurr && !currentBalances[feeCurr]) currentBalances[feeCurr] = 0;
 
-            if (type === 'BUY') {
+            if (tx.type === 'BUY') {
                 currentBalances[base] += bAmt;
-                // Only affect quote balance if affectsFiatBalance is true
-                if (quote && tx.affectsFiatBalance !== false) currentBalances[quote] -= qAmt;
-            } else if (type === 'SELL') {
+                if (quote && shouldAffectQuoteBalance(tx, quote, cashTrackedCurrencies)) {
+                    currentBalances[quote] -= qAmt;
+                }
+            } else if (tx.type === 'SELL') {
                 currentBalances[base] -= bAmt;
-                // Only affect quote balance if affectsFiatBalance is true
-                if (quote && tx.affectsFiatBalance !== false) currentBalances[quote] += qAmt;
-            } else if (type === 'DEPOSIT') {
+                if (quote && shouldAffectQuoteBalance(tx, quote, cashTrackedCurrencies)) {
+                    currentBalances[quote] += qAmt;
+                }
+            } else if (tx.type === 'DEPOSIT') {
                 currentBalances[base] += bAmt;
-            } else if (type === 'WITHDRAW') {
+                externalFlows.push({ asset: base, amount: bAmt });
+            } else if (tx.type === 'WITHDRAW') {
                 currentBalances[base] -= bAmt;
+                externalFlows.push({ asset: base, amount: -bAmt });
             }
 
             if (fAmt && feeCurr) {
-                if (!currentBalances[feeCurr]) currentBalances[feeCurr] = 0;
                 currentBalances[feeCurr] -= fAmt;
             }
 
             txIndex++;
         }
 
-        // Calculate Portfolio Value at this timestamp
         let totalValue = 0;
+        let hasValuedAsset = false;
+
         for (const [asset, amount] of Object.entries(currentBalances)) {
-            if (!amount || isNaN(amount) || Math.abs(amount) < 0.000001) continue;
-
-            const quoteCurr = externalQuoteMap[asset] || quoteMap[asset] || 'USD';
-            const priceSym = priceSymbolMap[asset] || asset;
-
-            // 1. Get local price of asset
-            let localPrice = 0;
-            let fxRate = 1;
-
-            // CRITICAL: If the asset IS the display currency (e.g., EUR holding displayed in EUR),
-            // the value is simply the amount - no conversion needed
-            if (asset.toUpperCase() === baseCurrency) {
-                localPrice = 1;
-                fxRate = 1;
-            } else if (asset === quoteCurr) {
-                localPrice = 1;
-            } else {
-                const history = historicalPrices[priceSym];
-                if (history && history.length > 0) {
-                    const dateOnly = timestamp.split('T')[0];
-                    // Try exact match first, then date-only match
-                    const exactEntry = history.find(p => p.date === timestamp) ||
-                        history.find(p => p.date.startsWith(dateOnly));
-                    if (exactEntry) {
-                        localPrice = parseFloat(exactEntry.price) || 0;
-                        lastKnownPrices[priceSym] = localPrice;
-                    } else {
-                        // Only use last known if we've actually seen a price
-                        localPrice = lastKnownPrices[priceSym] || 0;
-                    }
-                }
-            }
-
-            // Skip this asset if we have no price (don't use 0, just skip contribution)
-            if (localPrice === 0 && asset !== quoteCurr) continue;
-
-            // 2. Get FX rate using USD-pivot strategy (same as portfolio-logic)
-            const dateOnly = timestamp.split('T')[0];
-
-            if (quoteCurr !== baseCurrency && asset.toUpperCase() !== baseCurrency) {
-                // Pivot: quoteCurr -> USD -> baseCurrency
-                // Step 1: quoteCurr -> USD (e.g., HKDUSD=X)
-                let toUsdRate = 1;
-                if (quoteCurr !== 'USD') {
-                    const toUsdSym = `${quoteCurr}USD=X`;
-                    const toUsdHistory = historicalPrices[toUsdSym];
-                    if (toUsdHistory && toUsdHistory.length > 0) {
-                        const exactEntry = toUsdHistory.find(p => p.date === timestamp) ||
-                            toUsdHistory.find(p => p.date.startsWith(dateOnly));
-                        if (exactEntry && exactEntry.price) {
-                            toUsdRate = parseFloat(exactEntry.price);
-                            lastKnownPrices[toUsdSym] = toUsdRate;
-                        } else if (lastKnownPrices[toUsdSym]) {
-                            toUsdRate = lastKnownPrices[toUsdSym];
-                        } else {
-                            // Fallback: use the last available entry in history
-                            const lastEntry = toUsdHistory[toUsdHistory.length - 1];
-                            if (lastEntry && lastEntry.price) {
-                                toUsdRate = parseFloat(lastEntry.price);
-                                lastKnownPrices[toUsdSym] = toUsdRate;
-                            }
-                        }
-                    }
-                }
-
-                // Step 2: USD -> baseCurrency (1 / EURUSD=X)
-                let fromUsdRate = 1;
-                if (baseCurrency !== 'USD') {
-                    const baseUsdSym = `${baseCurrency}USD=X`;
-                    const baseUsdHistory = historicalPrices[baseUsdSym];
-                    if (baseUsdHistory && baseUsdHistory.length > 0) {
-                        const exactEntry = baseUsdHistory.find(p => p.date === timestamp) ||
-                            baseUsdHistory.find(p => p.date.startsWith(dateOnly));
-                        if (exactEntry && exactEntry.price) {
-                            fromUsdRate = 1 / parseFloat(exactEntry.price);
-                            lastKnownPrices[baseUsdSym + '-inv'] = fromUsdRate;
-                        } else if (lastKnownPrices[baseUsdSym + '-inv']) {
-                            fromUsdRate = lastKnownPrices[baseUsdSym + '-inv'];
-                        } else {
-                            // Fallback: use the last available entry in history
-                            const lastEntry = baseUsdHistory[baseUsdHistory.length - 1];
-                            if (lastEntry && lastEntry.price) {
-                                fromUsdRate = 1 / parseFloat(lastEntry.price);
-                                lastKnownPrices[baseUsdSym + '-inv'] = fromUsdRate;
-                            }
-                        }
-                    }
-                }
-
-                fxRate = toUsdRate * fromUsdRate;
-            }
-
-            totalValue += (amount * localPrice * fxRate);
+            if (!amount || isNaN(amount) || Math.abs(amount) < EPSILON) continue;
+            const value = valueBalance(
+                asset,
+                amount,
+                timestamp,
+                historicalPrices,
+                baseCurrency,
+                metadata,
+                externalQuoteMap,
+                lastKnownPrices
+            );
+            if (value === null || !Number.isFinite(value)) continue;
+            totalValue += value;
+            hasValuedAsset = true;
         }
 
-        if (!isNaN(totalValue) && totalValue > 0) {
-            dailyData.push({ date: timestamp, value: totalValue });
-        }
-    }
+        if (!hasValuedAsset || !Number.isFinite(totalValue) || totalValue <= 0) continue;
 
-    // STATISTICAL OUTLIER DETECTION using IQR (Interquartile Range)
-    // This catches both single-point spikes and sustained anomalies
-    if (dailyData.length > 10) {
-        const values = dailyData.map(d => d.value).sort((a, b) => a - b);
-        const q1Index = Math.floor(values.length * 0.25);
-        const q3Index = Math.floor(values.length * 0.75);
-        const q1 = values[q1Index];
-        const q3 = values[q3Index];
-        const iqr = q3 - q1;
-
-        // Tighter bounds: 1.5x IQR (more aggressive outlier detection)
-        const lowerBound = q1 - (1.5 * iqr);
-        const upperBound = q3 + (1.5 * iqr);
-
-        // Replace outliers with rolling median of 5 neighbors
-        let smoothed = dailyData.map((point, i, arr) => {
-            if (point.value < lowerBound || point.value > upperBound) {
-                const start = Math.max(0, i - 2);
-                const end = Math.min(arr.length, i + 3);
-                const neighbors = arr.slice(start, end).map(p => p.value).filter(v => v > 0).sort((a, b) => a - b);
-                if (neighbors.length > 0) {
-                    const median = neighbors[Math.floor(neighbors.length / 2)];
-                    return { ...point, value: median };
-                }
-            }
-            return point;
+        let externalFlowValue = 0;
+        externalFlows.forEach(flow => {
+            const value = valueBalance(
+                flow.asset,
+                flow.amount,
+                timestamp,
+                historicalPrices,
+                baseCurrency,
+                metadata,
+                externalQuoteMap,
+                lastKnownPrices
+            );
+            if (value !== null && Number.isFinite(value)) externalFlowValue += value;
         });
 
-        // MULTIPLE PASSES: Catch remaining V-shape spikes
-        for (let pass = 0; pass < 4; pass++) {
-            for (let i = 1; i < smoothed.length - 1; i++) {
-                const prev = smoothed[i - 1].value;
-                const curr = smoothed[i].value;
-                const next = smoothed[i + 1].value;
-
-                if (prev === 0 || next === 0) continue;
-
-                const diffPrev = Math.abs(curr - prev) / prev;
-                const diffNext = Math.abs(curr - next) / next;
-
-                // Catch spikes: >20% deviation from BOTH neighbors
-                if (diffPrev > 0.2 && diffNext > 0.2) {
-                    smoothed[i] = { ...smoothed[i], value: (prev + next) / 2 };
-                }
+        if (!initialized) {
+            initialized = true;
+            initialChartValue = totalValue;
+            units = totalValue;
+            unitValue = 1;
+        } else {
+            if (Math.abs(externalFlowValue) > EPSILON && unitValue > EPSILON) {
+                units += externalFlowValue / unitValue;
+            }
+            if (units > EPSILON) {
+                unitValue = totalValue / units;
             }
         }
 
-        return smoothed;
+        dailyData.push({
+            date: timestamp,
+            value: initialChartValue * unitValue,
+            rawValue: totalValue
+        });
     }
 
     return dailyData;

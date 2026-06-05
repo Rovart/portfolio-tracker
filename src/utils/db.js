@@ -179,6 +179,7 @@ export async function exportToCsv(portfolioId = null) {
         'Exchange': tx.exchange || '',
         'Fee amount': tx.fee || 0,
         'Fee currency (name)': tx.feeCurrency || '',
+        'Affects Cash Balance': tx.affectsFiatBalance === undefined ? '' : (tx.affectsFiatBalance ? 'TRUE' : 'FALSE'),
         'Notes': tx.notes || '',
         'Portfolio Name': portfolioMap[tx.portfolioId] || 'Default',
         'Portfolio ID': tx.portfolioId || 1
