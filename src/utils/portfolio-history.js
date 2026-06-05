@@ -151,9 +151,9 @@ function valueBalance(asset, amount, timestamp, historicalPrices, baseCurrency, 
         localPrice = findPrice(history, timestamp, priceSym, lastKnownPrices);
         if (!localPrice) return null;
 
-        quoteCurrency = getQuoteCurrencyFromSymbol(priceSym) ||
-            upper(externalQuoteMap[normalized]) ||
+        quoteCurrency = upper(externalQuoteMap[normalized]) ||
             metadata.quoteMap[normalized] ||
+            getQuoteCurrencyFromSymbol(priceSym) ||
             'USD';
     }
 

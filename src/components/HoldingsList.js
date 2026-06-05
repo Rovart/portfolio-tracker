@@ -18,6 +18,7 @@ const HoldingRow = memo(function HoldingRow({
     hideBalances,
     isWatchlist,
     baseCurrency,
+    returnMode,
     onSelect,
     handleDragStart,
     handleDragOver,
@@ -27,6 +28,11 @@ const HoldingRow = memo(function HoldingRow({
     const isBeingDragged = draggedIndex === index;
     const isDragOver = dragOverIndex === index;
     const showDragHandle = isDraggable && !isFiatItem;
+    const totalProfit = holding.totalProfit || 0;
+    const totalProfitPercent = holding.costBasis > 0 ? (totalProfit / holding.costBasis) * 100 : 0;
+    const displayedChangeValue = returnMode === 'total' && !isWatchlist ? totalProfit : (holding.dailyPnl || 0);
+    const displayedChangePercent = returnMode === 'total' && !isWatchlist ? totalProfitPercent : (holding.change24h || 0);
+    const displayedChangePositive = displayedChangeValue >= 0;
 
     return (
         <div
@@ -97,7 +103,7 @@ const HoldingRow = memo(function HoldingRow({
                         ((hideBalances && !isWatchlist) ? '••••••' : `${holding.value.toLocaleString(undefined, { maximumFractionDigits: 2 })} ${baseCurrency === 'USD' ? '$' : baseCurrency}`)
                     )}
                 </span>
-                <span className={`text-[10px] sm:text-sm font-medium ${holding.change24h >= 0 ? 'text-success' : 'text-danger'}`}>
+                <span className={`text-[10px] sm:text-sm font-medium ${displayedChangePositive ? 'text-success' : 'text-danger'}`}>
                     {loading ? (
                         <div className="w-16 sm:w-20 h-4 bg-white-10 rounded animate-pulse mt-1 ml-auto" />
                     ) : (
@@ -106,8 +112,8 @@ const HoldingRow = memo(function HoldingRow({
                             {holding.asset !== baseCurrency && (
                                 <>
                                     {/* Always show nominal change unless hidden by privacy on regular portfolios */}
-                                    {(!hideBalances || isWatchlist) && `${holding.dailyPnl >= 0 ? '+' : '-'}${Math.abs(holding.dailyPnl).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ${baseCurrency === 'USD' ? '$' : baseCurrency} `}
-                                    ({holding.change24h >= 0 ? '+' : ''}{holding.change24h.toFixed(2)}%)
+                                    {(!hideBalances || isWatchlist) && `${displayedChangePositive ? '+' : '-'}${Math.abs(displayedChangeValue).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ${baseCurrency === 'USD' ? '$' : baseCurrency} `}
+                                    ({displayedChangePercent >= 0 ? '+' : ''}{displayedChangePercent.toFixed(2)}%)
                                 </>
                             )}
                         </>
@@ -142,6 +148,12 @@ export default function HoldingsList({ holdings, onSelect, onAddAsset, loading, 
     const setSortBy = (isWatchlist && onExternalSortChange) ? onExternalSortChange : setInternalSortBy;
     const [draggedIndex, setDraggedIndex] = useState(null);
     const [dragOverIndex, setDragOverIndex] = useState(null);
+    const [returnMode, setReturnMode] = useState(() => {
+        if (typeof window !== 'undefined') {
+            return localStorage.getItem('holdings_return_mode') || 'daily';
+        }
+        return 'daily';
+    });
     const dragItemRef = useRef(null);
     const dragOverItemRef = useRef(null);
 
@@ -179,6 +191,11 @@ export default function HoldingsList({ holdings, onSelect, onAddAsset, loading, 
         setSortBy(newSort);
         const storageKey = isWatchlist ? 'watchlist_sort' : 'holdings_sort';
         localStorage.setItem(storageKey, newSort);
+    };
+
+    const handleReturnModeChange = (mode) => {
+        setReturnMode(mode);
+        localStorage.setItem('holdings_return_mode', mode);
     };
 
     // Drag and drop handlers - memoized to prevent unnecessary re-renders
@@ -221,17 +238,19 @@ export default function HoldingsList({ holdings, onSelect, onAddAsset, loading, 
     }, [holdings, currentPortfolioId, onWatchlistReorder]);
 
     // Sort holdings and separate fiat from non-fiat
-    const { nonFiatHoldings, fiatHoldings, totalFiatValue, totalFiatDailyPnl } = useMemo(() => {
+    const { nonFiatHoldings, fiatHoldings, totalFiatValue, totalFiatDailyPnl, totalFiatProfit } = useMemo(() => {
         const fiat = [];
         const nonFiat = [];
         let fiatTotal = 0;
         let fiatDailyTotal = 0;
+        let fiatProfitTotal = 0;
 
         holdings.forEach(h => {
             if (h.isFiat && !isWatchlist) {
                 fiat.push(h);
                 fiatTotal += h.value || 0;
                 fiatDailyTotal += h.dailyPnl || 0;
+                fiatProfitTotal += h.totalProfit || 0;
             } else {
                 nonFiat.push(h);
             }
@@ -241,9 +260,13 @@ export default function HoldingsList({ holdings, onSelect, onAddAsset, loading, 
         const sortedNonFiat = sortBy === 'custom' ? nonFiat : [...nonFiat].sort((a, b) => {
             switch (sortBy) {
                 case 'gainers':
-                    return b.change24h - a.change24h;
+                    return returnMode === 'total'
+                        ? (b.totalProfit || 0) - (a.totalProfit || 0)
+                        : b.change24h - a.change24h;
                 case 'losers':
-                    return a.change24h - b.change24h;
+                    return returnMode === 'total'
+                        ? (a.totalProfit || 0) - (b.totalProfit || 0)
+                        : a.change24h - b.change24h;
                 case 'alphabetical':
                     const nameA = DISPLAY_NAME ? a.name : a.asset;
                     const nameB = DISPLAY_NAME ? b.name : b.asset;
@@ -261,41 +284,68 @@ export default function HoldingsList({ holdings, onSelect, onAddAsset, loading, 
             nonFiatHoldings: sortedNonFiat,
             fiatHoldings: sortedFiat,
             totalFiatValue: fiatTotal,
-            totalFiatDailyPnl: fiatDailyTotal
+            totalFiatDailyPnl: fiatDailyTotal,
+            totalFiatProfit: fiatProfitTotal
         };
-    }, [holdings, sortBy, isWatchlist]);
+    }, [holdings, sortBy, isWatchlist, returnMode]);
 
     const activeOptions = isWatchlist ? WATCHLIST_SORT_OPTIONS : SORT_OPTIONS;
     const isDraggable = isWatchlist && sortBy === 'custom';
+    const displayedFiatChange = returnMode === 'total' ? totalFiatProfit : totalFiatDailyPnl;
 
     return (
         <div className="flex flex-col gap-2">
             {/* Only show header for regular portfolios - watchlist sort is in the top bar */}
             {!isWatchlist && (
-                <div className="flex items-center justify-between mb-1">
+                <div className="flex items-center justify-between mb-1 gap-2">
                     <h2 className="text-xl">Holdings</h2>
-                    {holdings.length > 1 && (
-                        <select
-                            value={sortBy}
-                            onChange={(e) => handleSortChange(e.target.value)}
-                            className="bg-white-5 hover:bg-white-10 border border-white-10 text-white text-xs font-medium rounded-full cursor-pointer transition-all focus:outline-none"
-                            style={{
-                                appearance: 'none',
-                                WebkitAppearance: 'none',
-                                MozAppearance: 'none',
-                                padding: '4px 24px 4px 10px',
-                                backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='10' viewBox='0 0 24 24' fill='none' stroke='white' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E")`,
-                                backgroundRepeat: 'no-repeat',
-                                backgroundPosition: 'right 8px center'
-                            }}
-                        >
-                            {activeOptions.map(o => (
-                                <option key={o.id} value={o.id} style={{ backgroundColor: '#171717', color: 'white' }}>
-                                    {o.label}
-                                </option>
+                    <div className="flex items-center gap-2 shrink-0">
+                        <div className="flex items-center gap-1 rounded-lg p-0.5" style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.08)' }}>
+                            {[
+                                { id: 'daily', label: 'Daily' },
+                                { id: 'total', label: 'Total' }
+                            ].map(mode => (
+                                <button
+                                    key={mode.id}
+                                    type="button"
+                                    onClick={() => handleReturnModeChange(mode.id)}
+                                    className="text-xs font-bold transition-all"
+                                    style={{
+                                        background: returnMode === mode.id ? 'var(--foreground)' : 'transparent',
+                                        color: returnMode === mode.id ? 'var(--background)' : 'var(--text-muted)',
+                                        border: 'none',
+                                        borderRadius: '6px',
+                                        padding: '4px 8px',
+                                        cursor: 'pointer'
+                                    }}
+                                >
+                                    {mode.label}
+                                </button>
                             ))}
-                        </select>
-                    )}
+                        </div>
+                        {holdings.length > 1 && (
+                            <select
+                                value={sortBy}
+                                onChange={(e) => handleSortChange(e.target.value)}
+                                className="bg-white-5 hover:bg-white-10 border border-white-10 text-white text-xs font-medium rounded-full cursor-pointer transition-all focus:outline-none"
+                                style={{
+                                    appearance: 'none',
+                                    WebkitAppearance: 'none',
+                                    MozAppearance: 'none',
+                                    padding: '4px 24px 4px 10px',
+                                    backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='10' viewBox='0 0 24 24' fill='none' stroke='white' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E")`,
+                                    backgroundRepeat: 'no-repeat',
+                                    backgroundPosition: 'right 8px center'
+                                }}
+                            >
+                                {activeOptions.map(o => (
+                                    <option key={o.id} value={o.id} style={{ backgroundColor: '#171717', color: 'white' }}>
+                                        {o.label}
+                                    </option>
+                                ))}
+                            </select>
+                        )}
+                    </div>
                 </div>
             )}
 
@@ -313,6 +363,7 @@ export default function HoldingsList({ holdings, onSelect, onAddAsset, loading, 
                     hideBalances={hideBalances}
                     isWatchlist={isWatchlist}
                     baseCurrency={baseCurrency}
+                    returnMode={returnMode}
                     onSelect={onSelect}
                     handleDragStart={handleDragStart}
                     handleDragOver={handleDragOver}
@@ -369,8 +420,8 @@ export default function HoldingsList({ holdings, onSelect, onAddAsset, loading, 
                             <span className="text-base sm:text-lg font-bold">
                                 {hideBalances ? '••••••' : `${totalFiatValue.toLocaleString(undefined, { maximumFractionDigits: 2 })} ${baseCurrency === 'USD' ? '$' : baseCurrency}`}
                             </span>
-                            <span className={`text-[10px] sm:text-sm font-medium ${totalFiatDailyPnl >= 0 ? 'text-success' : 'text-danger'}`}>
-                                {!hideBalances && `${totalFiatDailyPnl >= 0 ? '+' : '-'}${Math.abs(totalFiatDailyPnl).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ${baseCurrency === 'USD' ? '$' : baseCurrency}`}
+                            <span className={`text-[10px] sm:text-sm font-medium ${displayedFiatChange >= 0 ? 'text-success' : 'text-danger'}`}>
+                                {!hideBalances && `${displayedFiatChange >= 0 ? '+' : '-'}${Math.abs(displayedFiatChange).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ${baseCurrency === 'USD' ? '$' : baseCurrency}`}
                             </span>
                         </div>
                     </div>
@@ -391,6 +442,7 @@ export default function HoldingsList({ holdings, onSelect, onAddAsset, loading, 
                                     hideBalances={hideBalances}
                                     isWatchlist={isWatchlist}
                                     baseCurrency={baseCurrency}
+                                    returnMode={returnMode}
                                     onSelect={onSelect}
                                     handleDragStart={handleDragStart}
                                     handleDragOver={handleDragOver}

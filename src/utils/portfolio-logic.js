@@ -40,6 +40,17 @@ function upper(value) {
     return value ? String(value).trim().toUpperCase() : '';
 }
 
+function normalizeMarketCurrency(currency) {
+    const curr = upper(currency);
+    if (curr === 'GBX' || curr === 'GBP') return 'GBP';
+    return curr;
+}
+
+function isPenceCurrency(currency) {
+    const raw = String(currency || '').trim();
+    return raw === 'GBp' || upper(raw) === 'GBX';
+}
+
 export function normalizeAsset(asset) {
     if (!asset) return asset;
     const s = upper(asset);
@@ -514,7 +525,11 @@ function getAssetPriceSnapshot(asset, amount, priceMap, baseCurrency, preferredS
         usedMarketState = 'POST';
     }
 
-    let quoteCurrency = getQuoteCurrencyFromSymbol(priceSym) || upper(quote.currency) || 'USD';
+    const quoteCurrencyFromFeed = normalizeMarketCurrency(quote.currency);
+    let quoteCurrency = quoteCurrencyFromFeed || getQuoteCurrencyFromSymbol(priceSym) || 'USD';
+    if (isPenceCurrency(quote.currency)) {
+        localPrice = localPrice / 100;
+    }
     let fxRate = 1;
     let fxMissing = false;
     let fxChangePercent = 0;

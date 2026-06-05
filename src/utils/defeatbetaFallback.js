@@ -18,6 +18,16 @@ const HF_DATASET_BASE = 'https://huggingface.co/datasets/bwzheng2010/yahoo-finan
 const responseCache = new Map();
 const CACHE_TTL = 60 * 60 * 1000; // 1 hour cache
 
+function isPenceCurrency(currency) {
+    const raw = String(currency || '').trim();
+    return raw === 'GBp' || raw.toUpperCase() === 'GBX';
+}
+
+function scalePrice(value, currency) {
+    if (value === null || value === undefined) return value;
+    return isPenceCurrency(currency) ? value * 0.01 : value;
+}
+
 /**
  * Fetch price history from Hugging Face dataset (Defeatbeta-compatible)
  * Returns: { history: [{ date, price }] } or null on failure
@@ -149,10 +159,11 @@ export async function fetchAlternativeHistory(symbol, range = '1M') {
                 const result = data.chart.result[0];
                 const timestamps = result.timestamp || [];
                 const closes = result.indicators?.quote?.[0]?.close || [];
+                const currency = result.meta?.currency;
 
                 const history = timestamps.map((ts, i) => ({
                     date: new Date(ts * 1000),
-                    price: closes[i]
+                    price: scalePrice(closes[i], currency)
                 })).filter(h => h.price !== null && h.price !== undefined && h.price > 0);
 
                 return { history, source: 'yahoo-direct' };

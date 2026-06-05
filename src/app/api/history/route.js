@@ -2,6 +2,16 @@ import { yahooApiCall, randomDelay } from '@/utils/yahooHelper';
 import { fetchAlternativeHistory, shouldUseFallback } from '@/utils/defeatbetaFallback';
 import { NextResponse } from 'next/server';
 
+function isPenceCurrency(currency) {
+    const raw = String(currency || '').trim();
+    return raw === 'GBp' || raw.toUpperCase() === 'GBX';
+}
+
+function scalePrice(value, currency) {
+    if (value === null || value === undefined) return value;
+    return isPenceCurrency(currency) ? value * 0.01 : value;
+}
+
 // IQR-based outlier smoothing + percentage-based V-shape detection
 function smoothOutliers(data) {
     if (!data || data.length < 10) return data;
@@ -138,9 +148,10 @@ export async function GET(request) {
         }
 
         // Extract and filter
+        const quoteCurrency = result?.meta?.currency;
         let history = result.quotes.map(q => ({
             date: q.date,
-            price: q.close
+            price: scalePrice(q.close, quoteCurrency)
         })).filter(q => q.price !== null && q.price !== undefined && q.price > 0);
 
         // For 1D range, if no data (non-trading day), look back up to 5 days to find last trading day
@@ -160,9 +171,10 @@ export async function GET(request) {
                     { maxRetries: 2, initialDelay: false }
                 );
 
+                const extendedQuoteCurrency = result?.meta?.currency;
                 history = result.quotes.map(q => ({
                     date: q.date,
-                    price: q.close
+                    price: scalePrice(q.close, extendedQuoteCurrency)
                 })).filter(q => q.price !== null && q.price !== undefined && q.price > 0);
 
                 // If we found data, only keep the most recent trading day

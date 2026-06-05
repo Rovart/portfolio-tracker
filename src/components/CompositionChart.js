@@ -146,26 +146,28 @@ function CompositionChart({ holdings, baseCurrency, hideBalances, loading }) {
 export default memo(CompositionChart);
 
 function LoadingPie() {
-    const dummyData = [{ value: 1 }];
     return (
         <div style={{ height: '380px', width: '100%', display: 'flex', flexDirection: 'column', background: 'transparent' }} className="animate-pulse">
             <h2 className="text-sm text-muted uppercase tracking-widest font-bold mb-4" style={{ fontSize: '0.75rem' }}>Portfolio Composition</h2>
-            <div style={{ flex: 1, minHeight: 0, opacity: 0.15 }}>
-                <ResponsiveContainer width="100%" height="100%">
-                    <PieChart>
-                        <Pie
-                            data={dummyData}
-                            cx="50%"
-                            cy="45%"
-                            innerRadius={70}
-                            outerRadius={95}
-                            dataKey="value"
-                            stroke="none"
-                            fill="#525252"
-                            isAnimationActive={false}
-                        />
-                    </PieChart>
-                </ResponsiveContainer>
+            <div style={{ flex: 1, minHeight: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', opacity: 0.18 }}>
+                <div
+                    style={{
+                        width: '190px',
+                        height: '190px',
+                        borderRadius: '50%',
+                        background: 'conic-gradient(from 0deg, #525252 0 32%, #404040 32% 62%, #2f2f2f 62% 100%)',
+                        position: 'relative'
+                    }}
+                >
+                    <div
+                        style={{
+                            position: 'absolute',
+                            inset: '58px',
+                            borderRadius: '50%',
+                            background: 'var(--background)'
+                        }}
+                    />
+                </div>
             </div>
         </div>
     );

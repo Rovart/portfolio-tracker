@@ -9,6 +9,7 @@ import ConfirmModal from './ConfirmModal';
 import { Trash2, Edit2, X, Plus, ChevronLeft, ArrowLeft, Moon, Sun, Eye, EyeOff } from 'lucide-react';
 import {
     normalizeAsset,
+    isFiatAsset,
     calculateAssetAccounting
 } from '@/utils/portfolio-logic';
 import {
@@ -19,6 +20,7 @@ import { addWatchlistAsset, removeWatchlistAsset, isSymbolInWatchlist } from '@/
 import { COMMODITY_NAMES } from '@/utils/commodities';
 
 // Header display logic: Title = Name, Subtitle = Symbol
+const ASSET_SUMMARY_METRICS = ['value', 'profit', 'realized'];
 
 function toFiniteNumber(value) {
     const parsed = parseFloat(value);
@@ -61,6 +63,7 @@ export default function TransactionModal({
     const [assetTab, setAssetTab] = useState('overview'); // 'overview' | 'financials'
     const [isInWatchlist, setIsInWatchlist] = useState(false);
     const [rangePerformance, setRangePerformance] = useState(null); // { range, change, changePercent }
+    const [assetSummaryMetric, setAssetSummaryMetric] = useState('value'); // 'value' | 'profit' | 'realized'
 
     // Sync selectedAsset when holding prop changes (e.g. if name is loaded late in Dashboard)
     // Use primitive dependencies to minimize re-runs
@@ -114,6 +117,10 @@ export default function TransactionModal({
     const selectedAssetCurrency = selectedAsset?.currency;
     const selectedAssetOriginalType = selectedAsset?.originalType;
     const selectedAssetIsBareCurrencyOrigin = selectedAsset?.isBareCurrencyOrigin;
+
+    useEffect(() => {
+        setAssetSummaryMetric('value');
+    }, [selectedAssetSymbol]);
 
     useEffect(() => {
         priceDataPriceRef.current = priceData.price;
@@ -400,7 +407,7 @@ export default function TransactionModal({
                 }
 
                 // Fetch conversion history for every quote/fee currency used by the ledger.
-                // This is needed for FIFO cost basis, mixed quote currencies and crypto-to-crypto trades.
+                // Needed for cost basis across mixed quote currencies and crypto-to-crypto trades.
                 const fetchedTransactionFx = {};
                 if (transactions && transactions.length > 0) {
                     const conversionCurrencies = new Set();
@@ -554,9 +561,7 @@ export default function TransactionModal({
             return {
                 currentBalance: 0,
                 averagePurchasePrice: 0,
-                remainingCostBasis: 0,
-                realizedPnl: 0,
-                missingCostFx: false
+                remainingCostBasis: 0
             };
         }
 
@@ -569,16 +574,48 @@ export default function TransactionModal({
     }, [transactions, selectedSymbol, transactionFx, baseCurrency]);
 
     const {
-        currentBalance,
-        averagePurchasePrice,
-        remainingCostBasis: currentCostBasisBase,
-        realizedPnl: realizedProfitBase,
-        missingCostFx
+        currentBalance = 0,
+        averagePurchasePrice = 0,
+        remainingCostBasis: currentCostBasisBase = 0,
+        realizedPnl: realizedProfitBase = 0
     } = assetAccounting;
 
     const currentValueBase = currentBalance * liveAssetPrice * fxRate;
-    const positionProfit = currentValueBase - currentCostBasisBase;
-    const positionProfitPercent = currentCostBasisBase > 0 ? (positionProfit / currentCostBasisBase) * 100 : 0;
+    const isSelectedFiat = isFiatAsset(selectedSymbol);
+    const unrealizedProfitBase = isSelectedFiat ? 0 : currentValueBase - currentCostBasisBase;
+    const totalProfitBase = isSelectedFiat ? 0 : unrealizedProfitBase + realizedProfitBase;
+
+    const toggleAssetSummaryMetric = () => {
+        setAssetSummaryMetric(prev => {
+            const index = ASSET_SUMMARY_METRICS.indexOf(prev);
+            return ASSET_SUMMARY_METRICS[(index + 1) % ASSET_SUMMARY_METRICS.length];
+        });
+    };
+
+    const isAssetProfitMetric = assetSummaryMetric === 'profit';
+    const isAssetRealizedMetric = assetSummaryMetric === 'realized';
+    const assetSummaryValue = isAssetRealizedMetric
+        ? realizedProfitBase
+        : isAssetProfitMetric
+            ? totalProfitBase
+            : currentValueBase;
+    const assetSummaryLabel = isAssetRealizedMetric
+        ? 'Realized Profit'
+        : isAssetProfitMetric
+            ? 'Total Profit'
+            : 'Total Value';
+    const nextAssetSummaryLabel = assetSummaryMetric === 'value'
+        ? 'Total Profit'
+        : assetSummaryMetric === 'profit'
+            ? 'Realized Profit'
+            : 'Total Value';
+    const assetSummarySign = isAssetProfitMetric || isAssetRealizedMetric
+        ? (assetSummaryValue >= 0 ? '+' : '-')
+        : (assetSummaryValue < 0 ? '-' : '');
+    const assetSummaryClass = isAssetProfitMetric || isAssetRealizedMetric
+        ? (assetSummaryValue >= 0 ? 'text-success' : 'text-danger')
+        : 'text-success';
+    const canShowAssetSummary = !loadingPrice && (isAssetRealizedMetric || liveAssetPrice);
 
     const handleAssetSelect = (asset) => {
         // Calculate current balance for the selected asset from transaction history
@@ -868,36 +905,36 @@ export default function TransactionModal({
                                                         {loadingPrice ? (
                                                             <div className="h-7 w-24 bg-white-10 rounded animate-pulse mt-1" />
                                                         ) : (
-                                                            <>
-                                                                <span className="text sm:text-2xl text-center">
-                                                                    {averagePurchasePrice.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} {baseCurrency === 'USD' ? '$' : baseCurrency}
-                                                                </span>
-                                                                {currentCostBasisBase > 0 && (
-                                                                    <span className={`text-xs font-medium text-center ${positionProfit >= 0 ? 'text-success' : 'text-danger'}`}>
-                                                                        {hideBalances ? '••••••' : `${positionProfit >= 0 ? '+' : '-'}${Math.abs(positionProfit).toLocaleString(undefined, { maximumFractionDigits: 2 })} ${baseCurrency === 'USD' ? '$' : baseCurrency} `}
-                                                                        ({positionProfitPercent >= 0 ? '+' : ''}{positionProfitPercent.toFixed(2)}%)
-                                                                    </span>
-                                                                )}
-                                                                {Math.abs(realizedProfitBase) > 0.005 && (
-                                                                    <span className={`text-[10px] font-medium text-center ${realizedProfitBase >= 0 ? 'text-success' : 'text-danger'}`}>
-                                                                        Realized: {hideBalances ? '******' : `${realizedProfitBase >= 0 ? '+' : '-'}${Math.abs(realizedProfitBase).toLocaleString(undefined, { maximumFractionDigits: 2 })} ${baseCurrency === 'USD' ? '$' : baseCurrency}`}
-                                                                    </span>
-                                                                )}
-                                                                {missingCostFx && (
-                                                                    <span className="text-[10px] text-muted text-center">Cost FX incomplete</span>
-                                                                )}
-                                                            </>
+                                                            <span className="text sm:text-2xl text-center">
+                                                                {averagePurchasePrice.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} {baseCurrency === 'USD' ? '$' : baseCurrency}
+                                                            </span>
                                                         )}
                                                     </div>
                                                 )}
-                                                <div className="flex flex-col flex-1 items-end">
-                                                    <span className="text-xs sm:text-sm text-muted uppercase tracking-wider text-right">Total Value</span>
-                                                    {loadingPrice || !liveAssetPrice ? (
+                                                <button
+                                                    type="button"
+                                                    onClick={toggleAssetSummaryMetric}
+                                                    className="flex flex-col flex-1 items-end text-right active-scale"
+                                                    style={{
+                                                        background: 'transparent',
+                                                        border: 'none',
+                                                        padding: 0,
+                                                        cursor: 'pointer',
+                                                        touchAction: 'manipulation',
+                                                        minHeight: '48px'
+                                                    }}
+                                                    title={`Show ${nextAssetSummaryLabel}`}
+                                                    aria-label={`${assetSummaryLabel}: ${hideBalances ? 'hidden' : `${assetSummarySign}${Math.abs(assetSummaryValue).toLocaleString(undefined, { maximumFractionDigits: 2 })} ${baseCurrency === 'USD' ? '$' : baseCurrency}`}`}
+                                                >
+                                                    <span className="text-xs sm:text-sm text-muted uppercase tracking-wider text-right">{assetSummaryLabel}</span>
+                                                    {!canShowAssetSummary ? (
                                                         <div className="h-7 w-32 bg-white-10 rounded animate-pulse mt-1" />
                                                     ) : (
-                                                        <span className="text sm:text-2xl text-success text-right">{hideBalances ? '••••••' : `${currentValueBase.toLocaleString(undefined, { maximumFractionDigits: 2 })} ${baseCurrency === 'USD' ? '$' : baseCurrency}`}</span>
+                                                        <span className={`text sm:text-2xl text-right ${assetSummaryClass}`}>
+                                                            {hideBalances ? '••••••' : `${assetSummarySign}${Math.abs(assetSummaryValue).toLocaleString(undefined, { maximumFractionDigits: 2 })} ${baseCurrency === 'USD' ? '$' : baseCurrency}`}
+                                                        </span>
                                                     )}
-                                                </div>
+                                                </button>
                                             </>
                                         )}
                                     </div>
@@ -980,11 +1017,7 @@ export default function TransactionModal({
                                                                                 const pnlBase = currentValBase - costBase;
                                                                                 const pnlPercent = costBase > 0 ? (pnlBase / costBase) * 100 : 0;
                                                                                 if (costBase <= 0) {
-                                                                                    return (
-                                                                                        <span style={{ textAlign: 'right', marginRight: '10px' }} className="text-sm font-bold text-muted">
-                                                                                            FX missing
-                                                                                        </span>
-                                                                                    );
+                                                                                    return null;
                                                                                 }
                                                                                 return (
                                                                                     <span style={{ textAlign: 'right', marginRight: '10px' }} className={`text-sm font-bold ${pnlBase >= 0 ? 'text-success' : 'text-danger'}`}>

@@ -11,7 +11,6 @@ import SettingsModal from './SettingsModal';
 import PullToRefresh from './PullToRefresh';
 import {
     calculateHoldings,
-    calculatePortfolioAccounting,
     normalizeAsset,
     getCurrentAssetRate,
     getQuoteCurrencyFromSymbol,
@@ -170,7 +169,6 @@ export default function Dashboard() {
     const [isWatchlistView, setIsWatchlistView] = useState(false);
     const [watchlistAssets, setWatchlistAssets] = useState([]);
     const [watchlistSort, setWatchlistSort] = useState('custom');
-    const [summaryMetric, setSummaryMetric] = useState('value'); // 'value' | 'profit'
     const [chartMode, setChartMode] = useState('performance'); // 'performance' | 'value'
     const prevTimeframeRef = useRef(timeframe);
     const prevBaseCurrencyRef = useRef(baseCurrency);
@@ -1128,20 +1126,11 @@ export default function Dashboard() {
         setIsModalOpen(true);
     };
 
-    const toggleSummaryMetric = useCallback(() => {
-        setSummaryMetric(prev => prev === 'value' ? 'profit' : 'value');
-    }, []);
-
     // Dashboard calculations
     const {
         totalValue,
         grossAssetsValue,
         cashValue,
-        totalProfit,
-        realizedProfit,
-        unrealizedProfit,
-        missingProfitFx,
-        missingValuations,
         displayDiffDay,
         displayPercentDay,
         safeDiff,
@@ -1150,21 +1139,6 @@ export default function Dashboard() {
         const currentTotal = holdings.reduce((acc, h) => acc + (h.value || 0), 0);
         const grossAssets = holdings.reduce((acc, h) => acc + (!h.isFiat ? (h.value || 0) : 0), 0);
         const cash = holdings.reduce((acc, h) => acc + (h.isFiat ? (h.value || 0) : 0), 0);
-        const missing = holdings.filter(h => h.fxMissing || h.priceMissing).length;
-        const accounting = calculatePortfolioAccounting(
-            transactions,
-            baseCurrency,
-            historicalRateResolver
-        );
-        const realized = Object.values(accounting.positions)
-            .reduce((acc, position) => acc + (position.realizedPnl || 0), 0);
-        const unrealized = holdings
-            .reduce((acc, h) => acc + (!h.isFiat ? (h.unrealizedProfit || 0) : 0), 0);
-        const profitFxMissing = transactionFxLoading ||
-            holdings.some(h => h.missingCostFx || h.missingCostBasis || h.oversoldQuantity > 0) ||
-            Object.values(accounting.positions).some(position =>
-                position.missingCostFx || position.missingCostBasis || position.oversoldQuantity > 0
-            );
         const prevValueDay = holdings.reduce((acc, h) => {
             const changeFactor = 1 + ((h.change24h || 0) / 100);
             if (Math.abs(changeFactor) < 0.0001) return acc + h.value;
@@ -1187,39 +1161,18 @@ export default function Dashboard() {
             totalValue: currentTotal,
             grossAssetsValue: grossAssets,
             cashValue: cash,
-            totalProfit: realized + unrealized,
-            realizedProfit: realized,
-            unrealizedProfit: unrealized,
-            missingProfitFx: profitFxMissing,
-            missingValuations: missing,
             displayDiffDay: dayDiff,
             displayPercentDay: dayPercent,
             safeDiff: displayDiff || 0,
             safePercent: displayPercent || 0
         };
-    }, [holdings, history, timeframe, transactions, baseCurrency, historicalRateResolver, transactionFxLoading]);
+    }, [holdings, history, timeframe]);
 
     const currencyLabel = baseCurrency === 'USD' ? '$' : baseCurrency;
-    const isProfitMetric = summaryMetric === 'profit';
-    const summaryValue = isProfitMetric ? totalProfit : totalValue;
-    const summaryLabel = isProfitMetric ? 'Total Profit' : 'Total Value';
-    const summaryTitle = isProfitMetric ? 'Show Total Value' : 'Show Total Profit';
-    const summaryValueClass = isProfitMetric
-        ? (totalProfit >= 0 ? 'text-success' : 'text-danger')
-        : '';
-    const summarySign = isProfitMetric
-        ? (summaryValue >= 0 ? '+' : '-')
-        : (summaryValue < 0 ? '-' : '');
+    const summarySign = totalValue < 0 ? '-' : '';
     const formattedSummaryValue = hideBalances
         ? '••••••'
-        : `${summarySign}${Math.abs(summaryValue).toLocaleString(undefined, { maximumFractionDigits: 2 })} ${currencyLabel}`;
-    const formattedRealizedProfit = hideBalances
-        ? '******'
-        : `${realizedProfit >= 0 ? '+' : '-'}${Math.abs(realizedProfit).toLocaleString(undefined, { maximumFractionDigits: 2 })} ${currencyLabel}`;
-    const formattedUnrealizedProfit = hideBalances
-        ? '******'
-        : `${unrealizedProfit >= 0 ? '+' : '-'}${Math.abs(unrealizedProfit).toLocaleString(undefined, { maximumFractionDigits: 2 })} ${currencyLabel}`;
-
+        : `${summarySign}${Math.abs(totalValue).toLocaleString(undefined, { maximumFractionDigits: 2 })} ${currencyLabel}`;
     return (
         <>
             {/* Portfolio Selector - OUTSIDE PullToRefresh to allow horizontal scrolling */}
@@ -1362,21 +1315,14 @@ export default function Dashboard() {
                                             <>
                                                 {!isWatchlistView && (
                                                     <div className="flex flex-wrap items-center gap-3">
-                                                        <button
-                                                            type="button"
-                                                            onClick={toggleSummaryMetric}
-                                                            className="text-left active-scale"
-                                                            style={{ background: 'transparent', border: 'none', padding: 0, cursor: 'pointer' }}
-                                                            title={summaryTitle}
-                                                            aria-label={`${summaryLabel}: ${hideBalances ? 'hidden' : formattedSummaryValue}`}
-                                                        >
+                                                        <div className="text-left">
                                                             <span className="text-xs text-muted uppercase tracking-wider font-bold" style={{ display: 'block', marginBottom: '2px' }}>
-                                                                {summaryLabel}
+                                                                Total Value
                                                             </span>
-                                                            <span className={`text-2xl font-bold tracking-tight ${summaryValueClass}`}>
+                                                            <span className="text-2xl font-bold tracking-tight">
                                                                 {formattedSummaryValue}
                                                             </span>
-                                                        </button>
+                                                        </div>
                                                     </div>
                                                 )}
                                                 {!isWatchlistView && (
@@ -1393,22 +1339,15 @@ export default function Dashboard() {
                                         {!isWatchlistView && (
                                             <>
                                                 <div className="flex flex-wrap items-center gap-3">
-                                                    <button
-                                                        type="button"
-                                                        onClick={toggleSummaryMetric}
-                                                        className="text-left active-scale"
-                                                        style={{ background: 'transparent', border: 'none', padding: 0, cursor: 'pointer' }}
-                                                        title={summaryTitle}
-                                                        aria-label={`${summaryLabel}: ${hideBalances ? 'hidden' : formattedSummaryValue}`}
-                                                    >
+                                                    <div className="text-left">
                                                         <span className="text-xs text-muted uppercase tracking-wider font-bold" style={{ display: 'block', marginBottom: '2px' }}>
-                                                            {summaryLabel}
+                                                            Total Value
                                                         </span>
-                                                        <span className={`text-2xl font-bold tracking-tight ${summaryValueClass}`}>
+                                                        <span className="text-2xl font-bold tracking-tight">
                                                             {formattedSummaryValue}
                                                         </span>
-                                                    </button>
-                                                    {!isProfitMetric && timeframe !== '1D' && (
+                                                    </div>
+                                                    {timeframe !== '1D' && (
                                                         <div style={{ marginLeft: '5px' }} className={`text-xs px-2 py-0.5 rounded-md font-medium ${displayDiffDay >= 0 ? 'bg-success/10 text-success' : 'bg-danger/10 text-danger'}`}>
                                                             {hideBalances ? (
                                                                 `(${displayPercentDay >= 0 ? '+' : ''}${displayPercentDay.toFixed(2)}%)`
@@ -1419,23 +1358,15 @@ export default function Dashboard() {
                                                     )}
                                                 </div>
                                                 <div className={`text font-medium flex flex-wrap items-center gap-x-3`}>
-                                                    {isProfitMetric ? (
-                                                        <div className={totalProfit >= 0 ? 'text-success' : 'text-danger'}>
-                                                            <span>
-                                                                FIFO · Realized: {formattedRealizedProfit} | Unrealized: {formattedUnrealizedProfit}
+                                                    <div className={safeDiff >= 0 ? 'text-success' : 'text-danger'}>
+                                                        {hideBalances ? (
+                                                            <span className="flex items-center gap-1">
+                                                                {safePercent >= 0 ? '+' : ''}{safePercent.toFixed(2)}%
                                                             </span>
-                                                        </div>
-                                                    ) : (
-                                                        <div className={safeDiff >= 0 ? 'text-success' : 'text-danger'}>
-                                                            {hideBalances ? (
-                                                                <span className="flex items-center gap-1">
-                                                                    {safePercent >= 0 ? '+' : ''}{safePercent.toFixed(2)}%
-                                                                </span>
-                                                            ) : (
-                                                                <span>{safeDiff >= 0 ? '+' : '-'}{Math.abs(safeDiff).toLocaleString(undefined, { maximumFractionDigits: 2 })} {currencyLabel} ({safePercent >= 0 ? '+' : ''}{safePercent.toFixed(2)}%)</span>
-                                                            )}
-                                                        </div>
-                                                    )}
+                                                        ) : (
+                                                            <span>{safeDiff >= 0 ? '+' : '-'}{Math.abs(safeDiff).toLocaleString(undefined, { maximumFractionDigits: 2 })} {currencyLabel} ({safePercent >= 0 ? '+' : ''}{safePercent.toFixed(2)}%)</span>
+                                                        )}
+                                                    </div>
                                                     <div className="text-muted text-xs" style={{ width: '100%', marginTop: '2px' }}>
                                                         {hideBalances ? (
                                                             'Assets: ****** | Cash: ******'
@@ -1443,16 +1374,6 @@ export default function Dashboard() {
                                                             `Assets: ${grossAssetsValue.toLocaleString(undefined, { maximumFractionDigits: 2 })} ${currencyLabel} | Cash: ${cashValue.toLocaleString(undefined, { maximumFractionDigits: 2 })} ${currencyLabel}`
                                                         )}
                                                     </div>
-                                                    {isProfitMetric && missingProfitFx && (
-                                                        <div className="text-muted text-xs" style={{ width: '100%', marginTop: '2px' }}>
-                                                            Profit FX incomplete
-                                                        </div>
-                                                    )}
-                                                    {missingValuations > 0 && (
-                                                        <div className="text-muted text-xs">
-                                                            {missingValuations} missing price/FX
-                                                        </div>
-                                                    )}
                                                 </div>
                                             </>
                                         )}
@@ -1460,23 +1381,13 @@ export default function Dashboard() {
                                 )}
                             </header>
 
-                            {/* Charts hidden for watchlists */}
-                            {!isWatchlistView && (
-                                <>
-                                    <div className="no-select">
-                                        <ProfitChart
-                                            data={history}
-                                            baseCurrency={baseCurrency}
-                                            hideBalances={hideBalances}
-                                            loading={historyLoading}
-                                            chartMode={chartMode}
-                                        />
-                                    </div>
-
-                                    <div className="flex gap-1 mb-3 no-select" style={{ maxWidth: '260px' }}>
-                                        {[
-                                            { id: 'performance', label: 'Performance' },
-                                            { id: 'value', label: 'Value' }
+	                            {/* Charts hidden for watchlists */}
+	                            {!isWatchlistView && (
+	                                <>
+	                                    <div className="flex gap-1 mb-3 no-select" style={{ maxWidth: '260px' }}>
+	                                        {[
+	                                            { id: 'performance', label: 'Performance' },
+	                                            { id: 'value', label: 'Value' }
                                         ].map(mode => (
                                             <button
                                                 key={mode.id}
@@ -1494,11 +1405,21 @@ export default function Dashboard() {
                                                 }}
                                             >
                                                 {mode.label}
-                                            </button>
-                                        ))}
-                                    </div>
+	                                            </button>
+	                                        ))}
+	                                    </div>
 
-                                    <div className="flex justify-between mb-8 overflow-x-auto gap-1 sm:gap-2 no-scrollbar">
+	                                    <div className="no-select">
+	                                        <ProfitChart
+	                                            data={history}
+	                                            baseCurrency={baseCurrency}
+	                                            hideBalances={hideBalances}
+	                                            loading={historyLoading}
+	                                            chartMode={chartMode}
+	                                        />
+	                                    </div>
+
+	                                    <div className="flex justify-between mb-8 overflow-x-auto gap-1 sm:gap-2 no-scrollbar">
                                         {TIMEFRAMES.map((tf) => (
                                             <button
                                                 key={tf}
