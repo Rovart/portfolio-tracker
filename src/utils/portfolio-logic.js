@@ -312,6 +312,14 @@ function shouldAffectQuoteBalance(tx, quote, cashTrackedCurrencies) {
     return cashTrackedCurrencies.has(upper(quote));
 }
 
+function shouldAffectFeeBalance(feeCurr, base, quote, affectsQuoteBalance, cashTrackedCurrencies) {
+    if (!feeCurr) return false;
+    if (feeCurr === base) return true;
+    if (feeCurr === quote) return affectsQuoteBalance;
+    if (!isFiatAsset(feeCurr)) return true;
+    return cashTrackedCurrencies.has(upper(feeCurr));
+}
+
 function createAccount() {
     return {
         lots: [],
@@ -438,9 +446,16 @@ export function calculatePortfolioAccounting(transactions, baseCurrency = 'USD',
         const quoteValueBase = costCurrency
             ? convertTxAmount(qAmt, costCurrency, baseCurrency, dateStr, convertRateForTx, accounts, base)
             : 0;
-        const feeValueBase = feeCurr
+        const feeValueBase = feeCurr && feeCurr !== base
             ? convertTxAmount(fAmt, feeCurr, baseCurrency, dateStr, convertRateForTx, accounts, base)
             : 0;
+        const affectsFeeBalance = shouldAffectFeeBalance(
+            feeCurr,
+            base,
+            quote,
+            affectsQuoteBalance,
+            cashTrackedCurrencies
+        );
 
         if (type === 'BUY') {
             balances[base] += bAmt;
@@ -469,7 +484,8 @@ export function calculatePortfolioAccounting(transactions, baseCurrency = 'USD',
             const proceedsBase = quoteValueBase - sellFeeBase;
 
             if (!isFiatAsset(base)) {
-                consumeLots(accounts, base, bAmt, proceedsBase, true);
+                const soldQuantity = feeCurr === base ? bAmt + fAmt : bAmt;
+                consumeLots(accounts, base, soldQuantity, proceedsBase, true);
             }
 
             if (quote && affectsQuoteBalance) {
@@ -493,10 +509,11 @@ export function calculatePortfolioAccounting(transactions, baseCurrency = 'USD',
             if (!isFiatAsset(base)) consumeLots(accounts, base, bAmt, 0, false);
         }
 
-        if (fAmt && feeCurr) {
+        if (fAmt && feeCurr && affectsFeeBalance) {
             balances[feeCurr] -= fAmt;
             const feeAlreadyRepresentedInBuyLot = type === 'BUY' && feeCurr === base;
-            if (!feeAlreadyRepresentedInBuyLot && !isFiatAsset(feeCurr)) {
+            const feeAlreadyRepresentedInSellLot = type === 'SELL' && feeCurr === base;
+            if (!feeAlreadyRepresentedInBuyLot && !feeAlreadyRepresentedInSellLot && !isFiatAsset(feeCurr)) {
                 consumeLots(accounts, feeCurr, fAmt, 0, false);
             }
         }

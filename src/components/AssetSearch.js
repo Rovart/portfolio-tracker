@@ -112,8 +112,15 @@ export default function AssetSearch({ onSelect, onCancel }) {
                         return (
                             <div
                                 key={item.symbol}
-                                className="bg-[#171717] border border-white/5 flex items-center justify-between p-5 rounded-3xl hover:bg-white/5 active:scale-[0.98] cursor-pointer transition-all group overflow-hidden relative"
+                                className="interactive-surface bg-[#171717] border border-white/5 flex items-center justify-between p-5 rounded-3xl hover:bg-white/5 active:scale-[0.98] cursor-pointer transition-all group overflow-hidden relative"
                                 onClick={handleClick}
+                                onKeyDown={(event) => {
+                                    if (event.key !== 'Enter' && event.key !== ' ') return;
+                                    event.preventDefault();
+                                    handleClick();
+                                }}
+                                role="button"
+                                tabIndex={0}
                             >
                                 <div className="flex flex-col min-w-0">
                                     <span className="font-bold text-xl group-hover:text-white transition-colors tracking-tight">{displayTitle}</span>

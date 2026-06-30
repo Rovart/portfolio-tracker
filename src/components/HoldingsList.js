@@ -33,13 +33,21 @@ const HoldingRow = memo(function HoldingRow({
     const displayedChangeValue = returnMode === 'total' && !isWatchlist ? totalProfit : (holding.dailyPnl || 0);
     const displayedChangePercent = returnMode === 'total' && !isWatchlist ? totalProfitPercent : (holding.change24h || 0);
     const displayedChangePositive = displayedChangeValue >= 0;
+    const handleKeyDown = (event) => {
+        if (event.key !== 'Enter' && event.key !== ' ') return;
+        event.preventDefault();
+        onSelect(holding);
+    };
 
     return (
         <div
             key={holding.asset}
-            className={`card flex justify-between items-center ${isBeingDragged ? 'opacity-50' : ''} ${isDragOver ? 'border-primary' : ''}`}
-            style={{ cursor: 'pointer', transition: 'opacity 0.15s, border-color 0.15s', marginBottom: 0 }}
+            className={`card interactive-surface flex justify-between items-center ${isBeingDragged ? 'opacity-50' : ''} ${isDragOver ? 'border-primary' : ''}`}
+            style={{ cursor: 'pointer', transition: 'opacity 150ms var(--ease-out), border-color 150ms var(--ease-out), background-color 150ms var(--ease-out), transform 140ms var(--ease-out)', marginBottom: 0 }}
             onClick={() => onSelect(holding)}
+            onKeyDown={handleKeyDown}
+            role="button"
+            tabIndex={0}
             draggable={showDragHandle}
             onDragStart={(e) => showDragHandle && handleDragStart(e, index)}
             onDragOver={(e) => { if (showDragHandle && dragItemRef.current !== null) handleDragOver(e, index); }}
@@ -384,8 +392,15 @@ export default function HoldingsList({ holdings, onSelect, onAddAsset, loading, 
                 >
                     {/* Fiat header - clickable to expand/collapse */}
                     <div
-                        className={`flex justify-between items-center cursor-pointer hover:bg-white/5 transition-colors rounded-xl ${fiatCollapsed ? 'card' : ''}`}
+                        className={`interactive-surface flex justify-between items-center cursor-pointer hover:bg-white/5 transition-colors rounded-xl ${fiatCollapsed ? 'card' : ''}`}
                         onClick={toggleFiatCollapsed}
+                        onKeyDown={(event) => {
+                            if (event.key !== 'Enter' && event.key !== ' ') return;
+                            event.preventDefault();
+                            toggleFiatCollapsed();
+                        }}
+                        role="button"
+                        tabIndex={0}
                         style={fiatCollapsed ? {
                             background: 'rgba(255,255,255,0.02)',
                             borderColor: 'rgba(255,255,255,0.05)'
@@ -457,9 +472,16 @@ export default function HoldingsList({ holdings, onSelect, onAddAsset, loading, 
 
             {holdings.length === 0 && !loading && (
                 <div
-                    className="card flex flex-col items-center justify-center py-10 bg-white-5 rounded-2xl border border-white-5 border-dashed gap-2 animate-enter hover:bg-white/10 hover:border-white/20 transition-all"
+                    className="card interactive-surface flex flex-col items-center justify-center py-10 bg-white-5 rounded-2xl border border-white-5 border-dashed gap-2 animate-enter hover:bg-white/10 hover:border-white/20 transition-all"
                     style={{ cursor: 'pointer' }}
                     onClick={onAddAsset}
+                    onKeyDown={(event) => {
+                        if (event.key !== 'Enter' && event.key !== ' ') return;
+                        event.preventDefault();
+                        onAddAsset();
+                    }}
+                    role="button"
+                    tabIndex={0}
                 >
                     <p className="text-sm font-medium text-white/80" style={{ margin: 0 }}>No assets yet.</p>
                     <p className="text-[10px] uppercase tracking-widest font-bold text-muted" style={{ margin: 0 }}>Tap to add your first asset</p>

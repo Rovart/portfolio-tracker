@@ -649,18 +649,7 @@ export default function TransactionModal({
     const canShowAssetSummary = !loadingPrice && (isAssetRealizedMetric || liveAssetPrice);
 
     const handleAssetSelect = (asset) => {
-        // Calculate current balance for the selected asset from transaction history
-        const normalizedTarget = normalizeAsset(asset.symbol);
-        const balance = transactions
-            ? transactions
-                .filter(t => normalizeAsset(t.baseCurrency) === normalizedTarget)
-                .reduce((acc, t) => {
-                    const bAmt = parseFloat(t.baseAmount) || 0;
-                    if (['BUY', 'DEPOSIT'].includes(t.type)) return acc + bAmt;
-                    if (['SELL', 'WITHDRAW'].includes(t.type)) return acc - bAmt;
-                    return acc;
-                }, 0)
-            : 0;
+        const balance = calculateAssetAccounting(transactions, asset.symbol, baseCurrency).currentBalance;
 
         setSelectedAsset({
             symbol: asset.symbol,
@@ -1297,29 +1286,8 @@ function TransactionForm({ holding, existingTx, transactions, onSave, onCancel, 
     // Calculate quote balance to determine default toggle state
     const quoteBalance = useMemo(() => {
         if (!transactions || !quoteCurrency) return 0;
-        const q = quoteCurrency.toUpperCase();
-
-        return transactions.reduce((acc, t) => {
-            const base = (t.baseCurrency || '').toUpperCase();
-            const quote = (t.quoteCurrency || '').toUpperCase();
-
-            // 1. Direct impact (this currency is the base of the transaction)
-            if (base === q || base === `${q}=X` || base === `${q}USD=X` || base === `${q}-USD` || base === `USD-${q}`) {
-                const bAmt = parseFloat(t.baseAmount) || 0;
-                if (['BUY', 'DEPOSIT'].includes(t.type)) return acc + bAmt;
-                if (['SELL', 'WITHDRAW'].includes(t.type)) return acc - bAmt;
-            }
-
-            // 2. Indirect impact (this currency is the quote of another transaction)
-            if (quote === q && (t.affectsQuoteBalance ?? t.affectsFiatBalance) !== false) {
-                const qAmt = parseFloat(t.quoteAmount) || 0;
-                if (t.type === 'BUY') return acc - qAmt;
-                if (t.type === 'SELL') return acc + qAmt;
-            }
-
-            return acc;
-        }, 0);
-    }, [transactions, quoteCurrency]);
+        return calculateAssetAccounting(transactions, quoteCurrency, baseCurrency).currentBalance;
+    }, [transactions, quoteCurrency, baseCurrency]);
 
     const [useFiat, setUseFiat] = useState(() => {
         if (existingTx) {
@@ -1442,11 +1410,16 @@ function TransactionForm({ holding, existingTx, transactions, onSave, onCancel, 
         setFormError('');
         const cleanPrice = parseFloat(price);
         const cleanAmount = parseFloat(amount);
+        const cleanFee = parseFloat(fee) || 0;
 
         // Validate
         if (!amount || isNaN(cleanAmount)) return;
         if ((type === 'BUY' || type === 'SELL') && (!price || isNaN(cleanPrice))) return;
-        if (['SELL', 'WITHDRAW'].includes(type) && cleanAmount > (parseFloat(holding.amount) || 0) + 0.00001) {
+        const feeUsesSelectedAsset = normalizeAsset(feeCurrency) === normalizeAsset(sym);
+        const balanceImpactAmount = ['SELL', 'WITHDRAW'].includes(type) && feeUsesSelectedAsset
+            ? cleanAmount + cleanFee
+            : cleanAmount;
+        if (['SELL', 'WITHDRAW'].includes(type) && balanceImpactAmount > (parseFloat(holding.amount) || 0) + 0.00001) {
             setFormError(`Amount exceeds current position (${(parseFloat(holding.amount) || 0).toLocaleString(undefined, { maximumFractionDigits: 8 })})`);
             return;
         }
@@ -1467,8 +1440,8 @@ function TransactionForm({ holding, existingTx, transactions, onSave, onCancel, 
             quoteCurrency: hasCostBasis ? quoteCurrency : null,
             exchange: existingTx?.exchange || 'MANUAL',
             originalType: holding.originalType || existingTx?.originalType || (quoteCurrency === 'USD' ? 'CRYPTOCURRENCY' : 'MANUAL'),
-            fee: parseFloat(fee) || 0,
-            feeCurrency: (parseFloat(fee) || 0) > 0 ? (feeCurrency || quoteCurrency) : null,
+            fee: cleanFee,
+            feeCurrency: cleanFee > 0 ? (feeCurrency || quoteCurrency) : null,
             // Keep the old field for CSV/backwards compatibility, but use quote balance semantics internally.
             affectsFiatBalance: shouldAffectQuoteBalance,
             affectsQuoteBalance: shouldAffectQuoteBalance,

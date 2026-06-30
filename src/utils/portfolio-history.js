@@ -65,6 +65,14 @@ function shouldAffectQuoteBalance(tx, quote, cashTrackedCurrencies) {
     return cashTrackedCurrencies.has(upper(quote));
 }
 
+function shouldAffectFeeBalance(feeCurr, base, quote, affectsQuoteBalance, cashTrackedCurrencies) {
+    if (!feeCurr) return false;
+    if (feeCurr === base) return true;
+    if (feeCurr === quote) return affectsQuoteBalance;
+    if (!isFiatAsset(feeCurr)) return true;
+    return cashTrackedCurrencies.has(upper(feeCurr));
+}
+
 function buildHistoryIndexes(historicalPrices) {
     const indexes = {};
 
@@ -235,6 +243,7 @@ export function calculatePortfolioHistory(transactions, historicalPrices, baseCu
             const bAmt = toNumber(tx.baseAmount);
             const qAmt = toNumber(tx.quoteAmount);
             const fAmt = toNumber(tx.fee);
+            const affectsQuoteBalance = shouldAffectQuoteBalance(tx, quote, cashTrackedCurrencies);
 
             if (base && !currentBalances[base]) currentBalances[base] = 0;
             if (quote && !currentBalances[quote]) currentBalances[quote] = 0;
@@ -242,12 +251,12 @@ export function calculatePortfolioHistory(transactions, historicalPrices, baseCu
 
             if (tx.type === 'BUY') {
                 currentBalances[base] += bAmt;
-                if (quote && shouldAffectQuoteBalance(tx, quote, cashTrackedCurrencies)) {
+                if (quote && affectsQuoteBalance) {
                     currentBalances[quote] -= qAmt;
                 }
             } else if (tx.type === 'SELL') {
                 currentBalances[base] -= bAmt;
-                if (quote && shouldAffectQuoteBalance(tx, quote, cashTrackedCurrencies)) {
+                if (quote && affectsQuoteBalance) {
                     currentBalances[quote] += qAmt;
                 }
             } else if (tx.type === 'DEPOSIT') {
@@ -258,7 +267,7 @@ export function calculatePortfolioHistory(transactions, historicalPrices, baseCu
                 externalFlows.push({ asset: base, amount: -bAmt });
             }
 
-            if (fAmt && feeCurr) {
+            if (fAmt && feeCurr && shouldAffectFeeBalance(feeCurr, base, quote, affectsQuoteBalance, cashTrackedCurrencies)) {
                 currentBalances[feeCurr] -= fAmt;
             }
 

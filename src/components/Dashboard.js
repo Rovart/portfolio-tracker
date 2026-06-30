@@ -1344,6 +1344,8 @@ export default function Dashboard() {
             {monetaxImportStatus && (
                 <div
                     className={`fixed top-4 left-1/2 -translate-x-1/2 px-4 py-3 rounded-xl text-sm font-medium shadow-lg z-50 ${monetaxImportStatus.kind === 'error' ? 'bg-red-500/15 text-red-200 border border-red-500/30' : monetaxImportStatus.kind === 'success' ? 'bg-green-500/15 text-green-200 border border-green-500/30' : 'bg-white/10 text-white border border-white/15'}`}
+                    role="status"
+                    aria-live="polite"
                 >
                     {monetaxImportStatus.message}
                 </div>
