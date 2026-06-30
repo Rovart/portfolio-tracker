@@ -43,6 +43,33 @@ import {
 } from '@/utils/db';
 
 const TIMEFRAMES = ['1D', '1W', '1M', '1Y', 'YTD', 'ALL'];
+const MONETAX_ALLOWED_ORIGINS = (process.env.NEXT_PUBLIC_MONETAX_ALLOWED_ORIGINS || '')
+    .split(',')
+    .map(origin => normalizeOrigin(origin))
+    .filter(Boolean);
+
+function normalizeOrigin(origin) {
+    try {
+        return new URL(String(origin).trim()).origin;
+    } catch {
+        return null;
+    }
+}
+
+function isLocalhostOrigin(origin) {
+    try {
+        const { hostname } = new URL(origin);
+        return hostname === 'localhost' || hostname === '127.0.0.1' || hostname === '[::1]';
+    } catch {
+        return false;
+    }
+}
+
+function isAllowedMonetaxOrigin(origin) {
+    if (!origin || origin === 'null') return false;
+    if (MONETAX_ALLOWED_ORIGINS.includes(origin)) return true;
+    return process.env.NODE_ENV !== 'production' && isLocalhostOrigin(origin);
+}
 
 function addExpandedMarketSymbols(target, symbol) {
     if (!symbol) return;
@@ -206,6 +233,7 @@ export default function Dashboard() {
     const rawHistoryRef = useRef(rawHistory);
     const priceMetadataRef = useRef({});
     const monetaxImportInProgressRef = useRef(false);
+    const monetaxImportRequestedRef = useRef(false);
 
     const CURRENCIES = ['USD', 'EUR', 'GBP', 'JPY', 'CAD', 'AUD', 'CHF', 'CNY', 'HKD', 'SGD', 'IDR'];
 
@@ -362,6 +390,7 @@ export default function Dashboard() {
             window.history.replaceState({}, '', '/');
         }
         if (searchParams.get('monetaxImport') === '1') {
+            monetaxImportRequestedRef.current = true;
             setMonetaxImportStatus({ kind: 'loading', message: 'Waiting for MoneTAX data...' });
             window.history.replaceState({}, '', '/');
         }
@@ -431,11 +460,20 @@ export default function Dashboard() {
 
         function handleMessage(event) {
             if (event.data?.type !== 'monetax-import') return;
+            if (!monetaxImportRequestedRef.current || event.source !== window.opener) return;
+            if (!isAllowedMonetaxOrigin(event.origin)) {
+                const message = 'MoneTAX origin is not allowed for direct import.';
+                setMonetaxImportStatus({ kind: 'error', message });
+                event.source?.postMessage?.({ type: 'monetax-import-result', ok: false, error: message }, event.origin);
+                return;
+            }
             importMonetaxPayload(event.data.payload, event.source, event.origin);
         }
 
         window.addEventListener('message', handleMessage);
-        window.opener?.postMessage?.({ type: 'monetax-ready' }, '*');
+        if (monetaxImportRequestedRef.current) {
+            window.opener?.postMessage?.({ type: 'monetax-ready' }, '*');
+        }
 
         return () => {
             cancelled = true;

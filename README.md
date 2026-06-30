@@ -95,6 +95,7 @@ A premium, dark-mode portfolio tracker built with Next.js, Recharts, and Yahoo F
 - Export your portfolio to CSV via Settings > Data Management
 - Import CSV files with automatic portfolio name detection
 - Choose to merge into existing portfolio or create new when importing
+- For MoneTAX direct import, set `NEXT_PUBLIC_MONETAX_ALLOWED_ORIGINS` to the comma-separated list of trusted MoneTAX origins that may send `postMessage` payloads.
 
 ### Customization
 - Switch between USD, EUR, AUD and other base currencies
