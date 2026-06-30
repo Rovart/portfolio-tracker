@@ -24,11 +24,14 @@ import {
     buildHistoricalConversionMaps,
     getHistoricalConversionRate
 } from '@/utils/historical-conversion';
+import { parsePortfolioCsv } from '@/utils/csvImport';
 import {
     getAllTransactions,
     getTransactionsByPortfolio,
     backfillMissingQuoteCurrencies,
     addTransaction,
+    importTransactions,
+    addPortfolio,
     updateTransaction,
     deleteTransaction,
     getSetting,
@@ -195,12 +198,14 @@ export default function Dashboard() {
     const [watchlistAssets, setWatchlistAssets] = useState([]);
     const [watchlistSort, setWatchlistSort] = useState('custom');
     const [chartMode, setChartMode] = useState('performance'); // 'performance' | 'value'
+    const [monetaxImportStatus, setMonetaxImportStatus] = useState(null);
     const prevTimeframeRef = useRef(timeframe);
     const prevBaseCurrencyRef = useRef(baseCurrency);
     const prevBaseCurrencyQuotesRef = useRef(baseCurrency);
     const pricesRef = useRef(prices);
     const rawHistoryRef = useRef(rawHistory);
     const priceMetadataRef = useRef({});
+    const monetaxImportInProgressRef = useRef(false);
 
     const CURRENCIES = ['USD', 'EUR', 'GBP', 'JPY', 'CAD', 'AUD', 'CHF', 'CNY', 'HKD', 'SGD', 'IDR'];
 
@@ -356,8 +361,88 @@ export default function Dashboard() {
             // Clean up URL without triggering re-render loop
             window.history.replaceState({}, '', '/');
         }
+        if (searchParams.get('monetaxImport') === '1') {
+            setMonetaxImportStatus({ kind: 'loading', message: 'Waiting for MoneTAX data...' });
+            window.history.replaceState({}, '', '/');
+        }
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []); // Run only once on mount
+
+    useEffect(() => {
+        let cancelled = false;
+
+        async function importMonetaxPayload(payload, source, origin) {
+            if (payload?.source !== 'MoneTAX' || !payload?.csv) return;
+            if (monetaxImportInProgressRef.current) return;
+            monetaxImportInProgressRef.current = true;
+            setMonetaxImportStatus({ kind: 'loading', message: 'Importing MoneTAX portfolio...' });
+
+            try {
+                const { transactions: importedTransactions, portfolioNames } = parsePortfolioCsv(payload.csv);
+                if (importedTransactions.length === 0) {
+                    throw new Error('No valid transactions found in the MoneTAX payload.');
+                }
+
+                let allPortfolios = await ensureDefaultPortfolio();
+                let targetViewId = 'all';
+
+                if (portfolioNames.length > 1) {
+                    for (const portfolioName of portfolioNames) {
+                        const groupTxs = importedTransactions.filter(tx => tx.csvPortfolioName === portfolioName);
+                        let target = allPortfolios.find(p => p.name === portfolioName);
+                        if (!target) {
+                            const id = await addPortfolio(portfolioName);
+                            target = { id, name: portfolioName };
+                            allPortfolios = await getAllPortfolios();
+                        }
+                        await importTransactions(groupTxs.map(tx => ({ ...tx, portfolioId: target.id })), target.id);
+                    }
+                } else {
+                    const portfolioName = portfolioNames[0] || payload.portfolioName || 'MoneTAX';
+                    let target = allPortfolios.find(p => p.name === portfolioName);
+                    if (!target) {
+                        const id = await addPortfolio(portfolioName);
+                        target = { id, name: portfolioName };
+                    }
+                    await importTransactions(importedTransactions.map(tx => ({ ...tx, portfolioId: target.id })), target.id);
+                    targetViewId = target.id;
+                }
+
+                if (cancelled) return;
+                const nextPortfolios = await getAllPortfolios();
+                setPortfolios(nextPortfolios);
+                await handlePortfolioChange(targetViewId, nextPortfolios);
+                setMonetaxImportStatus({
+                    kind: 'success',
+                    message: `Imported ${importedTransactions.length} MoneTAX transactions.`,
+                });
+                source?.postMessage?.({
+                    type: 'monetax-import-result',
+                    ok: true,
+                    count: importedTransactions.length,
+                }, origin);
+            } catch (error) {
+                const message = error?.message || 'MoneTAX import failed.';
+                monetaxImportInProgressRef.current = false;
+                setMonetaxImportStatus({ kind: 'error', message });
+                source?.postMessage?.({ type: 'monetax-import-result', ok: false, error: message }, origin);
+            }
+        }
+
+        function handleMessage(event) {
+            if (event.data?.type !== 'monetax-import') return;
+            importMonetaxPayload(event.data.payload, event.source, event.origin);
+        }
+
+        window.addEventListener('message', handleMessage);
+        window.opener?.postMessage?.({ type: 'monetax-ready' }, '*');
+
+        return () => {
+            cancelled = true;
+            window.removeEventListener('message', handleMessage);
+        };
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
 
     const togglePrivacy = async () => {
         const newState = !hideBalances;
@@ -1218,6 +1303,13 @@ export default function Dashboard() {
         : `${summarySign}${Math.abs(totalValue).toLocaleString(undefined, { maximumFractionDigits: 2 })} ${currencyLabel}`;
     return (
         <>
+            {monetaxImportStatus && (
+                <div
+                    className={`fixed top-4 left-1/2 -translate-x-1/2 px-4 py-3 rounded-xl text-sm font-medium shadow-lg z-50 ${monetaxImportStatus.kind === 'error' ? 'bg-red-500/15 text-red-200 border border-red-500/30' : monetaxImportStatus.kind === 'success' ? 'bg-green-500/15 text-green-200 border border-green-500/30' : 'bg-white/10 text-white border border-white/15'}`}
+                >
+                    {monetaxImportStatus.message}
+                </div>
+            )}
             {/* Portfolio Selector - OUTSIDE PullToRefresh to allow horizontal scrolling */}
             {portfolios.length > 1 && (
                 <div className="container" style={{ paddingBottom: '8px' }}>

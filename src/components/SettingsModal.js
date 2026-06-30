@@ -4,6 +4,7 @@ import { useState, useEffect, useRef } from 'react';
 import Link from 'next/link';
 import { ArrowLeft, Plus, Trash2, Edit2, Check, X, Upload, Download, FolderOpen, ChevronDown, Star, Bell, Eye, GripVertical, Shield, FileText, ChevronRight } from 'lucide-react';
 import ConfirmModal from './ConfirmModal';
+import { parsePortfolioCsv } from '@/utils/csvImport';
 import {
     getAllPortfolios,
     addPortfolio,
@@ -17,11 +18,6 @@ import {
     updatePortfolioPositions
 } from '@/utils/db';
 import { checkPermissions, requestPermissions, scheduleDailyNotifications, cancelAllNotifications, scheduleTestNotification } from '@/utils/notifications';
-
-function parseCsvBoolean(value) {
-    if (!value) return undefined;
-    return ['TRUE', '1', 'YES', 'Y'].includes(String(value).toUpperCase());
-}
 
 export default function SettingsModal({ onClose, onPortfolioChange, currentPortfolioId }) {
     const [activeTab, setActiveTab] = useState('portfolios');
@@ -303,45 +299,7 @@ export default function SettingsModal({ onClose, onPortfolioChange, currentPortf
         if (!file) return;
 
         const text = await file.text();
-        const Papa = (await import('papaparse')).default;
-        const parsedCsv = Papa.parse(text, { header: true, skipEmptyLines: true });
-        const rows = parsedCsv.data || [];
-
-        if (rows.length === 0) {
-            alert('CSV file is empty or invalid');
-            return;
-        }
-
-        const transactions = [];
-        let csvPortfolioNames = new Set();
-
-        for (const row of rows) {
-            const cashFlag = row['Affects Quote Balance'] || row['Affects Cash Balance'] || row['Affects Fiat Balance'];
-            const affectsQuoteBalance = parseCsvBoolean(cashFlag);
-            const tx = {
-                date: row.Date,
-                type: row.Way,
-                baseAmount: parseFloat(row['Base amount']) || 0,
-                baseCurrency: row['Base currency (name)'] || row['Base currency'] || '',
-                originalType: row['Base type'] || 'MANUAL',
-                quoteAmount: row['Quote amount'] ? parseFloat(row['Quote amount']) : null,
-                quoteCurrency: row['Quote currency'] || null,
-                exchange: row.Exchange || null,
-                fee: parseFloat(row['Fee amount']) || 0,
-                feeCurrency: row['Fee currency (name)'] || null,
-                affectsFiatBalance: affectsQuoteBalance,
-                affectsQuoteBalance,
-                notes: row.Notes || null,
-                portfolioId: parseInt(row['Portfolio ID']) || null,
-                csvPortfolioName: row['Portfolio Name'] || null
-            };
-
-            if (tx.csvPortfolioName) csvPortfolioNames.add(tx.csvPortfolioName);
-
-            if (tx.date && tx.baseCurrency) {
-                transactions.push(tx);
-            }
-        }
+        const { transactions, portfolioNames } = parsePortfolioCsv(text);
 
         if (transactions.length === 0) {
             alert('No valid transactions found in CSV');
@@ -351,7 +309,10 @@ export default function SettingsModal({ onClose, onPortfolioChange, currentPortf
         // Reset file input so same file can be re-selected
         if (fileInputRef.current) fileInputRef.current.value = '';
 
-        const uniquePortfolioNames = Array.from(csvPortfolioNames);
+        await processImportedTransactions(transactions, portfolioNames);
+    };
+
+    const processImportedTransactions = async (transactions, uniquePortfolioNames) => {
         const csvPortfolioName = uniquePortfolioNames.length === 1 ? uniquePortfolioNames[0] : null;
 
         // If importing from "All Portfolios" view, handle multi-portfolio import
