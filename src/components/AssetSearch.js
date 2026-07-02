@@ -32,38 +32,38 @@ export default function AssetSearch({ onSelect, onCancel }) {
 
     return (
         <div className="flex flex-col h-full animate-enter">
-            <div className="mb-12 pt-6">
-                <div className="flex flex-col gap-3">
-                    <div className="flex items-center gap-6 bg-white/[0.03] rounded-[40px] px-10 py-8 focus-within:bg-white/[0.07] focus-within:ring-1 focus-within:ring-white/10 transition-all shadow-[0_32px_64px_-16px_rgba(0,0,0,0.5)] overflow-hidden border border-white/5">
-                        <input
-                            type="text"
-                            placeholder="Search markets..."
-                            className="input-reset"
-                            value={query}
-                            onChange={(e) => setQuery(e.target.value)}
-                            autoFocus
-                        />
-                    </div>
+            <div style={{ marginBottom: '20px' }}>
+                <div className="search-field">
+                    <Search size={18} style={{ color: 'var(--text-muted)', flexShrink: 0 }} />
+                    <input
+                        type="text"
+                        placeholder="Search markets..."
+                        value={query}
+                        onChange={(e) => setQuery(e.target.value)}
+                        autoFocus
+                    />
                 </div>
             </div>
 
             <div className="flex-1 overflow-y-auto">
-                <h3 className="text-xs font-bold text-muted uppercase tracking-widest mb-4 px-1">Results</h3>
+                {(searching || results.length > 0 || (query.length >= 2)) && (
+                    <h3 className="text-xs font-bold text-muted uppercase tracking-widest mb-3 px-1">Results</h3>
+                )}
 
                 {searching && (
-                    <div className="flex flex-col items-center justify-center py-20 gap-4">
+                    <div className="flex flex-col items-center justify-center py-12 gap-3">
                         <div className="w-8 h-8 border-2 border-white/20 border-t-white rounded-full animate-spin" />
-                        <span className="text-muted font-medium">Searching markets...</span>
+                        <span className="text-muted text-sm font-medium">Searching markets...</span>
                     </div>
                 )}
 
                 {!searching && results.length === 0 && query.length >= 2 && (
-                    <div className="text-muted text-center py-20 bg-[#171717]/50 rounded-3xl border border-dashed border-white/5">
-                        <p className="text-lg font-medium opacity-50">No matches found for &quot;{query}&quot;</p>
+                    <div className="text-muted text-center py-12">
+                        <p className="text-sm font-medium opacity-60">No matches found for &quot;{query}&quot;</p>
                     </div>
                 )}
 
-                <div className="flex flex-col gap-3 pb-20">
+                <div className="flex flex-col gap-2 pb-20">
                     {results.map((item) => {
                         // Handle click - convert bare currencies (EUR=X) to XXXUSD=X format
                         const handleClick = () => {

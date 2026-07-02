@@ -422,6 +422,7 @@ a {
 
 .animate-modal {
   animation: modalIn 0.28s var(--ease-drawer) both;
+  will-change: transform, opacity;
 }
 
 /* Bottom sheet: slides up from below. `backwards` (not `both`) so the filled
@@ -438,6 +439,7 @@ a {
 
 .animate-sheet {
   animation: sheetIn 0.34s var(--ease-drawer) backwards;
+  will-change: transform;
 }
 
 .animate-dialog {
@@ -798,6 +800,39 @@ a {
   border-color: var(--card-border-strong);
 }
 
+/* Compact search bar (asset search) */
+.search-field {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  height: 50px;
+  padding: 0 14px;
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid var(--card-border);
+  transition: border-color 160ms var(--ease-out), background-color 160ms var(--ease-out), box-shadow 160ms var(--ease-out);
+}
+
+.search-field:focus-within {
+  border-color: var(--primary);
+  background: rgba(255, 255, 255, 0.06);
+  box-shadow: 0 0 0 3px rgba(76, 141, 255, 0.16);
+}
+
+.search-field input {
+  flex: 1;
+  min-width: 0;
+  background: transparent;
+  border: none;
+  outline: none;
+  color: var(--foreground);
+  font-size: 1rem;
+}
+
+.search-field input::placeholder {
+  color: var(--text-faint);
+}
+
 .input-reset:focus {
   border-color: var(--primary);
   background: rgba(255, 255, 255, 0.06);
@@ -876,6 +911,15 @@ a {
   outline: 2px solid rgba(96, 165, 250, 0.95) !important;
   outline-offset: 3px !important;
   box-shadow: var(--focus-ring);
+}
+
+/* Charts are interactive canvases, not form controls — no focus ring on click */
+.recharts-wrapper,
+.recharts-wrapper:focus,
+.recharts-wrapper:focus-visible,
+.recharts-surface:focus,
+.recharts-surface:focus-visible {
+  outline: none !important;
 }
 
 button,

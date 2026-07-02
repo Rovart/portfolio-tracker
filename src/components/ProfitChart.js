@@ -151,11 +151,30 @@ function ProfitChart({ data, baseCurrency, hideBalances, loading, chartMode = 'p
         }
     }, []);
 
-    if (loading || !chartData || chartData.length === 0) return <LoadingChart />;
+    if (loading) return <LoadingChart />;
+    if (!chartData || chartData.length === 0) return <EmptyChart />;
 
-    const green = "#22c55e";
-    const red = "#ef4444";
+    const green = "#30d158";
+    const red = "#ff453a";
     const hasSelection = selectionMetrics !== null;
+    const lastIndex = chartData.length - 1;
+    const isTrendUp = chartData[lastIndex].value >= startValue;
+
+    // Live indicator: a subtle pulsing dot on the most recent point
+    const renderLiveDot = (props) => {
+        const { cx, cy, index } = props;
+        if (index !== lastIndex || cx == null || cy == null) return <g key={`dot-${index}`} />;
+        const color = isTrendUp ? green : red;
+        return (
+            <g key="live-dot">
+                <circle cx={cx} cy={cy} r="4" fill={color} opacity="0.35">
+                    <animate attributeName="r" values="4;9;4" dur="2.2s" repeatCount="indefinite" />
+                    <animate attributeName="opacity" values="0.35;0;0.35" dur="2.2s" repeatCount="indefinite" />
+                </circle>
+                <circle cx={cx} cy={cy} r="3" fill={color} stroke="var(--background)" strokeWidth="1.5" />
+            </g>
+        );
+    };
 
     return (
         <div
@@ -198,7 +217,7 @@ function ProfitChart({ data, baseCurrency, hideBalances, loading, chartMode = 'p
                 <ResponsiveContainer width="100%" height="100%" debounce={50}>
                     <AreaChart
                         data={chartData}
-                        margin={{ top: 0, right: 0, left: 0, bottom: 0 }}
+                        margin={{ top: 6, right: 8, left: 0, bottom: 0 }}
                         onMouseDown={handleMouseDown}
                         onMouseMove={handleMouseMove}
                         onMouseUp={handleMouseUp}
@@ -209,9 +228,12 @@ function ProfitChart({ data, baseCurrency, hideBalances, loading, chartMode = 'p
                                 <stop offset={offset} stopColor={green} stopOpacity={1} />
                                 <stop offset={offset} stopColor={red} stopOpacity={1} />
                             </linearGradient>
+                            {/* Fill fades away from the baseline on both sides for depth */}
                             <linearGradient id={splitFillId} x1="0" y1="0" x2="0" y2="1">
-                                <stop offset={offset} stopColor={green} stopOpacity={0.2} />
-                                <stop offset={offset} stopColor={red} stopOpacity={0.2} />
+                                <stop offset="0" stopColor={green} stopOpacity={0.28} />
+                                <stop offset={offset} stopColor={green} stopOpacity={0.03} />
+                                <stop offset={offset} stopColor={red} stopOpacity={0.03} />
+                                <stop offset="1" stopColor={red} stopOpacity={0.24} />
                             </linearGradient>
                         </defs>
                         <XAxis dataKey="date" hide axisLine={false} tickLine={false} />
@@ -257,7 +279,7 @@ function ProfitChart({ data, baseCurrency, hideBalances, loading, chartMode = 'p
                         {/* Hide tooltip when selecting or when there's an active selection */}
                         {!isSelecting && !hasSelection && (
                             <Tooltip
-                                contentStyle={{ backgroundColor: '#171717', border: '1px solid #262626', borderRadius: '8px', padding: '8px 12px' }}
+                                contentStyle={{ backgroundColor: 'var(--card-bg-hi)', border: '1px solid var(--card-border-strong)', borderRadius: '10px', padding: '8px 12px', boxShadow: '0 8px 24px rgba(0,0,0,0.45)', fontVariantNumeric: 'tabular-nums' }}
                                 formatter={(value) => [
                                     <span key="val" style={{ color: value >= startValue ? green : red }}>
                                         {hideBalances ? '••••••' : `${value.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ${baseCurrency === 'USD' ? '$' : baseCurrency}`}
@@ -281,6 +303,7 @@ function ProfitChart({ data, baseCurrency, hideBalances, loading, chartMode = 'p
                             fillOpacity={1}
                             baseValue={startValue}
                             isAnimationActive={false}
+                            dot={renderLiveDot}
                         />
 
                         {/* White highlight line for selected portion only */}
@@ -310,6 +333,18 @@ function LoadingChart() {
         <div style={{ height: '300px', width: '100%', opacity: 0.6, cursor: 'default', position: 'relative', overflow: 'hidden' }} className="animate-pulse no-select">
             <div style={{ position: 'absolute', left: 0, right: 0, bottom: 58, height: 2, background: '#525252', transform: 'skewY(-6deg)', transformOrigin: 'left center' }} />
             <div style={{ position: 'absolute', left: 0, right: 0, bottom: 0, height: 130, background: 'linear-gradient(180deg, rgba(82,82,82,0.22), rgba(82,82,82,0))', clipPath: 'polygon(0 48%, 14% 43%, 28% 50%, 42% 34%, 56% 40%, 70% 25%, 84% 34%, 100% 14%, 100% 100%, 0 100%)' }} />
+        </div>
+    );
+}
+
+// Static, calm empty state — a flat baseline instead of an endlessly pulsing fake chart
+function EmptyChart() {
+    return (
+        <div className="no-select" style={{ height: '300px', width: '100%', position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <div style={{ position: 'absolute', left: 0, right: 0, top: '50%', height: '1px', background: 'var(--card-border)' }} />
+            <span style={{ position: 'relative', fontSize: '0.8rem', color: 'var(--text-faint)', background: 'var(--background)', padding: '0 12px' }}>
+                Add a transaction to see your portfolio history
+            </span>
         </div>
     );
 }

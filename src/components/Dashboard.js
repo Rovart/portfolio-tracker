@@ -2,7 +2,7 @@
 
 import { startTransition, useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
-import { Eye, EyeOff, Search, Settings, ArrowUpRight, ArrowDownRight } from 'lucide-react';
+import { Eye, EyeOff, Plus, Settings, ArrowUpRight, ArrowDownRight } from 'lucide-react';
 import ProfitChart from './ProfitChart';
 import CompositionChart from './CompositionChart';
 import HoldingsList, { WATCHLIST_SORT_OPTIONS } from './HoldingsList';
@@ -1561,7 +1561,12 @@ export default function Dashboard() {
                                                             <span className="text-xs text-muted uppercase tracking-wider font-bold" style={{ display: 'block', marginBottom: '2px' }}>
                                                                 Total Value
                                                             </span>
-                                                            <span className="font-bold tracking-tight" style={{ fontSize: '2.15rem', lineHeight: 1.05, letterSpacing: '-0.03em' }}>
+                                                            <span
+                                                                className="font-bold tracking-tight"
+                                                                style={{ fontSize: '2.15rem', lineHeight: 1.05, letterSpacing: '-0.03em', cursor: 'pointer' }}
+                                                                onClick={togglePrivacy}
+                                                                title={hideBalances ? 'Show balances' : 'Hide balances'}
+                                                            >
                                                                 {formattedSummaryValue}
                                                             </span>
                                                         </div>
@@ -1584,7 +1589,12 @@ export default function Dashboard() {
                                                     <span className="text-xs text-muted uppercase tracking-wider font-bold" style={{ display: 'block', marginBottom: '2px' }}>
                                                         Total Value
                                                     </span>
-                                                    <span className="font-bold tracking-tight" style={{ fontSize: '2.15rem', lineHeight: 1.05, letterSpacing: '-0.03em' }}>
+                                                    <span
+                                                        className="font-bold tracking-tight"
+                                                        style={{ fontSize: '2.15rem', lineHeight: 1.05, letterSpacing: '-0.03em', cursor: 'pointer' }}
+                                                        onClick={togglePrivacy}
+                                                        title={hideBalances ? 'Show balances' : 'Hide balances'}
+                                                    >
                                                         {formattedSummaryValue}
                                                     </span>
                                                 </div>
@@ -1631,19 +1641,25 @@ export default function Dashboard() {
 	                                        />
 	                                    </div>
 
-	                                    <div className="flex justify-between mb-8 overflow-x-auto gap-1 sm:gap-2 no-scrollbar">
+	                                    <div className="mb-8 no-select" style={{ display: 'flex', gap: '2px', padding: '3px', borderRadius: '12px', background: 'rgba(255,255,255,0.04)', border: '1px solid var(--card-border)' }}>
                                         {TIMEFRAMES.map((tf) => (
                                             <button
                                                 key={tf}
                                                 onClick={() => handleTimeframeChange(tf)}
-                                                className={`btn ${timeframe === tf ? 'bg-white text-black shadow-lg' : 'btn-ghost opacity-60 hover:opacity-100'}`}
+                                                className="transition-all"
                                                 style={{
-                                                    background: timeframe === tf ? 'var(--foreground)' : 'transparent',
-                                                    color: timeframe === tf ? 'var(--background)' : 'var(--muted)',
                                                     flex: 1,
-                                                    minWidth: '45px',
-                                                    padding: '8px 4px',
-                                                    fontSize: '0.75rem'
+                                                    minWidth: '42px',
+                                                    padding: '7px 4px',
+                                                    fontSize: '0.75rem',
+                                                    fontWeight: 600,
+                                                    letterSpacing: '-0.01em',
+                                                    borderRadius: '9px',
+                                                    border: 'none',
+                                                    cursor: 'pointer',
+                                                    background: timeframe === tf ? 'var(--foreground)' : 'transparent',
+                                                    color: timeframe === tf ? 'var(--background)' : 'var(--text-muted)',
+                                                    boxShadow: timeframe === tf ? '0 1px 3px rgba(0,0,0,0.35)' : 'none'
                                                 }}
                                             >
                                                 {tf}
@@ -1719,25 +1735,26 @@ export default function Dashboard() {
             {!isModalOpen && !isSettingsModalOpen && (
                 <button
                     onClick={openAddModal}
-                    className="btn fixed hover-scale active-scale shadow-lg"
+                    aria-label="Add asset"
+                    className="btn fixed hover-scale active-scale"
                     style={{
-                        bottom: '24px',
+                        bottom: 'calc(24px + env(safe-area-inset-bottom, 0px))',
                         right: '24px',
                         width: '56px',
                         height: '56px',
-                        borderRadius: '50%',
-                        fontSize: '24px',
+                        borderRadius: '18px',
                         lineHeight: '1',
                         display: 'flex',
                         alignItems: 'center',
                         justifyContent: 'center',
-                        background: 'white',
-                        color: 'black',
+                        background: 'var(--foreground)',
+                        color: '#0a0a0b',
+                        border: 'none',
                         zIndex: 10,
-                        boxShadow: '0 8px 32px rgba(0,0,0,0.4)'
+                        boxShadow: '0 4px 12px rgba(0,0,0,0.35), 0 16px 40px -8px rgba(0,0,0,0.5)'
                     }}
                 >
-                    <Search size={24} />
+                    <Plus size={26} strokeWidth={2.25} />
                 </button>
             )}
         </>

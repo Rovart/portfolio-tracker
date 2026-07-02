@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useRef, useMemo, memo, useCallback } from 'react';
-import { GripVertical, ChevronDown, ChevronRight, Wallet, Sun, Moon } from 'lucide-react';
+import { GripVertical, ChevronDown, ChevronRight, Wallet, Sun, Moon, Plus } from 'lucide-react';
 import { updateWatchlistAssetPositions } from '@/utils/db';
 import { formatSymbol } from '@/utils/commodities';
 import AssetIcon from './AssetIcon';
@@ -111,22 +111,26 @@ const HoldingRow = memo(function HoldingRow({
                         ((hideBalances && !isWatchlist) ? '••••••' : `${holding.value.toLocaleString(undefined, { maximumFractionDigits: 2 })} ${baseCurrency === 'USD' ? '$' : baseCurrency}`)
                     )}
                 </span>
-                <span className={`text-[10px] sm:text-sm font-medium ${displayedChangePositive ? 'text-success' : 'text-danger'}`}>
-                    {loading ? (
-                        <div className="w-16 sm:w-20 h-4 bg-white-10 rounded animate-pulse mt-1 ml-auto" />
-                    ) : (
-                        <>
-                            {/* Hide change if asset is the same as base currency (e.g. EUR in EUR portfolio) */}
-                            {holding.asset !== baseCurrency && (
-                                <>
-                                    {/* Always show nominal change unless hidden by privacy on regular portfolios */}
-                                    {(!hideBalances || isWatchlist) && `${displayedChangePositive ? '+' : '-'}${Math.abs(displayedChangeValue).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ${baseCurrency === 'USD' ? '$' : baseCurrency} `}
-                                    ({displayedChangePercent >= 0 ? '+' : ''}{displayedChangePercent.toFixed(2)}%)
-                                </>
-                            )}
-                        </>
-                    )}
-                </span>
+                {loading ? (
+                    <div className="w-16 sm:w-20 h-4 bg-white-10 rounded animate-pulse mt-1 ml-auto" />
+                ) : (
+                    holding.asset !== baseCurrency && (
+                        <span
+                            className="text-[10px] sm:text-xs font-semibold"
+                            style={{
+                                marginTop: '3px',
+                                padding: '2px 7px',
+                                borderRadius: '6px',
+                                color: displayedChangePositive ? 'var(--success)' : 'var(--danger)',
+                                background: displayedChangePositive ? 'rgba(48, 209, 88, 0.1)' : 'rgba(255, 69, 58, 0.1)'
+                            }}
+                        >
+                            {/* Nominal change hidden by privacy mode on regular portfolios */}
+                            {(!hideBalances || isWatchlist) && `${displayedChangePositive ? '+' : '-'}${Math.abs(displayedChangeValue).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ${baseCurrency === 'USD' ? '$' : baseCurrency} `}
+                            ({displayedChangePercent >= 0 ? '+' : ''}{displayedChangePercent.toFixed(2)}%)
+                        </span>
+                    )
+                )}
             </div>
         </div>
     );
@@ -134,6 +138,64 @@ const HoldingRow = memo(function HoldingRow({
 
 // Toggle this to switch between Symbol and Short Name
 const DISPLAY_NAME = false; // true = Name, false = Symbol
+
+// Distinct, muted-professional palette for allocation segments
+const ALLOC_COLORS = ['#4c8dff', '#30d158', '#bf5af2', '#ff9f0a', '#64d2ff', '#ffd60a', '#ff6482', '#ac8e68'];
+
+// Slim stacked allocation bar: top assets by weight, cash grouped, remainder as "Other"
+function AllocationBar({ holdings, cashValue }) {
+    const segments = useMemo(() => {
+        const assets = [...holdings].sort((a, b) => (b.value || 0) - (a.value || 0));
+        const total = assets.reduce((acc, h) => acc + (h.value || 0), 0) + Math.max(cashValue, 0);
+        if (total <= 0) return [];
+
+        const top = assets.slice(0, 4).filter(h => (h.value || 0) / total >= 0.02);
+        const rest = assets.slice(top.length).reduce((acc, h) => acc + (h.value || 0), 0);
+
+        const segs = top.map((h, i) => ({
+            label: h.asset,
+            pct: (h.value / total) * 100,
+            color: ALLOC_COLORS[i % ALLOC_COLORS.length]
+        }));
+        if (rest / total >= 0.005) {
+            segs.push({ label: 'Other', pct: (rest / total) * 100, color: 'rgba(255,255,255,0.28)' });
+        }
+        if (cashValue / total >= 0.005) {
+            segs.push({ label: 'Cash', pct: (Math.max(cashValue, 0) / total) * 100, color: 'rgba(255,255,255,0.14)' });
+        }
+        return segs;
+    }, [holdings, cashValue]);
+
+    if (segments.length < 2) return null;
+
+    return (
+        <div className="no-select" style={{ marginBottom: '10px' }}>
+            <div style={{ display: 'flex', gap: '3px', height: '6px', borderRadius: '9999px', overflow: 'hidden' }}>
+                {segments.map(seg => (
+                    <div
+                        key={seg.label}
+                        style={{
+                            width: `${seg.pct}%`,
+                            minWidth: '4px',
+                            background: seg.color,
+                            borderRadius: '9999px',
+                            transition: 'width 400ms var(--ease-in-out)'
+                        }}
+                    />
+                ))}
+            </div>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px 14px', marginTop: '8px' }}>
+                {segments.map(seg => (
+                    <span key={seg.label} style={{ display: 'inline-flex', alignItems: 'center', gap: '5px', fontSize: '0.7rem', color: 'var(--text-muted)', fontWeight: 500 }}>
+                        <span style={{ width: '7px', height: '7px', borderRadius: '50%', background: seg.color, flexShrink: 0 }} />
+                        {seg.label}
+                        <span style={{ color: 'var(--text-faint)' }}>{seg.pct.toFixed(seg.pct >= 10 ? 0 : 1)}%</span>
+                    </span>
+                ))}
+            </div>
+        </div>
+    );
+}
 
 const SORT_OPTIONS = [
     { id: 'size', label: 'Size' },
@@ -361,6 +423,11 @@ export default function HoldingsList({ holdings, onSelect, onAddAsset, loading, 
                 </div>
             )}
 
+            {/* Portfolio allocation at a glance */}
+            {!isWatchlist && !loading && nonFiatHoldings.length > 1 && (
+                <AllocationBar holdings={nonFiatHoldings} cashValue={totalFiatValue} />
+            )}
+
             {/* Non-fiat holdings */}
             {nonFiatHoldings.map((holding, index) => (
                 <HoldingRow
@@ -476,8 +543,15 @@ export default function HoldingsList({ holdings, onSelect, onAddAsset, loading, 
 
             {holdings.length === 0 && !loading && (
                 <div
-                    className="card interactive-surface flex flex-col items-center justify-center py-10 bg-white-5 rounded-2xl border border-white-5 border-dashed gap-2 animate-enter hover:bg-white/10 hover:border-white/20 transition-all"
-                    style={{ cursor: 'pointer' }}
+                    className="interactive-surface flex flex-col items-center justify-center animate-enter transition-all"
+                    style={{
+                        cursor: 'pointer',
+                        gap: '14px',
+                        padding: '40px 24px',
+                        borderRadius: '18px',
+                        border: '1px dashed var(--card-border-strong)',
+                        background: 'rgba(255, 255, 255, 0.02)'
+                    }}
                     onClick={onAddAsset}
                     onKeyDown={(event) => {
                         if (event.key !== 'Enter' && event.key !== ' ') return;
@@ -487,8 +561,26 @@ export default function HoldingsList({ holdings, onSelect, onAddAsset, loading, 
                     role="button"
                     tabIndex={0}
                 >
-                    <p className="text-sm font-medium text-white/80" style={{ margin: 0 }}>No assets yet.</p>
-                    <p className="text-[10px] uppercase tracking-widest font-bold text-muted" style={{ margin: 0 }}>Tap to add your first asset</p>
+                    <div style={{
+                        width: '52px',
+                        height: '52px',
+                        borderRadius: '15px',
+                        background: 'rgba(255, 255, 255, 0.06)',
+                        border: '1px solid var(--card-border)',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center'
+                    }}>
+                        <Plus size={24} style={{ color: 'var(--foreground)' }} strokeWidth={2.25} />
+                    </div>
+                    <div className="flex flex-col items-center" style={{ gap: '3px' }}>
+                        <p style={{ margin: 0, fontWeight: 600, fontSize: '0.98rem' }}>
+                            {isWatchlist ? 'Add to watchlist' : 'Add your first asset'}
+                        </p>
+                        <p className="text-muted" style={{ margin: 0, fontSize: '0.8rem' }}>
+                            Search stocks, crypto, ETFs and more
+                        </p>
+                    </div>
                 </div>
             )}
         </div>

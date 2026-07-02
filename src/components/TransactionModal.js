@@ -1,11 +1,24 @@
 'use client';
 
 import { useState, useEffect, useMemo, useRef } from 'react';
+import dynamic from 'next/dynamic';
 import AssetSearch from './AssetSearch';
-import AssetChart from './AssetChart';
-import FinancialInfo from './FinancialInfo';
 import EarningsEvent from './EarningsEvent';
 import ConfirmModal from './ConfirmModal';
+
+// Heavy, chart-driven views are code-split so opening the modal doesn't have to
+// parse/execute recharts up front, and lazily mounted after the open animation.
+const ChartSkeleton = () => (
+    <div className="w-full rounded-2xl bg-white-5 animate-pulse" style={{ height: '300px' }} />
+);
+const AssetChart = dynamic(() => import('./AssetChart'), {
+    ssr: false,
+    loading: () => <ChartSkeleton />
+});
+const FinancialInfo = dynamic(() => import('./FinancialInfo'), {
+    ssr: false,
+    loading: () => <div className="w-full rounded-2xl bg-white-5 animate-pulse" style={{ height: '200px' }} />
+});
 import { Trash2, Edit2, X, Plus, ChevronLeft, ArrowLeft, Moon, Sun, Eye, EyeOff } from 'lucide-react';
 import {
     normalizeAsset,
@@ -81,6 +94,7 @@ export default function TransactionModal({
     const sheetRef = useRef(null);
     const backdropRef = useRef(null);
     const dragState = useRef({ active: false, startY: 0, startTime: 0, dy: 0 });
+    const heavyRafRef = useRef(0);
     const [currentView, setCurrentView] = useState(mode === 'ADD' ? 'SEARCH' : 'LIST');
     const [selectedAsset, setSelectedAsset] = useState(holding ? {
         symbol: holding.symbol || holding.asset,
@@ -99,6 +113,8 @@ export default function TransactionModal({
     const [editingTx, setEditingTx] = useState(null);
     const [deleteConfirm, setDeleteConfirm] = useState(null); // { id, type, date }
     const [assetTab, setAssetTab] = useState('overview'); // 'overview' | 'financials'
+    // Defer heavy chart mounting until after the modal has painted/animated in
+    const [heavyReady, setHeavyReady] = useState(false);
     const [isInWatchlist, setIsInWatchlist] = useState(false);
     const [rangePerformance, setRangePerformance] = useState(null); // { range, change, changePercent }
     const [assetSummaryMetric, setAssetSummaryMetric] = useState('value'); // 'value' | 'total' | 'realized' | 'unrealized'
@@ -742,6 +758,16 @@ export default function TransactionModal({
         setCurrentView('LIST');
     };
 
+    // Let the open animation run on a clear main thread, then mount the chart.
+    useEffect(() => {
+        const raf = requestAnimationFrame(() => {
+            const raf2 = requestAnimationFrame(() => setHeavyReady(true));
+            heavyRafRef.current = raf2;
+        });
+        heavyRafRef.current = raf;
+        return () => cancelAnimationFrame(heavyRafRef.current);
+    }, []);
+
     // --- Bottom-sheet drag-to-dismiss (handle only) ---
     const DISMISS_DISTANCE = 130;   // px dragged before it dismisses on release
     const DISMISS_VELOCITY = 0.55;  // px/ms flick velocity that dismisses regardless of distance
@@ -758,6 +784,9 @@ export default function TransactionModal({
     };
 
     const handleDragStart = (e) => {
+        // Allow dragging from the grabber and the header, but never hijack a tap
+        // on an interactive control (back arrow, buttons, selects, inputs).
+        if (e.target.closest('button, select, input, textarea, a')) return;
         dragState.current = { active: true, startY: e.clientY, startTime: Date.now(), dy: 0 };
         if (sheetRef.current) sheetRef.current.style.transition = 'none';
         try { e.currentTarget.setPointerCapture(e.pointerId); } catch { }
@@ -793,32 +822,33 @@ export default function TransactionModal({
         }
     };
 
+    // Only the add/edit transaction FORM is presented as a drag-to-dismiss bottom
+    // sheet. Watching an asset (LIST) and searching stay full-screen.
+    const isSheet = currentView === 'FORM';
+
     return (
         <div
             ref={backdropRef}
-            className="animate-overlay"
-            onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
+            className={isSheet ? 'animate-overlay' : ''}
+            onClick={isSheet ? (e) => { if (e.target === e.currentTarget) onClose(); } : undefined}
             style={{
                 position: 'fixed',
                 inset: 0,
                 zIndex: 9999,
                 display: 'flex',
-                alignItems: 'flex-end',
+                alignItems: isSheet ? 'flex-end' : 'stretch',
                 justifyContent: 'center',
-                background: 'rgba(0, 0, 0, 0.55)',
-                backdropFilter: 'blur(6px)',
-                WebkitBackdropFilter: 'blur(6px)'
+                background: isSheet ? 'rgba(0, 0, 0, 0.6)' : 'transparent'
             }}
         >
             <div
                 ref={sheetRef}
-                className="animate-sheet"
-                style={{
+                className={isSheet ? 'animate-sheet' : 'animate-modal'}
+                style={isSheet ? {
                     position: 'relative',
                     width: '100%',
                     maxWidth: '640px',
-                    height: '90dvh',
-                    maxHeight: '94dvh',
+                    maxHeight: '92dvh',
                     backgroundColor: 'var(--background-elevated)',
                     color: 'white',
                     display: 'flex',
@@ -830,20 +860,40 @@ export default function TransactionModal({
                     border: '1px solid var(--card-border)',
                     borderBottom: 'none',
                     paddingBottom: 'env(safe-area-inset-bottom, 0px)'
+                } : {
+                    position: 'relative',
+                    width: '100%',
+                    maxWidth: '100%',
+                    height: '100dvh',
+                    backgroundColor: '#000',
+                    color: 'white',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    paddingTop: 'env(safe-area-inset-top, 0px)',
+                    paddingBottom: 'env(safe-area-inset-bottom, 0px)'
                 }}
             >
-                {/* Drag handle — grab here to pull the sheet down and dismiss */}
-                <div
-                    onPointerDown={handleDragStart}
-                    onPointerMove={handleDragMove}
-                    onPointerUp={handleDragEnd}
-                    onPointerCancel={handleDragEnd}
-                    style={{ flexShrink: 0, display: 'flex', justifyContent: 'center', padding: '10px 0 6px', cursor: 'grab', touchAction: 'none' }}
-                >
-                    <div style={{ width: '40px', height: '5px', borderRadius: '9999px', background: 'rgba(255, 255, 255, 0.18)' }} />
-                </div>
-            {/* Header Area */}
-            <div className="flex items-center justify-between p-4 sm:p-6 sm:px-8" style={{ borderBottom: '1px solid #262626' }}>
+                {/* Drag handle — sheet only */}
+                {isSheet && (
+                    <div
+                        onPointerDown={handleDragStart}
+                        onPointerMove={handleDragMove}
+                        onPointerUp={handleDragEnd}
+                        onPointerCancel={handleDragEnd}
+                        style={{ flexShrink: 0, display: 'flex', justifyContent: 'center', padding: '10px 0 6px', cursor: 'grab', touchAction: 'none' }}
+                    >
+                        <div style={{ width: '40px', height: '5px', borderRadius: '9999px', background: 'rgba(255, 255, 255, 0.18)' }} />
+                    </div>
+                )}
+            {/* Header Area — also draggable when presented as a sheet */}
+            <div
+                className="flex items-center justify-between p-4 sm:p-6 sm:px-8"
+                style={{ borderBottom: '1px solid #262626', flexShrink: 0, ...(isSheet ? { touchAction: 'none', cursor: 'grab' } : {}) }}
+                onPointerDown={isSheet ? handleDragStart : undefined}
+                onPointerMove={isSheet ? handleDragMove : undefined}
+                onPointerUp={isSheet ? handleDragEnd : undefined}
+                onPointerCancel={isSheet ? handleDragEnd : undefined}
+            >
                 <div className="flex items-center gap-4">
                     <button
                         onClick={handleBack}
@@ -1076,6 +1126,7 @@ export default function TransactionModal({
                                         )}
                                     </div>
                                     <div className="w-full">
+                                        {!heavyReady ? <ChartSkeleton /> : (
                                         <AssetChart
                                             symbol={selectedAsset.symbol}
                                             baseCurrency={baseCurrency}
@@ -1102,6 +1153,7 @@ export default function TransactionModal({
                                             onRangePerformance={setRangePerformance}
                                             transactions={assetTransactions.filter(tx => !tx.isReverse)}
                                         />
+                                        )}
                                     </div>
 
                                     {/* Earnings Event - for both watchlist and portfolio equities */}

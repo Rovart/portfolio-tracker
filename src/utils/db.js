@@ -67,6 +67,39 @@ db.version(4).stores({
     }
 });
 
+// Version 5: Watch-only wallet addresses (per chain asset, e.g. BTC / ETH)
+db.version(5).stores({
+    transactions: '++id, date, type, baseCurrency, quoteCurrency, portfolioId',
+    settings: 'key',
+    portfolios: '++id, name, createdAt, isWatchlist, position',
+    watchlistAssets: '++id, portfolioId, symbol, addedAt, position',
+    wallets: '++id, chain, address'
+});
+
+// Watch-only wallet helpers
+export async function getWalletsForChain(chain) {
+    return await db.wallets.where('chain').equals(chain).toArray();
+}
+
+export async function addWallet(chain, address, label = '') {
+    const normalized = address.trim();
+    // Prevent duplicates per chain
+    const existing = await db.wallets.where('chain').equals(chain).toArray();
+    if (existing.some(w => w.address.toLowerCase() === normalized.toLowerCase())) {
+        throw new Error('This address is already being tracked.');
+    }
+    return await db.wallets.add({
+        chain,
+        address: normalized,
+        label: label.trim(),
+        addedAt: new Date().toISOString()
+    });
+}
+
+export async function removeWallet(id) {
+    return await db.wallets.delete(id);
+}
+
 // Portfolio helpers
 export async function getAllPortfolios() {
     const portfolios = await db.portfolios.toArray();
