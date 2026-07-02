@@ -1,15 +1,23 @@
 :root {
-  --background: #000000;
-  --foreground: #ededed;
-  --card-bg: #171717;
-  --card-border: #262626;
-  --primary: #3b82f6;
-  --success: #22c55e;
-  --danger: #ef4444;
-  --text-muted: #a1a1aa;
+  /* Near-black with a faint cool cast reads more refined than pure #000 */
+  --background: #0a0a0b;
+  --background-elevated: #101012;
+  --foreground: #f4f4f5;
+  --card-bg: #161618;
+  --card-bg-hi: #1b1b1e;
+  --card-border: rgba(255, 255, 255, 0.07);
+  --card-border-strong: rgba(255, 255, 255, 0.1);
+  --primary: #4c8dff;
+  /* iOS-style semantic colors: vivid but disciplined */
+  --success: #30d158;
+  --danger: #ff453a;
+  --text-muted: #8e8e93;
+  --text-faint: #636366;
   --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
   --ease-in-out: cubic-bezier(0.77, 0, 0.175, 1);
-  --focus-ring: 0 0 0 3px rgba(59, 130, 246, 0.35);
+  --ease-drawer: cubic-bezier(0.32, 0.72, 0, 1);
+  --focus-ring: 0 0 0 3px rgba(76, 141, 255, 0.35);
+  --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.3), 0 8px 24px -12px rgba(0, 0, 0, 0.6);
   color-scheme: dark;
 }
 
@@ -38,10 +46,20 @@ body {
 body {
   color: var(--foreground);
   background: var(--background);
-  font-family: Arial, Helvetica, sans-serif;
+  /* Subtle atmospheric depth from the top, matched to the app's cool base */
+  background-image: radial-gradient(130% 70% at 50% -20%, rgba(90, 110, 150, 0.10), rgba(10, 10, 11, 0) 55%);
+  background-attachment: fixed;
+  background-repeat: no-repeat;
+  font-family: var(--font-geist-sans), -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  /* Tabular figures keep financial numbers aligned as values change */
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum" 1, "cv01" 1, "ss01" 1;
+  letter-spacing: -0.011em;
   margin: 0;
   padding: 0;
   -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
   min-height: 100dvh;
   display: flex;
   flex-direction: column;
@@ -89,10 +107,11 @@ a {
 }
 
 .card {
-  background: var(--card-bg);
+  background: linear-gradient(180deg, var(--card-bg-hi), var(--card-bg));
   border: 1px solid var(--card-border);
   border-radius: 16px;
   padding: 16px;
+  box-shadow: var(--shadow-card), inset 0 1px 0 rgba(255, 255, 255, 0.04);
 }
 
 @media (max-width: 380px) {
@@ -107,10 +126,11 @@ a {
   border-radius: 9999px;
   font-size: 0.75rem;
   font-weight: 600;
+  letter-spacing: -0.01em;
   white-space: nowrap;
   background: rgba(255, 255, 255, 0.05);
-  color: rgba(255, 255, 255, 0.6);
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  color: rgba(255, 255, 255, 0.62);
+  border: 1px solid rgba(255, 255, 255, 0.08);
   cursor: pointer;
   transition: background-color 150ms var(--ease-out), border-color 150ms var(--ease-out), color 150ms var(--ease-out), transform 140ms var(--ease-out), box-shadow 150ms var(--ease-out);
 }
@@ -127,9 +147,10 @@ a {
 }
 
 .pill.active {
-  background: white;
-  color: black;
-  border-color: white;
+  background: var(--foreground);
+  color: #0a0a0b;
+  border-color: var(--foreground);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.35);
 }
 
 .text-muted {
@@ -142,6 +163,14 @@ a {
 
 .text-danger {
   color: var(--danger);
+}
+
+.bg-success\/10 {
+  background-color: rgba(48, 209, 88, 0.12);
+}
+
+.bg-danger\/10 {
+  background-color: rgba(255, 69, 58, 0.12);
 }
 
 .text {
@@ -345,6 +374,55 @@ a {
   animation: fadeIn 0.4s ease-out forwards;
 }
 
+/* Full-screen sheet: slides up with the iOS-like drawer curve */
+@keyframes modalIn {
+  from {
+    opacity: 0;
+    transform: translateY(16px) scale(0.995);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+/* Centered dialog: scales in from 0.95 (never from 0) */
+@keyframes dialogIn {
+  from {
+    opacity: 0;
+    transform: scale(0.95);
+  }
+
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@keyframes overlayIn {
+  from {
+    opacity: 0;
+  }
+
+  to {
+    opacity: 1;
+  }
+}
+
+.animate-modal {
+  animation: modalIn 0.28s var(--ease-drawer) both;
+}
+
+.animate-dialog {
+  animation: dialogIn 0.2s var(--ease-out) both;
+  transform-origin: center;
+}
+
+.animate-overlay {
+  animation: overlayIn 0.2s var(--ease-out) both;
+}
+
 .animate-pulse {
   animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
 }
@@ -388,6 +466,10 @@ a {
   margin-top: 0.5rem;
 }
 
+.mt-3 {
+  margin-top: 0.75rem;
+}
+
 .w-full {
   width: 100%;
 }
@@ -420,12 +502,32 @@ a {
   width: 2rem;
 }
 
+.w-10 {
+  width: 2.5rem;
+}
+
+.w-16 {
+  width: 4rem;
+}
+
+.w-28 {
+  width: 7rem;
+}
+
+.w-52 {
+  width: 13rem;
+}
+
 .h-full {
   height: 100%;
 }
 
 .h-10 {
   height: 2.5rem;
+}
+
+.h-9 {
+  height: 2.25rem;
 }
 
 .h-8 {
@@ -654,19 +756,24 @@ a {
 /* Form input styling */
 .input-reset {
   width: 100%;
-  background: #171717;
-  color: white;
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--foreground);
   padding: 0.8rem 1rem;
-  border-radius: 1rem;
-  border: 1px solid transparent;
+  border-radius: 0.9rem;
+  border: 1px solid var(--card-border);
   outline: none;
   transition: background-color 180ms var(--ease-out), border-color 180ms var(--ease-out), box-shadow 180ms var(--ease-out);
   font-size: 1rem;
 }
 
+.input-reset:hover {
+  border-color: var(--card-border-strong);
+}
+
 .input-reset:focus {
   border-color: var(--primary);
-  background: #262626;
+  background: rgba(255, 255, 255, 0.06);
+  box-shadow: 0 0 0 3px rgba(76, 141, 255, 0.16);
 }
 
 /* Height utilities for skeletons */

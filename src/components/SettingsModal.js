@@ -454,6 +454,7 @@ export default function SettingsModal({ onClose, onPortfolioChange, currentPortf
 
     return (
         <div
+            className="animate-modal"
             style={{
                 position: 'fixed',
                 top: 0,
@@ -465,7 +466,6 @@ export default function SettingsModal({ onClose, onPortfolioChange, currentPortf
                 zIndex: 9999,
                 display: 'flex',
                 flexDirection: 'column',
-                animation: 'fadeIn 0.2s ease-out',
                 height: '100dvh',
                 width: '100vw',
                 paddingTop: 'env(safe-area-inset-top, 0px)',
@@ -895,7 +895,7 @@ export default function SettingsModal({ onClose, onPortfolioChange, currentPortf
 
             {/* Import Conflict Dialog */}
             {importConflict && (
-                <div style={{
+                <div className="animate-overlay" style={{
                     position: 'fixed',
                     top: 0,
                     left: 0,
@@ -909,7 +909,7 @@ export default function SettingsModal({ onClose, onPortfolioChange, currentPortf
                     zIndex: 10000,
                     padding: '20px'
                 }}>
-                    <div style={{
+                    <div className="animate-dialog" style={{
                         background: 'linear-gradient(135deg, rgba(30, 30, 35, 0.98) 0%, rgba(20, 20, 25, 0.98) 100%)',
                         borderRadius: '20px',
                         padding: '32px',

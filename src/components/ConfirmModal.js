@@ -56,6 +56,7 @@ export default function ConfirmModal({
 
     return (
         <div
+            className="animate-overlay"
             style={{
                 position: 'fixed',
                 top: 0,
@@ -76,6 +77,7 @@ export default function ConfirmModal({
             }}
         >
             <div
+                className="animate-dialog"
                 style={{
                     background: 'linear-gradient(145deg, rgba(30, 30, 30, 0.98), rgba(20, 20, 20, 0.98))',
                     border: '1px solid rgba(255, 255, 255, 0.1)',

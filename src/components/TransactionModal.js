@@ -15,7 +15,8 @@ import {
 } from '@/utils/portfolio-logic';
 import {
     buildHistoricalConversionMap,
-    getHistoricalConversionRate
+    getHistoricalConversionRate,
+    getMapRateForDate
 } from '@/utils/historical-conversion';
 import { addWatchlistAsset, removeWatchlistAsset, isSymbolInWatchlist } from '@/utils/db';
 import { COMMODITY_NAMES } from '@/utils/commodities';
@@ -26,6 +27,39 @@ const ASSET_SUMMARY_METRICS = ['value', 'total', 'realized', 'unrealized'];
 function toFiniteNumber(value) {
     const parsed = parseFloat(value);
     return Number.isFinite(parsed) ? parsed : 0;
+}
+
+// Live FX rate helper: how many units of `to` one unit of `from` is worth.
+// Tries the direct Yahoo pair first, then pivots via USD when needed.
+async function fetchLiveFxRate(from, to) {
+    const F = String(from || '').toUpperCase();
+    const T = String(to || '').toUpperCase();
+    if (!F || !T || F === T) return 1;
+
+    try {
+        const res = await fetch(`/api/quote?symbols=${F}${T}=X`);
+        const json = await res.json();
+        const direct = json.data?.[0]?.price;
+        if (direct) return direct;
+    } catch (e) {
+        console.error('Direct FX fetch failed', e);
+    }
+
+    const toUsd = async (code) => {
+        if (code === 'USD') return 1;
+        try {
+            const res = await fetch(`/api/quote?symbols=${code}USD=X`);
+            const json = await res.json();
+            return json.data?.[0]?.price || null;
+        } catch (e) {
+            console.error('Pivot FX fetch failed', e);
+            return null;
+        }
+    };
+
+    const [fromUsd, toUsdRate] = await Promise.all([toUsd(F), toUsd(T)]);
+    if (fromUsd && toUsdRate) return fromUsd / toUsdRate;
+    return 1;
 }
 
 export default function TransactionModal({
@@ -708,6 +742,7 @@ export default function TransactionModal({
     // Layout fixed
     return (
         <div
+            className="animate-modal"
             style={{
                 position: 'fixed',
                 top: 0,
@@ -719,7 +754,6 @@ export default function TransactionModal({
                 zIndex: 9999,
                 display: 'flex',
                 flexDirection: 'column',
-                animation: 'fadeIn 0.2s ease-out',
                 height: '100dvh',
                 width: '100vw',
                 paddingTop: 'env(safe-area-inset-top, 0px)',
@@ -1209,29 +1243,15 @@ function TransactionForm({ holding, existingTx, transactions, onSave, onCancel, 
 
     // Detect quote currency from symbol (e.g., BTC-EUR -> EUR, SAP.DE -> EUR)
     const detectedQuote = useMemo(() => {
-        // Fix: Use transaction's specific quote currency when editing
+        // When editing, preserve the transaction's original quote currency so
+        // stored historical data isn't rewritten.
         if (existingTx?.quoteCurrency) return existingTx.quoteCurrency.toUpperCase();
 
-        if (fetchedCurrency) return fetchedCurrency.toUpperCase();
-        if (holding.currency) return holding.currency.toUpperCase();
-        if (!sym) return 'USD';
-
-        // Try to split by common dividers
-        const parts = sym.split(/[-/.]/);
-        // Special case for Yahoo Finance symbols like SAP.DE, AAPL.MI etc.
-        if (sym.includes('.') && parts.length > 1) {
-            const suffix = parts[parts.length - 1].toUpperCase();
-            const suffixMap = { 'DE': 'EUR', 'MI': 'EUR', 'PA': 'EUR', 'AS': 'EUR', 'MC': 'EUR', 'L': 'GBP', 'HK': 'HKD', 'TO': 'CAD' };
-            if (suffixMap[suffix]) return suffixMap[suffix];
-        }
-
-        if (parts.length > 1) {
-            const quote = parts[parts.length - 1].toUpperCase();
-            // Basic sanity check to ensure it looks like a currency code
-            if (quote.length === 3) return quote;
-        }
-        return 'USD';
-    }, [sym, holding.currency, fetchedCurrency, existingTx]);
+        // For any new transaction, default the price currency to the user's
+        // selected base currency. The entered price (auto-fetched or manual) is
+        // then expressed in that currency; the user can still override via the dropdown.
+        return baseCurrency;
+    }, [existingTx, baseCurrency]);
     const [quoteCurrency, setQuoteCurrency] = useState(detectedQuote);
     const [userModifiedQuoteCurrency, setUserModifiedQuoteCurrency] = useState(false);
 
@@ -1358,7 +1378,17 @@ function TransactionForm({ holding, existingTx, transactions, onSave, onCancel, 
                     const res = await fetch(`/api/quote?symbols=${fetchSym}`);
                     const json = await res.json();
                     if (json.data && json.data[0]) {
-                        setPrice(json.data[0].price);
+                        const quote = json.data[0];
+                        const nativeCurrency = (quote.currency || 'USD').toUpperCase();
+                        const targetCurrency = (quoteCurrency || nativeCurrency).toUpperCase();
+                        // The market price is quoted in the asset's native currency; express it in
+                        // the selected price currency so it follows the chosen base/quote currency.
+                        let unitPrice = quote.price;
+                        if (targetCurrency !== nativeCurrency) {
+                            const rate = await fetchLiveFxRate(nativeCurrency, targetCurrency);
+                            unitPrice = quote.price * rate;
+                        }
+                        setPrice(unitPrice);
                     }
                 } catch (e) { console.error(e); }
                 finally { setFetchingPrice(false); }
@@ -1367,7 +1397,7 @@ function TransactionForm({ holding, existingTx, transactions, onSave, onCancel, 
         } else if (existingTx && existingTx.quoteAmount && existingTx.baseAmount) {
             setPrice(existingTx.quoteAmount / existingTx.baseAmount);
         }
-    }, [sym, existingTx, isBareCurrency, isManualPrice, holding.originalType]);
+    }, [sym, existingTx, isBareCurrency, isManualPrice, holding.originalType, quoteCurrency]);
 
     // Historical price fetch when date changes - ONLY if NOT editing and NOT manually set
     useEffect(() => {
@@ -1388,7 +1418,16 @@ function TransactionForm({ holding, existingTx, transactions, onSave, onCancel, 
                 if (json.history) {
                     const dayPrice = json.history.find(h => h.date.startsWith(date));
                     if (dayPrice) {
-                        setPrice(dayPrice.price);
+                        const nativeCurrency = (fetchedCurrency || holding.currency || 'USD').toUpperCase();
+                        const targetCurrency = (quoteCurrency || nativeCurrency).toUpperCase();
+                        let unitPrice = dayPrice.price;
+                        if (targetCurrency !== nativeCurrency) {
+                            // Use the FX rate for the transaction date, not today's rate.
+                            const fxMap = await buildHistoricalConversionMap(nativeCurrency, targetCurrency);
+                            const rate = getMapRateForDate(fxMap, date) || await fetchLiveFxRate(nativeCurrency, targetCurrency);
+                            unitPrice = dayPrice.price * rate;
+                        }
+                        setPrice(unitPrice);
                     }
                 }
             } catch (e) { console.error(e); }
@@ -1397,7 +1436,7 @@ function TransactionForm({ holding, existingTx, transactions, onSave, onCancel, 
 
         const tId = setTimeout(fetchHistorical, 500);
         return () => clearTimeout(tId);
-    }, [date, sym, existingTx, isManualPrice, holding.originalType]);
+    }, [date, sym, existingTx, isManualPrice, holding.originalType, quoteCurrency, fetchedCurrency, holding.currency]);
 
     const handleMax = () => {
         if (holding.amount) {

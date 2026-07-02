@@ -190,6 +190,64 @@ function getLiveHistoryAdjustmentRatio(rawHistory) {
     return 1;
 }
 
+function DashboardSkeleton({ isWatchlist = false }) {
+    return (
+        <div className={`grid-desktop ${isWatchlist ? 'is-watchlist' : ''}`} aria-busy="true" aria-live="polite">
+            <div className="main-content">
+                <header className={`flex flex-col items-start px-1 ${isWatchlist ? 'pb-4' : 'pb-8'} gap-4 w-full`}>
+                    <div className="flex items-center justify-between w-full gap-2">
+                        <div className="h-4 w-40 bg-white-10 rounded animate-pulse" />
+                        <div className="h-8 w-20 bg-white-5 rounded-full animate-pulse" />
+                    </div>
+                    {!isWatchlist && (
+                        <div className="flex flex-col gap-3 w-full">
+                            <div className="h-3 w-24 bg-white-5 rounded animate-pulse" />
+                            <div className="h-9 w-52 bg-white-10 rounded-lg animate-pulse" />
+                            <div className="flex gap-3">
+                                <div className="h-5 w-32 bg-white-5 rounded animate-pulse" />
+                                <div className="h-5 w-40 bg-white-5 rounded animate-pulse" />
+                            </div>
+                        </div>
+                    )}
+                </header>
+
+                {!isWatchlist && (
+                    <>
+                        <div className="w-full rounded-2xl bg-white-5 animate-pulse" style={{ height: '300px' }} />
+                        <div className="flex justify-between gap-2 mt-3 mb-8">
+                            {TIMEFRAMES.map(tf => (
+                                <div key={tf} className="h-9 flex-1 bg-white-5 rounded-lg animate-pulse" style={{ minWidth: '45px' }} />
+                            ))}
+                        </div>
+                    </>
+                )}
+            </div>
+
+            <div className="sidebar">
+                <div className="flex flex-col gap-3">
+                    {Array.from({ length: 5 }).map((_, i) => (
+                        <div
+                            key={i}
+                            className="flex items-center gap-3 p-3 rounded-2xl animate-enter"
+                            style={{ background: 'var(--card-bg)', border: '1px solid var(--card-border)', animationDelay: `${i * 60}ms` }}
+                        >
+                            <div className="h-10 w-10 rounded-full bg-white-10 animate-pulse shrink-0" />
+                            <div className="flex flex-col gap-2 flex-1 min-w-0">
+                                <div className="h-4 w-28 bg-white-10 rounded animate-pulse" />
+                                <div className="h-3 w-16 bg-white-5 rounded animate-pulse" />
+                            </div>
+                            <div className="flex flex-col gap-2 items-end">
+                                <div className="h-4 w-20 bg-white-10 rounded animate-pulse" />
+                                <div className="h-3 w-12 bg-white-5 rounded animate-pulse" />
+                            </div>
+                        </div>
+                    ))}
+                </div>
+            </div>
+        </div>
+    );
+}
+
 export default function Dashboard() {
     const [transactions, setTransactions] = useState([]);
     const [holdings, setHoldings] = useState([]);
@@ -212,6 +270,9 @@ export default function Dashboard() {
     const [modalMode, setModalMode] = useState('MANAGE');
     const [loading, setLoading] = useState(true);
     const [pricesLoading, setPricesLoading] = useState(true);
+    // Gates the full-page skeleton until the first pricing + holdings pass is done,
+    // so values appear all at once instead of cash flashing in before market data.
+    const [hasBooted, setHasBooted] = useState(false);
     const [historyLoading, setHistoryLoading] = useState(false);
     const [rawHistory, setRawHistory] = useState([]);
     const [transactionFx, setTransactionFx] = useState({});
@@ -224,7 +285,7 @@ export default function Dashboard() {
     const [isWatchlistView, setIsWatchlistView] = useState(false);
     const [watchlistAssets, setWatchlistAssets] = useState([]);
     const [watchlistSort, setWatchlistSort] = useState('custom');
-    const [chartMode, setChartMode] = useState('performance'); // 'performance' | 'value'
+    const [chartMode] = useState('value'); // Chart always shows portfolio Value
     const [monetaxImportStatus, setMonetaxImportStatus] = useState(null);
     const prevTimeframeRef = useRef(timeframe);
     const prevBaseCurrencyRef = useRef(baseCurrency);
@@ -361,11 +422,6 @@ export default function Dashboard() {
                     setTimeframe(savedTimeframe);
                 }
 
-                const savedChartMode = localStorage.getItem('portfolio_chart_mode');
-                if (savedChartMode === 'performance' || savedChartMode === 'value') {
-                    setChartMode(savedChartMode);
-                }
-
                 // Load saved watchlist sort preference
                 const savedWatchlistSort = localStorage.getItem('watchlist_sort');
                 if (savedWatchlistSort && WATCHLIST_SORT_OPTIONS.find(o => o.id === savedWatchlistSort)) {
@@ -496,11 +552,6 @@ export default function Dashboard() {
     const handleTimeframeChange = useCallback((tf) => {
         startTransition(() => setTimeframe(tf));
         localStorage.setItem('portfolio_chart_timeframe', tf);
-    }, []);
-
-    const handleChartModeChange = useCallback((mode) => {
-        startTransition(() => setChartMode(mode));
-        localStorage.setItem('portfolio_chart_mode', mode);
     }, []);
 
     const handleWatchlistSortChange = useCallback((newSort) => {
@@ -846,13 +897,21 @@ export default function Dashboard() {
                     postMarketChangePercent: priceData.postMarketChangePercent
                 };
             });
-            startTransition(() => setHoldings(watchlistHoldings));
+            startTransition(() => {
+                setHoldings(watchlistHoldings);
+                // Flip in the same transition so the skeleton is replaced by real holdings
+                // atomically (no intermediate frame with partial data).
+                if (!loading && !pricesLoading) setHasBooted(true);
+            });
         } else {
             if (transactionFxLoading) return;
             const h = calculateHoldings(transactions, prices, baseCurrency, historicalRateResolver);
-            startTransition(() => setHoldings(h));
+            startTransition(() => {
+                setHoldings(h);
+                if (!loading && !pricesLoading) setHasBooted(true);
+            });
         }
-    }, [transactions, prices, baseCurrency, isWatchlistView, watchlistAssets, transactionFxLoading, historicalRateResolver]);
+    }, [transactions, prices, baseCurrency, isWatchlistView, watchlistAssets, transactionFxLoading, historicalRateResolver, loading, pricesLoading]);
 
     // UI Scroll reset: Only on timeframe change
     useEffect(() => {
@@ -1390,8 +1449,11 @@ export default function Dashboard() {
                 </div>
             )}
 
-            <PullToRefresh onRefresh={handleRefresh} disabled={holdings.length === 0}>
+            <PullToRefresh onRefresh={handleRefresh} disabled={!hasBooted || holdings.length === 0}>
                 <div className={`container animate-enter ${isWatchlistView ? 'is-watchlist' : ''}`} style={portfolios.length > 1 ? { paddingTop: 0 } : {}}>
+                    {!hasBooted ? (
+                        <DashboardSkeleton isWatchlist={isWatchlistView} />
+                    ) : (
                     <div className={`grid-desktop ${isWatchlistView ? 'is-watchlist' : ''}`}>
                         {/* Main Content: Charts & Performance */}
                         <div className="main-content">
@@ -1494,7 +1556,7 @@ export default function Dashboard() {
                                                             <span className="text-xs text-muted uppercase tracking-wider font-bold" style={{ display: 'block', marginBottom: '2px' }}>
                                                                 Total Value
                                                             </span>
-                                                            <span className="text-2xl font-bold tracking-tight">
+                                                            <span className="font-bold tracking-tight" style={{ fontSize: '2.15rem', lineHeight: 1.05, letterSpacing: '-0.03em' }}>
                                                                 {formattedSummaryValue}
                                                             </span>
                                                         </div>
@@ -1518,7 +1580,7 @@ export default function Dashboard() {
                                                         <span className="text-xs text-muted uppercase tracking-wider font-bold" style={{ display: 'block', marginBottom: '2px' }}>
                                                             Total Value
                                                         </span>
-                                                        <span className="text-2xl font-bold tracking-tight">
+                                                        <span className="font-bold tracking-tight" style={{ fontSize: '2.15rem', lineHeight: 1.05, letterSpacing: '-0.03em' }}>
                                                             {formattedSummaryValue}
                                                         </span>
                                                     </div>
@@ -1559,31 +1621,6 @@ export default function Dashboard() {
 	                            {/* Charts hidden for watchlists */}
 	                            {!isWatchlistView && (
 	                                <>
-	                                    <div className="flex gap-1 mb-3 no-select" style={{ maxWidth: '260px' }}>
-	                                        {[
-	                                            { id: 'performance', label: 'Performance' },
-	                                            { id: 'value', label: 'Value' }
-                                        ].map(mode => (
-                                            <button
-                                                key={mode.id}
-                                                type="button"
-                                                onClick={() => handleChartModeChange(mode.id)}
-                                                className={`btn ${chartMode === mode.id ? 'bg-white text-black shadow-lg' : 'btn-ghost opacity-60 hover:opacity-100'}`}
-                                                style={{
-                                                    background: chartMode === mode.id ? 'var(--foreground)' : 'transparent',
-                                                    color: chartMode === mode.id ? 'var(--background)' : 'var(--muted)',
-                                                    border: '1px solid rgba(255,255,255,0.08)',
-                                                    borderRadius: '8px',
-                                                    flex: 1,
-                                                    padding: '7px 10px',
-                                                    fontSize: '0.72rem'
-                                                }}
-                                            >
-                                                {mode.label}
-	                                            </button>
-	                                        ))}
-	                                    </div>
-
 	                                    <div className="no-select">
 	                                        <ProfitChart
 	                                            data={history}
@@ -1638,6 +1675,7 @@ export default function Dashboard() {
                             />
                         </div>
                     </div>
+                    )}
                 </div>
             </PullToRefresh>
 
