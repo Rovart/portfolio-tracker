@@ -71,6 +71,16 @@ body {
   -webkit-tap-highlight-color: transparent !important;
 }
 
+/* Form controls don't inherit font by default — force Geist everywhere */
+input,
+textarea,
+select,
+button {
+  font-family: inherit;
+  font-feature-settings: inherit;
+  letter-spacing: inherit;
+}
+
 a {
   color: inherit;
   text-decoration: none;
@@ -414,13 +424,31 @@ a {
   animation: modalIn 0.28s var(--ease-drawer) both;
 }
 
+/* Bottom sheet: slides up from below. `backwards` (not `both`) so the filled
+   animation state never overrides the inline transform used while dragging. */
+@keyframes sheetIn {
+  from {
+    transform: translateY(100%);
+  }
+
+  to {
+    transform: translateY(0);
+  }
+}
+
+.animate-sheet {
+  animation: sheetIn 0.34s var(--ease-drawer) backwards;
+}
+
 .animate-dialog {
   animation: dialogIn 0.2s var(--ease-out) both;
   transform-origin: center;
 }
 
 .animate-overlay {
-  animation: overlayIn 0.2s var(--ease-out) both;
+  /* `backwards` (not `both`) so the filled state doesn't pin opacity and block
+     the inline backdrop fade used while dragging the sheet down. */
+  animation: overlayIn 0.2s var(--ease-out) backwards;
 }
 
 .animate-pulse {

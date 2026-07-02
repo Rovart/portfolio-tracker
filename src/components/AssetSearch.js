@@ -112,7 +112,7 @@ export default function AssetSearch({ onSelect, onCancel }) {
                         return (
                             <div
                                 key={item.symbol}
-                                className="interactive-surface bg-[#171717] border border-white/5 flex items-center justify-between p-5 rounded-3xl hover:bg-white/5 active:scale-[0.98] cursor-pointer transition-all group overflow-hidden relative"
+                                className="interactive-surface bg-[#171717] border border-white/5 flex items-center justify-between p-4 rounded-2xl hover:bg-white/5 active:scale-[0.98] cursor-pointer transition-all group overflow-hidden relative"
                                 onClick={handleClick}
                                 onKeyDown={(event) => {
                                     if (event.key !== 'Enter' && event.key !== ' ') return;
@@ -122,13 +122,24 @@ export default function AssetSearch({ onSelect, onCancel }) {
                                 role="button"
                                 tabIndex={0}
                             >
-                                <div className="flex flex-col min-w-0">
-                                    <span className="font-bold text-xl group-hover:text-white transition-colors tracking-tight">{displayTitle}</span>
+                                <div className="flex flex-col min-w-0" style={{ gap: '2px' }}>
+                                    <span className="font-semibold text-lg group-hover:text-white transition-colors tracking-tight">{displayTitle}</span>
                                     <span className="text-sm text-muted line-clamp-1">{displaySubtitle}</span>
                                 </div>
-                                <div className="flex flex-col items-end gap-2 flex-shrink-0">
-                                    <span className="text-[10px] font-bold px-2.5 py-1 bg-white/10 rounded-full text-white uppercase tracking-wider">{item.type || 'ASSET'}</span>
-                                    <span className="text-xs text-muted font-medium opacity-60 uppercase">{item.exchange}</span>
+                                <div className="flex flex-col items-end flex-shrink-0" style={{ gap: '6px' }}>
+                                    <span style={{
+                                        fontSize: '9.5px',
+                                        fontWeight: 600,
+                                        letterSpacing: '0.055em',
+                                        textTransform: 'uppercase',
+                                        color: 'var(--text-muted)',
+                                        background: 'rgba(255, 255, 255, 0.05)',
+                                        border: '1px solid var(--card-border)',
+                                        padding: '3px 8px',
+                                        borderRadius: '7px',
+                                        whiteSpace: 'nowrap'
+                                    }}>{item.type || 'ASSET'}</span>
+                                    <span style={{ fontSize: '10px', letterSpacing: '0.04em', textTransform: 'uppercase', color: 'var(--text-faint)', fontWeight: 500 }}>{item.exchange}</span>
                                 </div>
                             </div>
                         );

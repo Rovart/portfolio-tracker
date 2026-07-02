@@ -308,7 +308,7 @@ export default function HoldingsList({ holdings, onSelect, onAddAsset, loading, 
                 <div className="flex items-center justify-between mb-1 gap-2">
                     <h2 className="text-xl">Holdings</h2>
                     <div className="flex items-center gap-2 shrink-0">
-                        <div className="flex items-center gap-1 rounded-lg p-0.5" style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.08)' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '2px', borderRadius: '10px', padding: '3px', background: 'rgba(255,255,255,0.04)', border: '1px solid var(--card-border)' }}>
                             {[
                                 { id: 'daily', label: 'Daily' },
                                 { id: 'total', label: 'Total' }
@@ -317,14 +317,18 @@ export default function HoldingsList({ holdings, onSelect, onAddAsset, loading, 
                                     key={mode.id}
                                     type="button"
                                     onClick={() => handleReturnModeChange(mode.id)}
-                                    className="text-xs font-bold transition-all"
+                                    className="transition-all"
                                     style={{
                                         background: returnMode === mode.id ? 'var(--foreground)' : 'transparent',
                                         color: returnMode === mode.id ? 'var(--background)' : 'var(--text-muted)',
                                         border: 'none',
-                                        borderRadius: '6px',
-                                        padding: '4px 8px',
-                                        cursor: 'pointer'
+                                        borderRadius: '7px',
+                                        padding: '5px 12px',
+                                        fontSize: '0.72rem',
+                                        fontWeight: 600,
+                                        letterSpacing: '-0.01em',
+                                        cursor: 'pointer',
+                                        boxShadow: returnMode === mode.id ? '0 1px 3px rgba(0,0,0,0.35)' : 'none'
                                     }}
                                 >
                                     {mode.label}

@@ -2,7 +2,7 @@
 
 import { startTransition, useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
-import { Eye, EyeOff, Search, Settings } from 'lucide-react';
+import { Eye, EyeOff, Search, Settings, ArrowUpRight, ArrowDownRight } from 'lucide-react';
 import ProfitChart from './ProfitChart';
 import CompositionChart from './CompositionChart';
 import HoldingsList, { WATCHLIST_SORT_OPTIONS } from './HoldingsList';
@@ -43,6 +43,14 @@ import {
 } from '@/utils/db';
 
 const TIMEFRAMES = ['1D', '1W', '1M', '1Y', 'YTD', 'ALL'];
+const TIMEFRAME_LABELS = {
+    '1D': 'Today',
+    '1W': 'Past week',
+    '1M': 'Past month',
+    '1Y': 'Past year',
+    'YTD': 'Year to date',
+    'ALL': 'All time'
+};
 const MONETAX_ALLOWED_ORIGINS = (process.env.NEXT_PUBLIC_MONETAX_ALLOWED_ORIGINS || '')
     .split(',')
     .map(origin => normalizeOrigin(origin))
@@ -1354,9 +1362,6 @@ export default function Dashboard() {
     // Dashboard calculations
     const {
         totalValue,
-        grossAssetsValue,
-        cashValue,
-        displayDiffDay,
         displayPercentDay,
         safeDiff,
         safePercent
@@ -1575,42 +1580,37 @@ export default function Dashboard() {
                                     <div className="flex flex-col gap-1">
                                         {!isWatchlistView && (
                                             <>
-                                                <div className="flex flex-wrap items-center gap-3">
-                                                    <div className="text-left">
-                                                        <span className="text-xs text-muted uppercase tracking-wider font-bold" style={{ display: 'block', marginBottom: '2px' }}>
-                                                            Total Value
-                                                        </span>
-                                                        <span className="font-bold tracking-tight" style={{ fontSize: '2.15rem', lineHeight: 1.05, letterSpacing: '-0.03em' }}>
-                                                            {formattedSummaryValue}
-                                                        </span>
-                                                    </div>
-                                                    {timeframe !== '1D' && (
-                                                        <div style={{ marginLeft: '5px' }} className={`text-xs px-2 py-0.5 rounded-md font-medium ${displayDiffDay >= 0 ? 'bg-success/10 text-success' : 'bg-danger/10 text-danger'}`}>
-                                                            {hideBalances ? (
-                                                                `(${displayPercentDay >= 0 ? '+' : ''}${displayPercentDay.toFixed(2)}%)`
-                                                            ) : (
-                                                                `${displayDiffDay >= 0 ? '+' : '-'}${Math.abs(displayDiffDay).toLocaleString(undefined, { maximumFractionDigits: 0 })} ${baseCurrency === 'USD' ? '$' : baseCurrency} (${displayPercentDay >= 0 ? '+' : ''}${displayPercentDay.toFixed(2)}%)`
-                                                            )}
-                                                        </div>
-                                                    )}
+                                                <div className="text-left">
+                                                    <span className="text-xs text-muted uppercase tracking-wider font-bold" style={{ display: 'block', marginBottom: '2px' }}>
+                                                        Total Value
+                                                    </span>
+                                                    <span className="font-bold tracking-tight" style={{ fontSize: '2.15rem', lineHeight: 1.05, letterSpacing: '-0.03em' }}>
+                                                        {formattedSummaryValue}
+                                                    </span>
                                                 </div>
-                                                <div className={`text font-medium flex flex-wrap items-center gap-x-3`}>
-                                                    <div className={safeDiff >= 0 ? 'text-success' : 'text-danger'}>
+                                                <div className="flex items-center flex-wrap" style={{ gap: '8px', marginTop: '2px' }}>
+                                                    <span
+                                                        className={safeDiff >= 0 ? 'text-success' : 'text-danger'}
+                                                        style={{ display: 'inline-flex', alignItems: 'center', gap: '3px', fontWeight: 600, fontSize: '0.95rem' }}
+                                                    >
+                                                        {safeDiff >= 0 ? <ArrowUpRight size={16} strokeWidth={2.5} /> : <ArrowDownRight size={16} strokeWidth={2.5} />}
                                                         {hideBalances ? (
-                                                            <span className="flex items-center gap-1">
-                                                                {safePercent >= 0 ? '+' : ''}{safePercent.toFixed(2)}%
+                                                            `${safePercent >= 0 ? '+' : ''}${safePercent.toFixed(2)}%`
+                                                        ) : (
+                                                            `${safeDiff >= 0 ? '+' : '-'}${Math.abs(safeDiff).toLocaleString(undefined, { maximumFractionDigits: 2 })} ${currencyLabel} (${safePercent >= 0 ? '+' : ''}${safePercent.toFixed(2)}%)`
+                                                        )}
+                                                    </span>
+                                                    <span className="text-muted" style={{ fontSize: '0.8rem', fontWeight: 500 }}>
+                                                        {TIMEFRAME_LABELS[timeframe] || ''}
+                                                        {timeframe !== '1D' && (
+                                                            <span style={{ color: 'var(--text-faint)' }}>
+                                                                {'  ·  Today '}
+                                                                <span style={{ color: displayPercentDay >= 0 ? 'var(--success)' : 'var(--danger)' }}>
+                                                                    {displayPercentDay >= 0 ? '+' : ''}{displayPercentDay.toFixed(2)}%
+                                                                </span>
                                                             </span>
-                                                        ) : (
-                                                            <span>{safeDiff >= 0 ? '+' : '-'}{Math.abs(safeDiff).toLocaleString(undefined, { maximumFractionDigits: 2 })} {currencyLabel} ({safePercent >= 0 ? '+' : ''}{safePercent.toFixed(2)}%)</span>
                                                         )}
-                                                    </div>
-                                                    <div className="text-muted text-xs" style={{ width: '100%', marginTop: '2px' }}>
-                                                        {hideBalances ? (
-                                                            'Assets: ****** | Cash: ******'
-                                                        ) : (
-                                                            `Assets: ${grossAssetsValue.toLocaleString(undefined, { maximumFractionDigits: 2 })} ${currencyLabel} | Cash: ${cashValue.toLocaleString(undefined, { maximumFractionDigits: 2 })} ${currencyLabel}`
-                                                        )}
-                                                    </div>
+                                                    </span>
                                                 </div>
                                             </>
                                         )}

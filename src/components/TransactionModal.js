@@ -78,6 +78,9 @@ export default function TransactionModal({
     onWatchlistUpdate
 }) {
     const modalRef = useRef(null);
+    const sheetRef = useRef(null);
+    const backdropRef = useRef(null);
+    const dragState = useRef({ active: false, startY: 0, startTime: 0, dy: 0 });
     const [currentView, setCurrentView] = useState(mode === 'ADD' ? 'SEARCH' : 'LIST');
     const [selectedAsset, setSelectedAsset] = useState(holding ? {
         symbol: holding.symbol || holding.asset,
@@ -739,27 +742,106 @@ export default function TransactionModal({
         setCurrentView('LIST');
     };
 
-    // Layout fixed
+    // --- Bottom-sheet drag-to-dismiss (handle only) ---
+    const DISMISS_DISTANCE = 130;   // px dragged before it dismisses on release
+    const DISMISS_VELOCITY = 0.55;  // px/ms flick velocity that dismisses regardless of distance
+
+    const setSheetTransform = (dy) => {
+        if (sheetRef.current) {
+            sheetRef.current.style.transform = dy > 0 ? `translateY(${dy}px)` : 'translateY(0)';
+        }
+        if (backdropRef.current) {
+            // Fade the backdrop as the sheet is pulled down
+            const progress = Math.min(Math.max(dy, 0) / 400, 1);
+            backdropRef.current.style.opacity = String(1 - progress * 0.6);
+        }
+    };
+
+    const handleDragStart = (e) => {
+        dragState.current = { active: true, startY: e.clientY, startTime: Date.now(), dy: 0 };
+        if (sheetRef.current) sheetRef.current.style.transition = 'none';
+        try { e.currentTarget.setPointerCapture(e.pointerId); } catch { }
+    };
+
+    const handleDragMove = (e) => {
+        const s = dragState.current;
+        if (!s.active) return;
+        let dy = e.clientY - s.startY;
+        // Resist upward drag with damping — nothing in the real world stops hard
+        if (dy < 0) dy = dy / 4;
+        s.dy = dy;
+        setSheetTransform(dy);
+    };
+
+    const handleDragEnd = () => {
+        const s = dragState.current;
+        if (!s.active) return;
+        s.active = false;
+        const elapsed = Math.max(Date.now() - s.startTime, 1);
+        const velocity = s.dy / elapsed;
+
+        if (sheetRef.current) {
+            sheetRef.current.style.transition = 'transform 260ms var(--ease-drawer)';
+        }
+
+        if (s.dy > DISMISS_DISTANCE || velocity > DISMISS_VELOCITY) {
+            if (sheetRef.current) sheetRef.current.style.transform = 'translateY(100%)';
+            if (backdropRef.current) backdropRef.current.style.opacity = '0';
+            setTimeout(() => onClose(), 200);
+        } else {
+            setSheetTransform(0);
+        }
+    };
+
     return (
         <div
-            className="animate-modal"
+            ref={backdropRef}
+            className="animate-overlay"
+            onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
             style={{
                 position: 'fixed',
-                top: 0,
-                left: 0,
-                right: 0,
-                bottom: 0,
-                backgroundColor: '#000',
-                color: 'white',
+                inset: 0,
                 zIndex: 9999,
                 display: 'flex',
-                flexDirection: 'column',
-                height: '100dvh',
-                width: '100vw',
-                paddingTop: 'env(safe-area-inset-top, 0px)',
-                paddingBottom: 'env(safe-area-inset-bottom, 0px)'
+                alignItems: 'flex-end',
+                justifyContent: 'center',
+                background: 'rgba(0, 0, 0, 0.55)',
+                backdropFilter: 'blur(6px)',
+                WebkitBackdropFilter: 'blur(6px)'
             }}
         >
+            <div
+                ref={sheetRef}
+                className="animate-sheet"
+                style={{
+                    position: 'relative',
+                    width: '100%',
+                    maxWidth: '640px',
+                    height: '90dvh',
+                    maxHeight: '94dvh',
+                    backgroundColor: 'var(--background-elevated)',
+                    color: 'white',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    borderTopLeftRadius: '24px',
+                    borderTopRightRadius: '24px',
+                    overflow: 'hidden',
+                    boxShadow: '0 -8px 40px rgba(0, 0, 0, 0.5)',
+                    border: '1px solid var(--card-border)',
+                    borderBottom: 'none',
+                    paddingBottom: 'env(safe-area-inset-bottom, 0px)'
+                }}
+            >
+                {/* Drag handle — grab here to pull the sheet down and dismiss */}
+                <div
+                    onPointerDown={handleDragStart}
+                    onPointerMove={handleDragMove}
+                    onPointerUp={handleDragEnd}
+                    onPointerCancel={handleDragEnd}
+                    style={{ flexShrink: 0, display: 'flex', justifyContent: 'center', padding: '10px 0 6px', cursor: 'grab', touchAction: 'none' }}
+                >
+                    <div style={{ width: '40px', height: '5px', borderRadius: '9999px', background: 'rgba(255, 255, 255, 0.18)' }} />
+                </div>
             {/* Header Area */}
             <div className="flex items-center justify-between p-4 sm:p-6 sm:px-8" style={{ borderBottom: '1px solid #262626' }}>
                 <div className="flex items-center gap-4">
@@ -852,7 +934,8 @@ export default function TransactionModal({
                 ref={modalRef}
                 className="flex-1 overflow-y-auto p-6"
                 style={{
-                    paddingBottom: '120px',
+                    minHeight: 0,
+                    paddingBottom: '40px',
                     WebkitOverflowScrolling: 'touch',
                     overscrollBehavior: 'contain'
                 }}
@@ -1180,8 +1263,10 @@ export default function TransactionModal({
                     )}
                 </div>
             </div>
+            </div>
 
-            {/* Delete Confirmation Modal */}
+            {/* Delete Confirmation Modal — sibling of the sheet so the sheet's
+                transform/overflow doesn't clip or offset this fixed overlay */}
             <ConfirmModal
                 isOpen={deleteConfirm !== null}
                 onClose={() => setDeleteConfirm(null)}
@@ -1756,19 +1841,25 @@ function TransactionForm({ holding, existingTx, transactions, onSave, onCancel, 
                 </div>
             )}
 
-            <div className="flex gap-4 mt-8 pt-4 border-t border-white/5">
+            <div className="flex gap-3 mt-8 pt-4 border-t border-white/5">
                 <button
                     type="button"
                     onClick={onCancel}
                     className="flex-1 btn btn-ghost"
-                    style={{ fontSize: '1rem', fontWeight: 'bold' }}
+                    style={{
+                        fontSize: '0.95rem',
+                        fontWeight: 600,
+                        padding: '14px',
+                        borderRadius: '14px',
+                        border: '1px solid var(--card-border-strong)'
+                    }}
                 >
                     Cancel
                 </button>
                 <button
                     type="submit"
                     className="flex-[2] btn"
-                    style={{ fontSize: '1.125rem', padding: '16px' }} // text-lg equivalent
+                    style={{ fontSize: '1rem', fontWeight: 600, padding: '14px', borderRadius: '14px' }}
                 >
                     Save
                 </button>
