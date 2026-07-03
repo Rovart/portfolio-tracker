@@ -214,7 +214,7 @@ function ProfitChart({ data, baseCurrency, hideBalances, loading, chartMode = 'p
                     </div>
                 )}
 
-                <ResponsiveContainer width="100%" height="100%" debounce={50}>
+                <ResponsiveContainer width="100%" height="100%">
                     <AreaChart
                         data={chartData}
                         accessibilityLayer={false}

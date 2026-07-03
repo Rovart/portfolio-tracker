@@ -1078,9 +1078,15 @@ export default function Dashboard() {
             // quote currency is only the payment currency and can differ from the listing.
             const quoteMap = {};
             Object.entries(priceMetadataRef.current).forEach(([sym, quote]) => {
-                const normalized = normalizeAsset(sym);
                 const marketCurrency = normalizeAsset(quote?.currency || getQuoteCurrencyFromSymbol(sym));
-                if (normalized && marketCurrency) {
+                if (!marketCurrency) return;
+                // Key by the exact instrument so multi-pair assets can't collide:
+                // BTC-USD → USD and BTC-EUR → EUR must both survive. A normalized
+                // ('BTC') entry is only a fallback and must never be overwritten by
+                // a later pair (that made history value USD prices as EUR).
+                quoteMap[String(sym).toUpperCase()] = marketCurrency;
+                const normalized = normalizeAsset(sym);
+                if (normalized && !quoteMap[normalized]) {
                     quoteMap[normalized] = marketCurrency;
                 }
             });

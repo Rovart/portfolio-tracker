@@ -180,9 +180,14 @@ function valueBalance(asset, amount, timestamp, historicalPrices, historyIndexes
         localPrice = findPrice(historyIndexes, timestamp, priceSym, lastKnownPrices);
         if (!localPrice) return null;
 
-        quoteCurrency = upper(externalQuoteMap[normalized]) ||
+        // The quote currency MUST describe the instrument we priced with, not the
+        // asset in general. An asset traded via several pairs (BTC-USD + BTC-EUR)
+        // must convert its BTC-USD price as USD — resolving by normalized asset
+        // let one pair's currency mislabel another pair's prices.
+        quoteCurrency = upper(externalQuoteMap[priceSym]) ||
+            upper(getQuoteCurrencyFromSymbol(priceSym)) ||
+            upper(externalQuoteMap[normalized]) ||
             metadata.quoteMap[normalized] ||
-            getQuoteCurrencyFromSymbol(priceSym) ||
             'USD';
     }
 
