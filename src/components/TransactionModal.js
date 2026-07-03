@@ -117,6 +117,7 @@ export default function TransactionModal({
     const [isInWatchlist, setIsInWatchlist] = useState(false);
     const [rangePerformance, setRangePerformance] = useState(null); // { range, change, changePercent }
     const [assetSummaryMetric, setAssetSummaryMetric] = useState('value'); // 'value' | 'total' | 'realized' | 'unrealized'
+    const [purchaseInfoMetric, setPurchaseInfoMetric] = useState('average'); // 'average' | 'held'
 
     // Sync selectedAsset when holding prop changes (e.g. if name is loaded late in Dashboard)
     // Use primitive dependencies to minimize re-runs
@@ -173,6 +174,7 @@ export default function TransactionModal({
 
     useEffect(() => {
         setAssetSummaryMetric('value');
+        setPurchaseInfoMetric('average');
     }, [selectedAssetSymbol]);
 
     useEffect(() => {
@@ -671,6 +673,18 @@ export default function TransactionModal({
         });
     };
 
+    const togglePurchaseInfoMetric = () => {
+        setPurchaseInfoMetric(prev => prev === 'average' ? 'held' : 'average');
+    };
+
+    const heldAmount = Math.abs(currentBalance) < 0.005 ? 0 : currentBalance;
+    const heldTicker = normalizeAsset(selectedSymbol) || selectedSymbol || '';
+    const purchaseInfoLabel = purchaseInfoMetric === 'held' ? 'Held Amount' : 'Avg Purchase';
+    const nextPurchaseInfoLabel = purchaseInfoMetric === 'held' ? 'Avg Purchase' : 'Held Amount';
+    const purchaseInfoValue = purchaseInfoMetric === 'held'
+        ? `${hideBalances ? '••••' : heldAmount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ${heldTicker}`
+        : `${averagePurchasePrice.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ${baseCurrency === 'USD' ? '$' : baseCurrency}`;
+
     const isAssetProfitMetric = assetSummaryMetric !== 'value';
     const isAssetRealizedMetric = assetSummaryMetric === 'realized';
     const isAssetUnrealizedMetric = assetSummaryMetric === 'unrealized';
@@ -994,16 +1008,30 @@ export default function TransactionModal({
                                             <>
                                                 {/* Only show Avg Purchase if there are BUY transactions (avgPrice > 0) */}
                                                 {averagePurchasePrice > 0 && (
-                                                    <div className="flex flex-col flex-1 items-center">
-                                                        <span className="text-xs sm:text-sm text-muted uppercase tracking-wider text-center">Avg Purchase</span>
-                                                        {loadingPrice ? (
+                                                    <button
+                                                        type="button"
+                                                        onClick={togglePurchaseInfoMetric}
+                                                        className="flex flex-col flex-1 items-center active-scale"
+                                                        style={{
+                                                            background: 'transparent',
+                                                            border: 'none',
+                                                            padding: 0,
+                                                            cursor: 'pointer',
+                                                            touchAction: 'manipulation',
+                                                            minHeight: '48px'
+                                                        }}
+                                                        title={`Show ${nextPurchaseInfoLabel}`}
+                                                        aria-label={`${purchaseInfoLabel}: ${purchaseInfoValue}`}
+                                                    >
+                                                        <span className="text-xs sm:text-sm text-muted uppercase tracking-wider text-center">{purchaseInfoLabel}</span>
+                                                        {loadingPrice && purchaseInfoMetric === 'average' ? (
                                                             <div className="h-7 w-24 bg-white-10 rounded animate-pulse mt-1" />
                                                         ) : (
                                                             <span className="text sm:text-2xl text-center">
-                                                                {averagePurchasePrice.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} {baseCurrency === 'USD' ? '$' : baseCurrency}
+                                                                {purchaseInfoValue}
                                                             </span>
                                                         )}
-                                                    </div>
+                                                    </button>
                                                 )}
                                                 <button
                                                     type="button"
