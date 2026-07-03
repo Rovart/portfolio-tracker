@@ -362,12 +362,10 @@ export default function Dashboard() {
                         setIsSettingsModalOpen(false);
                         return;
                     }
-                    // Close Transaction modal if open
-                    if (isModalOpen) {
-                        setIsModalOpen(false);
-                        setSelectedHolding(null);
-                        return;
-                    }
+                    // TransactionModal registers its own back handler (sheet → asset
+                    // view → close); doing anything here would double-handle the
+                    // gesture and kick the user all the way home.
+                    if (isModalOpen) return;
                     // No modals open - exit the app
                     App.exitApp();
                 });

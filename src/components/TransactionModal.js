@@ -6,6 +6,7 @@ import AssetSearch from './AssetSearch';
 import EarningsEvent from './EarningsEvent';
 import ConfirmModal from './ConfirmModal';
 import WalletTracker from './WalletTracker';
+import BottomSheet, { closeTopSheet } from './BottomSheet';
 
 // Heavy, chart-driven views are code-split so opening the modal doesn't have to
 // parse/execute recharts up front, and lazily mounted after the open animation.
@@ -92,9 +93,6 @@ export default function TransactionModal({
     onWatchlistUpdate
 }) {
     const modalRef = useRef(null);
-    const sheetRef = useRef(null);
-    const backdropRef = useRef(null);
-    const dragState = useRef({ active: false, startY: 0, startTime: 0, dy: 0 });
     const heavyRafRef = useRef(0);
     const [currentView, setCurrentView] = useState(mode === 'ADD' ? 'SEARCH' : 'LIST');
     const [selectedAsset, setSelectedAsset] = useState(holding ? {
@@ -198,6 +196,9 @@ export default function TransactionModal({
             try {
                 const { App } = await import('@capacitor/app');
                 backButtonListener = await App.addListener('backButton', () => {
+                    // An open bottom sheet (transaction form, wallet add) owns the
+                    // back gesture — close just the sheet, never the whole modal.
+                    if (closeTopSheet()) return;
                     if (currentView === 'FORM') {
                         setCurrentView('LIST');
                         setEditingTx(null);
@@ -769,60 +770,6 @@ export default function TransactionModal({
         return () => cancelAnimationFrame(heavyRafRef.current);
     }, []);
 
-    // --- Bottom-sheet drag-to-dismiss (handle only) ---
-    const DISMISS_DISTANCE = 130;   // px dragged before it dismisses on release
-    const DISMISS_VELOCITY = 0.55;  // px/ms flick velocity that dismisses regardless of distance
-
-    const setSheetTransform = (dy) => {
-        if (sheetRef.current) {
-            sheetRef.current.style.transform = dy > 0 ? `translateY(${dy}px)` : 'translateY(0)';
-        }
-        if (backdropRef.current) {
-            // Fade the backdrop as the sheet is pulled down
-            const progress = Math.min(Math.max(dy, 0) / 400, 1);
-            backdropRef.current.style.opacity = String(1 - progress * 0.6);
-        }
-    };
-
-    const handleDragStart = (e) => {
-        // Allow dragging from the grabber and the header, but never hijack a tap
-        // on an interactive control (back arrow, buttons, selects, inputs).
-        if (e.target.closest('button, select, input, textarea, a')) return;
-        dragState.current = { active: true, startY: e.clientY, startTime: Date.now(), dy: 0 };
-        if (sheetRef.current) sheetRef.current.style.transition = 'none';
-        try { e.currentTarget.setPointerCapture(e.pointerId); } catch { }
-    };
-
-    const handleDragMove = (e) => {
-        const s = dragState.current;
-        if (!s.active) return;
-        let dy = e.clientY - s.startY;
-        // Resist upward drag with damping — nothing in the real world stops hard
-        if (dy < 0) dy = dy / 4;
-        s.dy = dy;
-        setSheetTransform(dy);
-    };
-
-    const handleDragEnd = () => {
-        const s = dragState.current;
-        if (!s.active) return;
-        s.active = false;
-        const elapsed = Math.max(Date.now() - s.startTime, 1);
-        const velocity = s.dy / elapsed;
-
-        if (sheetRef.current) {
-            sheetRef.current.style.transition = 'transform 260ms var(--ease-drawer)';
-        }
-
-        if (s.dy > DISMISS_DISTANCE || velocity > DISMISS_VELOCITY) {
-            if (sheetRef.current) sheetRef.current.style.transform = 'translateY(100%)';
-            if (backdropRef.current) backdropRef.current.style.opacity = '0';
-            setTimeout(() => closeForm(), 200);
-        } else {
-            setSheetTransform(0);
-        }
-    };
-
     // Dismissing the transaction form returns to the asset view, never home
     const closeForm = () => {
         setCurrentView('LIST');
@@ -1274,90 +1221,25 @@ export default function TransactionModal({
 
             {/* Add/Edit Transaction — bottom sheet over the asset view */}
             {isFormOpen && (
-                <div
-                    ref={backdropRef}
-                    className="animate-overlay"
-                    onClick={(e) => { if (e.target === e.currentTarget) closeForm(); }}
-                    style={{
-                        position: 'fixed',
-                        inset: 0,
-                        zIndex: 10,
-                        display: 'flex',
-                        alignItems: 'flex-end',
-                        justifyContent: 'center',
-                        background: 'rgba(0, 0, 0, 0.6)'
-                    }}
+                <BottomSheet
+                    title={editingTx ? 'Edit Transaction' : 'New Transaction'}
+                    subtitle={selectedAsset?.name || selectedAsset?.symbol}
+                    onClose={closeForm}
                 >
-                    <div
-                        ref={sheetRef}
-                        className="animate-sheet"
-                        style={{
-                            position: 'relative',
-                            width: '100%',
-                            maxWidth: '640px',
-                            maxHeight: '92dvh',
-                            backgroundColor: 'var(--background-elevated)',
-                            display: 'flex',
-                            flexDirection: 'column',
-                            borderTopLeftRadius: '24px',
-                            borderTopRightRadius: '24px',
-                            overflow: 'hidden',
-                            boxShadow: '0 -8px 40px rgba(0, 0, 0, 0.5)',
-                            border: '1px solid var(--card-border)',
-                            borderBottom: 'none',
-                            paddingBottom: 'env(safe-area-inset-bottom, 0px)'
-                        }}
-                    >
-                        {/* Draggable sheet header: grabber + title */}
-                        <div
-                            onPointerDown={handleDragStart}
-                            onPointerMove={handleDragMove}
-                            onPointerUp={handleDragEnd}
-                            onPointerCancel={handleDragEnd}
-                            style={{ flexShrink: 0, cursor: 'grab', touchAction: 'none', padding: '10px 24px 12px', borderBottom: '1px solid var(--card-border)' }}
-                        >
-                            <div style={{ display: 'flex', justifyContent: 'center', marginBottom: '10px' }}>
-                                <div style={{ width: '40px', height: '5px', borderRadius: '9999px', background: 'rgba(255, 255, 255, 0.18)' }} />
-                            </div>
-                            <div className="flex items-center justify-between">
-                                <div className="flex flex-col min-w-0" style={{ gap: '1px' }}>
-                                    <span className="font-bold tracking-tight truncate" style={{ fontSize: '1.05rem' }}>
-                                        {editingTx ? 'Edit Transaction' : 'New Transaction'}
-                                    </span>
-                                    <span className="text-muted truncate" style={{ fontSize: '0.75rem' }}>
-                                        {selectedAsset?.name || selectedAsset?.symbol}
-                                    </span>
-                                </div>
-                                <button
-                                    onClick={closeForm}
-                                    aria-label="Close"
-                                    className="p-2 rounded-full hover-bg-surface transition-all"
-                                    style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', display: 'flex', flexShrink: 0 }}
-                                >
-                                    <X size={20} />
-                                </button>
-                            </div>
-                        </div>
-                        <div
-                            className="flex-1 overflow-y-auto p-6"
-                            style={{ minHeight: 0, WebkitOverflowScrolling: 'touch', overscrollBehavior: 'contain' }}
-                        >
-                            <div style={{ maxWidth: '600px', margin: '0 auto' }}>
-                                <TransactionForm
-                                    holding={selectedAsset}
-                                    existingTx={editingTx}
-                                    transactions={transactions}
-                                    fetchedCurrency={selectedAsset.currency}
-                                    portfolios={portfolios}
-                                    currentPortfolioId={currentPortfolioId}
-                                    baseCurrency={baseCurrency}
-                                    onSave={(tx) => { onSave(tx); closeForm(); }}
-                                    onCancel={closeForm}
-                                />
-                            </div>
-                        </div>
+                    <div style={{ maxWidth: '600px', margin: '0 auto' }}>
+                        <TransactionForm
+                            holding={selectedAsset}
+                            existingTx={editingTx}
+                            transactions={transactions}
+                            fetchedCurrency={selectedAsset.currency}
+                            portfolios={portfolios}
+                            currentPortfolioId={currentPortfolioId}
+                            baseCurrency={baseCurrency}
+                            onSave={(tx) => { onSave(tx); closeForm(); }}
+                            onCancel={closeForm}
+                        />
                     </div>
-                </div>
+                </BottomSheet>
             )}
 
             {/* Delete Confirmation Modal — sibling of the sheet so the sheet's

@@ -1,8 +1,15 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { Wallet, Plus, Trash2, RefreshCw } from 'lucide-react';
 import { getWalletsForChain, addWallet, removeWallet } from '@/utils/db';
+import BottomSheet from './BottomSheet';
+
+// Client-side mirrors of the server validation in /api/wallet
+const ADDRESS_PATTERNS = {
+    BTC: /^(bc1[a-z0-9]{20,90}|[13][a-km-zA-HJ-NP-Z1-9]{25,40})$/,
+    ETH: /^0x[a-fA-F0-9]{40}$/
+};
 
 function shortenAddress(address) {
     if (!address || address.length <= 14) return address;
@@ -23,6 +30,11 @@ export default function WalletTracker({ chain, price, changePercent, baseCurrenc
 
     const currencyLabel = baseCurrency === 'USD' ? '$' : baseCurrency;
     const unit = chain;
+
+    const trimmedAddress = address.trim();
+    const isValidAddress = useMemo(() => (
+        ADDRESS_PATTERNS[chain] ? ADDRESS_PATTERNS[chain].test(trimmedAddress) : false
+    ), [chain, trimmedAddress]);
 
     const loadBalance = useCallback(async (wallet) => {
         try {
@@ -53,24 +65,29 @@ export default function WalletTracker({ chain, price, changePercent, baseCurrenc
         return () => { cancelled = true; };
     }, [chain, refreshAll]);
 
+    const closeAddSheet = useCallback(() => {
+        setAdding(false);
+        setAddress('');
+        setLabel('');
+        setError('');
+    }, []);
+
     const handleAdd = async (e) => {
-        e.preventDefault();
-        if (!address.trim() || busy) return;
+        e?.preventDefault?.();
+        if (!isValidAddress || busy) return;
         setBusy(true);
         setError('');
         try {
             // Validate the address by fetching its balance before saving
-            const res = await fetch(`/api/wallet?chain=${chain}&address=${encodeURIComponent(address.trim())}`);
+            const res = await fetch(`/api/wallet?chain=${chain}&address=${encodeURIComponent(trimmedAddress)}`);
             const json = await res.json();
             if (!res.ok) throw new Error(json.error || 'Could not verify address');
 
-            const id = await addWallet(chain, address, label);
-            const wallet = { id, chain, address: address.trim(), label: label.trim() };
+            const id = await addWallet(chain, trimmedAddress, label);
+            const wallet = { id, chain, address: trimmedAddress, label: label.trim() };
             setWallets(prev => [...prev, wallet]);
             setBalances(prev => ({ ...prev, [id]: { balance: json.balance } }));
-            setAddress('');
-            setLabel('');
-            setAdding(false);
+            closeAddSheet();
         } catch (err) {
             setError(err.message || 'Failed to add wallet');
         } finally {
@@ -84,6 +101,7 @@ export default function WalletTracker({ chain, price, changePercent, baseCurrenc
     };
 
     const labelStyle = { fontSize: '0.72rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em' };
+    const fieldLabelStyle = { ...labelStyle, marginBottom: '8px', display: 'block' };
 
     return (
         <div className="mt-8">
@@ -103,69 +121,28 @@ export default function WalletTracker({ chain, price, changePercent, baseCurrenc
                             <RefreshCw size={14} className={refreshing ? 'animate-spin' : ''} />
                         </button>
                     )}
-                    {!adding && (
-                        <button
-                            type="button"
-                            onClick={() => setAdding(true)}
-                            className="flex items-center gap-1 transition-all"
-                            style={{
-                                background: 'rgba(255,255,255,0.05)',
-                                border: '1px solid var(--card-border)',
-                                borderRadius: '8px',
-                                padding: '5px 10px',
-                                fontSize: '0.72rem',
-                                fontWeight: 600,
-                                color: 'var(--foreground)',
-                                cursor: 'pointer'
-                            }}
-                        >
-                            <Plus size={13} />
-                            Add address
-                        </button>
-                    )}
+                    <button
+                        type="button"
+                        onClick={() => setAdding(true)}
+                        className="flex items-center gap-1 transition-all"
+                        style={{
+                            background: 'rgba(255,255,255,0.05)',
+                            border: '1px solid var(--card-border)',
+                            borderRadius: '8px',
+                            padding: '5px 10px',
+                            fontSize: '0.72rem',
+                            fontWeight: 600,
+                            color: 'var(--foreground)',
+                            cursor: 'pointer'
+                        }}
+                    >
+                        <Plus size={13} />
+                        Add address
+                    </button>
                 </div>
             </div>
 
-            {adding && (
-                <form onSubmit={handleAdd} className="flex flex-col gap-2" style={{ marginBottom: '12px' }}>
-                    <input
-                        className="input-reset"
-                        style={{ fontSize: '0.85rem', padding: '10px 12px' }}
-                        placeholder={chain === 'BTC' ? 'Bitcoin address (bc1… / 1… / 3…)' : 'Ethereum address (0x…)'}
-                        value={address}
-                        onChange={e => setAddress(e.target.value)}
-                        autoFocus
-                        spellCheck={false}
-                        autoComplete="off"
-                    />
-                    <input
-                        className="input-reset"
-                        style={{ fontSize: '0.85rem', padding: '10px 12px' }}
-                        placeholder="Label (optional, e.g. Cold storage)"
-                        value={label}
-                        onChange={e => setLabel(e.target.value)}
-                    />
-                    {error && <span className="text-danger" style={{ fontSize: '0.78rem' }}>{error}</span>}
-                    <div className="flex gap-2">
-                        <button
-                            type="button"
-                            onClick={() => { setAdding(false); setError(''); }}
-                            style={{ flex: 1, background: 'transparent', border: '1px solid var(--card-border-strong)', borderRadius: '10px', padding: '9px', fontSize: '0.8rem', fontWeight: 600, color: 'var(--text-muted)', cursor: 'pointer' }}
-                        >
-                            Cancel
-                        </button>
-                        <button
-                            type="submit"
-                            disabled={busy || !address.trim()}
-                            style={{ flex: 2, background: 'var(--foreground)', border: 'none', borderRadius: '10px', padding: '9px', fontSize: '0.8rem', fontWeight: 600, color: 'var(--background)', cursor: 'pointer', opacity: busy || !address.trim() ? 0.5 : 1 }}
-                        >
-                            {busy ? 'Verifying…' : 'Track wallet'}
-                        </button>
-                    </div>
-                </form>
-            )}
-
-            {wallets.length === 0 && !adding && (
+            {wallets.length === 0 && (
                 <p style={{ margin: 0, fontSize: '0.8rem', color: 'var(--text-faint)' }}>
                     Track a {chain} address read-only — balance and value update automatically.
                 </p>
@@ -226,6 +203,75 @@ export default function WalletTracker({ chain, price, changePercent, baseCurrenc
                     );
                 })}
             </div>
+
+            {/* Add address — bottom sheet, Save enabled once the address is valid */}
+            {adding && (
+                <BottomSheet
+                    title="Track wallet"
+                    subtitle={`Watch-only ${chain} address`}
+                    onClose={closeAddSheet}
+                    maxWidth={560}
+                >
+                    <form onSubmit={handleAdd} className="flex flex-col gap-4" style={{ maxWidth: '520px', margin: '0 auto' }}>
+                        <div>
+                            <label style={fieldLabelStyle} htmlFor="wallet-address">Address</label>
+                            <input
+                                id="wallet-address"
+                                className="input-reset"
+                                style={{ fontFamily: 'var(--font-geist-mono), monospace', fontSize: '0.9rem' }}
+                                placeholder={chain === 'BTC' ? 'bc1…  /  1…  /  3…' : '0x…'}
+                                value={address}
+                                onChange={e => { setAddress(e.target.value); setError(''); }}
+                                autoFocus
+                                spellCheck={false}
+                                autoComplete="off"
+                                autoCorrect="off"
+                            />
+                            {trimmedAddress && !isValidAddress && (
+                                <span style={{ display: 'block', marginTop: '6px', fontSize: '0.75rem', color: 'var(--text-faint)' }}>
+                                    Doesn&apos;t look like a valid {chain} address yet
+                                </span>
+                            )}
+                        </div>
+                        <div>
+                            <label style={fieldLabelStyle} htmlFor="wallet-label">Label (optional)</label>
+                            <input
+                                id="wallet-label"
+                                className="input-reset"
+                                placeholder="e.g. Cold storage"
+                                value={label}
+                                onChange={e => setLabel(e.target.value)}
+                            />
+                        </div>
+
+                        {error && <span className="text-danger" style={{ fontSize: '0.8rem' }}>{error}</span>}
+
+                        <button
+                            type="submit"
+                            disabled={!isValidAddress || busy}
+                            className="transition-all"
+                            style={{
+                                width: '100%',
+                                background: 'var(--foreground)',
+                                border: 'none',
+                                borderRadius: '14px',
+                                padding: '14px',
+                                fontSize: '1rem',
+                                fontWeight: 600,
+                                color: 'var(--background)',
+                                cursor: isValidAddress && !busy ? 'pointer' : 'default',
+                                opacity: isValidAddress && !busy ? 1 : 0.4,
+                                marginTop: '4px'
+                            }}
+                        >
+                            {busy ? 'Verifying…' : 'Save'}
+                        </button>
+                        <p style={{ margin: 0, fontSize: '0.75rem', color: 'var(--text-faint)', textAlign: 'center' }}>
+                            Read-only. We never ask for keys — only a public address.
+                        </p>
+                    </form>
+                </BottomSheet>
+            )}
         </div>
     );
 }
