@@ -20,23 +20,36 @@ async function fetchBtcBalance(address) {
     return sats / 1e8;
 }
 
+const ETH_RPC_ENDPOINTS = [
+    'https://ethereum-rpc.publicnode.com',
+    'https://eth.drpc.org'
+];
+
 async function fetchEthBalance(address) {
-    const res = await fetch('https://cloudflare-eth.com', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-            jsonrpc: '2.0',
-            method: 'eth_getBalance',
-            params: [address, 'latest'],
-            id: 1
-        }),
-        next: { revalidate: 60 }
-    });
-    if (!res.ok) throw new Error(`cloudflare-eth responded ${res.status}`);
-    const data = await res.json();
-    if (data.error) throw new Error(data.error.message || 'RPC error');
-    // Hex wei -> ETH. Number precision is fine for display purposes.
-    return Number(BigInt(data.result)) / 1e18;
+    let lastError;
+    for (const endpoint of ETH_RPC_ENDPOINTS) {
+        try {
+            const res = await fetch(endpoint, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    jsonrpc: '2.0',
+                    method: 'eth_getBalance',
+                    params: [address, 'latest'],
+                    id: 1
+                }),
+                next: { revalidate: 60 }
+            });
+            if (!res.ok) throw new Error(`${endpoint} responded ${res.status}`);
+            const data = await res.json();
+            if (data.error) throw new Error(data.error.message || 'RPC error');
+            // Hex wei -> ETH. Number precision is fine for display purposes.
+            return Number(BigInt(data.result)) / 1e18;
+        } catch (e) {
+            lastError = e;
+        }
+    }
+    throw lastError || new Error('All ETH RPC endpoints failed');
 }
 
 export async function GET(request) {

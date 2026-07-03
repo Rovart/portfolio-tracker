@@ -142,24 +142,54 @@ const DISPLAY_NAME = false; // true = Name, false = Symbol
 // Distinct, muted-professional palette for allocation segments
 const ALLOC_COLORS = ['#4c8dff', '#30d158', '#bf5af2', '#ff9f0a', '#64d2ff', '#ffd60a', '#ff6482', '#ac8e68'];
 
-// Slim stacked allocation bar: top assets by weight, cash grouped, remainder as "Other"
+const TYPE_GROUP_LABELS = {
+    CRYPTOCURRENCY: 'Crypto',
+    EQUITY: 'Stocks',
+    ETF: 'ETFs',
+    MUTUALFUND: 'Funds',
+    FUTURE: 'Commodities',
+    INDEX: 'Indexes',
+    CURRENCY: 'Currencies'
+};
+
+// Slim stacked allocation bar. Few assets: one segment per asset.
+// Many assets: grouped by asset class so the bar stays readable.
 function AllocationBar({ holdings, cashValue }) {
     const segments = useMemo(() => {
         const assets = [...holdings].sort((a, b) => (b.value || 0) - (a.value || 0));
         const total = assets.reduce((acc, h) => acc + (h.value || 0), 0) + Math.max(cashValue, 0);
         if (total <= 0) return [];
 
-        const top = assets.slice(0, 4).filter(h => (h.value || 0) / total >= 0.02);
-        const rest = assets.slice(top.length).reduce((acc, h) => acc + (h.value || 0), 0);
+        let segs;
+        if (assets.length > 6) {
+            // Group by asset class
+            const byType = new Map();
+            assets.forEach(h => {
+                const label = TYPE_GROUP_LABELS[String(h.originalType || '').toUpperCase()] || 'Other';
+                byType.set(label, (byType.get(label) || 0) + (h.value || 0));
+            });
+            segs = [...byType.entries()]
+                .sort((a, b) => b[1] - a[1])
+                .filter(([, value]) => value / total >= 0.005)
+                .map(([label, value], i) => ({
+                    label,
+                    pct: (value / total) * 100,
+                    color: label === 'Other' ? 'rgba(255,255,255,0.28)' : ALLOC_COLORS[i % ALLOC_COLORS.length]
+                }));
+        } else {
+            const top = assets.slice(0, 4).filter(h => (h.value || 0) / total >= 0.02);
+            const rest = assets.slice(top.length).reduce((acc, h) => acc + (h.value || 0), 0);
 
-        const segs = top.map((h, i) => ({
-            label: h.asset,
-            pct: (h.value / total) * 100,
-            color: ALLOC_COLORS[i % ALLOC_COLORS.length]
-        }));
-        if (rest / total >= 0.005) {
-            segs.push({ label: 'Other', pct: (rest / total) * 100, color: 'rgba(255,255,255,0.28)' });
+            segs = top.map((h, i) => ({
+                label: h.asset,
+                pct: (h.value / total) * 100,
+                color: ALLOC_COLORS[i % ALLOC_COLORS.length]
+            }));
+            if (rest / total >= 0.005) {
+                segs.push({ label: 'Other', pct: (rest / total) * 100, color: 'rgba(255,255,255,0.28)' });
+            }
         }
+
         if (cashValue / total >= 0.005) {
             segs.push({ label: 'Cash', pct: (Math.max(cashValue, 0) / total) * 100, color: 'rgba(255,255,255,0.14)' });
         }
