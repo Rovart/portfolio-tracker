@@ -379,6 +379,7 @@ function AssetChart({ symbol, chartSymbol, baseCurrency = 'USD', fxRate = 1, par
                 <ResponsiveContainer width="100%" height="100%" debounce={50}>
                     <AreaChart
                         data={chartData}
+                        accessibilityLayer={false}
                         margin={{ top: 0, right: 0, left: 0, bottom: 0 }}
                         onMouseDown={handleMouseDown}
                         onMouseMove={handleMouseMove}

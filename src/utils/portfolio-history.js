@@ -192,7 +192,12 @@ function valueBalance(asset, amount, timestamp, historicalPrices, historyIndexes
     return amount * localPrice * fxRate;
 }
 
-export function calculatePortfolioHistory(transactions, historicalPrices, baseCurrency = 'USD', externalQuoteMap = {}) {
+// livePriceResolver: optional (asset) => unit price in base currency, or null when
+// the asset has no live quote. When provided it enforces consistency with the live
+// holdings valuation: assets unpriceable live are excluded from every point (they
+// contribute nothing to the live total either), and the final "now" point is valued
+// with live prices so the chart meets the header value exactly instead of cliffing.
+export function calculatePortfolioHistory(transactions, historicalPrices, baseCurrency = 'USD', externalQuoteMap = {}, livePriceResolver = null) {
     if (!transactions || transactions.length === 0) return [];
 
     const timestampSet = new Set();
@@ -227,6 +232,20 @@ export function calculatePortfolioHistory(transactions, historicalPrices, baseCu
     let unitValue = 1;
     let initialChartValue = 0;
     let initialized = false;
+
+    // Resolve live prices once; null = asset has no live quote right now
+    const liveRates = {};
+    const getLiveRate = (asset) => {
+        if (!livePriceResolver) return undefined;
+        if (!(asset in liveRates)) {
+            const rate = livePriceResolver(asset);
+            liveRates[asset] = Number.isFinite(rate) && rate > 0 ? rate : null;
+        }
+        return liveRates[asset];
+    };
+
+    const finalTimestamp = sortedTimestamps[sortedTimestamps.length - 1];
+    const divergences = [];
 
     for (const timestamp of sortedTimestamps) {
         const timestampDate = String(timestamp).split('T')[0];
@@ -276,9 +295,17 @@ export function calculatePortfolioHistory(transactions, historicalPrices, baseCu
 
         let totalValue = 0;
         let hasValuedAsset = false;
+        const isFinal = timestamp === finalTimestamp;
 
         for (const [asset, amount] of Object.entries(currentBalances)) {
             if (!amount || isNaN(amount) || Math.abs(amount) < EPSILON) continue;
+
+            const liveRate = getLiveRate(asset);
+            // Consistency with the live valuation: an asset without a live quote
+            // contributes nothing to the header total, so it must not inflate the
+            // chart either — otherwise the curve ends in a permanent fake cliff.
+            if (liveRate === null) continue;
+
             const value = valueBalance(
                 asset,
                 amount,
@@ -290,6 +317,18 @@ export function calculatePortfolioHistory(transactions, historicalPrices, baseCu
                 externalQuoteMap,
                 lastKnownPrices
             );
+
+            if (isFinal && liveRate !== undefined) {
+                const liveValue = amount * liveRate;
+                if (value !== null && Number.isFinite(value) && Math.abs(liveValue) > EPSILON) {
+                    const drift = Math.abs(value - liveValue) / Math.max(Math.abs(liveValue), EPSILON);
+                    if (drift > 0.02) divergences.push({ asset, histValue: value, liveValue });
+                }
+                totalValue += liveValue;
+                hasValuedAsset = true;
+                continue;
+            }
+
             if (value === null || !Number.isFinite(value)) continue;
             totalValue += value;
             hasValuedAsset = true;
@@ -332,6 +371,16 @@ export function calculatePortfolioHistory(transactions, historicalPrices, baseCu
             value: initialChartValue * unitValue,
             rawValue: totalValue
         });
+    }
+
+    // Surface assets whose historical valuation drifts from their live quote —
+    // this is the signature of stale/wrong history data (delisted or renamed
+    // symbols, bad price feeds) and the cause of chart-vs-actual mismatches.
+    if (divergences.length > 0) {
+        console.warn(
+            '[portfolio-history] Historical valuation differs >2% from live quotes for:',
+            divergences.map(d => `${d.asset} (hist ${d.histValue.toFixed(2)} vs live ${d.liveValue.toFixed(2)})`).join(', ')
+        );
     }
 
     return dailyData;

@@ -1099,7 +1099,11 @@ export default function Dashboard() {
 
             await new Promise(resolve => setTimeout(resolve, 0));
             if (isCancelled) return;
-            const chartData = calculatePortfolioHistory(transactions, historyMap, baseCurrency, quoteMap);
+            // Live resolver keeps the chart consistent with the header valuation:
+            // the final point uses live quotes and unpriceable assets are excluded
+            // from the whole curve (they contribute nothing to the live total either).
+            const livePriceResolver = (asset) => getCurrentAssetRate(pricesRef.current, asset, baseCurrency);
+            const chartData = calculatePortfolioHistory(transactions, historyMap, baseCurrency, quoteMap, livePriceResolver);
             if (isCancelled) return;
             startTransition(() => {
                 setRawHistory(chartData);

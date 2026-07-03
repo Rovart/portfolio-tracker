@@ -217,6 +217,7 @@ function ProfitChart({ data, baseCurrency, hideBalances, loading, chartMode = 'p
                 <ResponsiveContainer width="100%" height="100%" debounce={50}>
                     <AreaChart
                         data={chartData}
+                        accessibilityLayer={false}
                         margin={{ top: 6, right: 8, left: 0, bottom: 0 }}
                         onMouseDown={handleMouseDown}
                         onMouseMove={handleMouseMove}
