@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useMemo, useRef } from 'react';
+import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import dynamic from 'next/dynamic';
 import AssetSearch from './AssetSearch';
 import EarningsEvent from './EarningsEvent';
@@ -90,7 +90,8 @@ export default function TransactionModal({
     currentPortfolioId = 'all',
     isWatchlist = false,
     watchlistAssets = [],
-    onWatchlistUpdate
+    onWatchlistUpdate,
+    onWalletsChange
 }) {
     const modalRef = useRef(null);
     const heavyRafRef = useRef(0);
@@ -98,6 +99,8 @@ export default function TransactionModal({
     const [selectedAsset, setSelectedAsset] = useState(holding ? {
         symbol: holding.symbol || holding.asset,
         amount: holding.amount,
+        walletAmount: holding.walletAmount || 0,
+        hasWalletPosition: !!holding.hasWalletPosition,
         originalType: holding.originalType,
         currency: holding.currency,
         name: holding.name,
@@ -126,6 +129,8 @@ export default function TransactionModal({
             setSelectedAsset({
                 symbol: holding.symbol || holding.asset,
                 amount: holding.amount,
+                walletAmount: holding.walletAmount || 0,
+                hasWalletPosition: !!holding.hasWalletPosition,
                 originalType: holding.originalType,
                 currency: holding.currency,
                 name: holding.name,
@@ -142,6 +147,8 @@ export default function TransactionModal({
         holding?.symbol,
         holding?.asset,
         holding?.amount,
+        holding?.walletAmount,
+        holding?.hasWalletPosition,
         holding?.originalType,
         holding?.currency,
         holding?.name,
@@ -649,9 +656,12 @@ export default function TransactionModal({
         realizedPnl: realizedProfitBase = 0
     } = assetAccounting;
 
-    const currentValueBase = currentBalance * liveAssetPrice * fxRate;
+    const walletBalance = toFiniteNumber(selectedAsset?.walletAmount);
+    const combinedCurrentBalance = currentBalance + walletBalance;
+    const transactionValueBase = currentBalance * liveAssetPrice * fxRate;
+    const currentValueBase = combinedCurrentBalance * liveAssetPrice * fxRate;
     const isSelectedFiat = isFiatAsset(selectedSymbol);
-    const unrealizedProfitBase = isSelectedFiat ? 0 : currentValueBase - currentCostBasisBase;
+    const unrealizedProfitBase = isSelectedFiat ? 0 : transactionValueBase - currentCostBasisBase;
     const totalProfitBase = isSelectedFiat ? 0 : unrealizedProfitBase + realizedProfitBase;
 
     const getDisplayQuoteCurrency = (tx) => {
@@ -677,11 +687,13 @@ export default function TransactionModal({
         setPurchaseInfoMetric(prev => prev === 'average' ? 'held' : 'average');
     };
 
-    const heldAmount = Math.abs(currentBalance) < 0.005 ? 0 : currentBalance;
+    const heldAmount = Math.abs(combinedCurrentBalance) < 0.005 ? 0 : combinedCurrentBalance;
     const heldTicker = normalizeAsset(selectedSymbol) || selectedSymbol || '';
-    const purchaseInfoLabel = purchaseInfoMetric === 'held' ? 'Held Amount' : 'Avg Purchase';
-    const nextPurchaseInfoLabel = purchaseInfoMetric === 'held' ? 'Avg Purchase' : 'Held Amount';
-    const purchaseInfoValue = purchaseInfoMetric === 'held'
+    const canShowAveragePurchase = averagePurchasePrice > 0;
+    const purchaseInfoMode = canShowAveragePurchase ? purchaseInfoMetric : 'held';
+    const purchaseInfoLabel = purchaseInfoMode === 'held' ? 'Held Amount' : 'Avg Purchase';
+    const nextPurchaseInfoLabel = purchaseInfoMode === 'held' ? 'Avg Purchase' : 'Held Amount';
+    const purchaseInfoValue = purchaseInfoMode === 'held'
         ? `${hideBalances ? '••••' : heldAmount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ${heldTicker}`
         : `${averagePurchasePrice.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ${baseCurrency === 'USD' ? '$' : baseCurrency}`;
 
@@ -725,6 +737,8 @@ export default function TransactionModal({
             name: asset.name || asset.shortname || asset.symbol,
             price: null,
             amount: balance,
+            walletAmount: 0,
+            hasWalletPosition: false,
             originalType: asset.type,
             currency: asset.currency, // Use currency from search result
             isBareCurrencyOrigin: asset.isBareCurrencyOrigin || false
@@ -789,6 +803,14 @@ export default function TransactionModal({
         setCurrentView('LIST');
         setEditingTx(null);
     };
+
+    const handleWalletBalanceChange = useCallback((nextWalletAmount) => {
+        setSelectedAsset(prev => prev ? {
+            ...prev,
+            walletAmount: nextWalletAmount,
+            hasWalletPosition: nextWalletAmount > 0
+        } : prev);
+    }, []);
 
     // The add/edit FORM is a bottom sheet layered on top of the asset view,
     // which stays mounted underneath so dismissing the sheet lands back on it.
@@ -1006,25 +1028,24 @@ export default function TransactionModal({
                                         {/* Hide Avg Purchase and Total Value for Watchlists */}
                                         {!isWatchlist && (
                                             <>
-                                                {/* Only show Avg Purchase if there are BUY transactions (avgPrice > 0) */}
-                                                {averagePurchasePrice > 0 && (
+                                                {(canShowAveragePurchase || walletBalance > 0) && (
                                                     <button
                                                         type="button"
-                                                        onClick={togglePurchaseInfoMetric}
+                                                        onClick={canShowAveragePurchase ? togglePurchaseInfoMetric : undefined}
                                                         className="flex flex-col flex-1 items-center active-scale"
                                                         style={{
                                                             background: 'transparent',
                                                             border: 'none',
                                                             padding: 0,
-                                                            cursor: 'pointer',
+                                                            cursor: canShowAveragePurchase ? 'pointer' : 'default',
                                                             touchAction: 'manipulation',
                                                             minHeight: '48px'
                                                         }}
-                                                        title={`Show ${nextPurchaseInfoLabel}`}
+                                                        title={canShowAveragePurchase ? `Show ${nextPurchaseInfoLabel}` : undefined}
                                                         aria-label={`${purchaseInfoLabel}: ${purchaseInfoValue}`}
                                                     >
                                                         <span className="text-xs sm:text-sm text-muted uppercase tracking-wider text-center">{purchaseInfoLabel}</span>
-                                                        {loadingPrice && purchaseInfoMetric === 'average' ? (
+                                                        {loadingPrice && purchaseInfoMode === 'average' ? (
                                                             <div className="h-7 w-24 bg-white-10 rounded animate-pulse mt-1" />
                                                         ) : (
                                                             <span className="text sm:text-2xl text-center">
@@ -1106,6 +1127,9 @@ export default function TransactionModal({
                                             changePercent={livePriceSnapshot.changePercent}
                                             baseCurrency={baseCurrency}
                                             hideBalances={hideBalances}
+                                            portfolioId={currentPortfolioId === 'all' ? 1 : currentPortfolioId}
+                                            onWalletsChange={onWalletsChange}
+                                            onBalanceChange={handleWalletBalanceChange}
                                         />
                                     )}
 

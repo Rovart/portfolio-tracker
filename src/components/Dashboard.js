@@ -38,6 +38,7 @@ import {
     setSetting,
     ensureDefaultPortfolio,
     getAllPortfolios,
+    getWalletsForPortfolio,
     getWatchlistAssets,
     updateWatchlistAssetName
 } from '@/utils/db';
@@ -124,6 +125,28 @@ function getFiatCurrenciesFromTransactions(transactions, baseCurrency) {
         });
     });
     return currencies;
+}
+
+function toFiniteNumber(value) {
+    const parsed = parseFloat(value);
+    return Number.isFinite(parsed) ? parsed : 0;
+}
+
+async function fetchWalletBalance(wallet) {
+    try {
+        const res = await fetch(`/api/wallet?chain=${wallet.chain}&address=${encodeURIComponent(wallet.address)}`);
+        const json = await res.json();
+        if (!res.ok) throw new Error(json.error || 'Lookup failed');
+        return { balance: json.balance };
+    } catch (e) {
+        return { error: e.message || 'Lookup failed' };
+    }
+}
+
+function getWalletPositionSymbol(chain) {
+    const normalized = normalizeAsset(chain);
+    if (COMMON_CRYPTO_ASSETS.includes(normalized)) return `${normalized}-USD`;
+    return chain;
 }
 
 function getHistoryBucketKey(dateValue, timeframe) {
@@ -292,6 +315,8 @@ export default function Dashboard() {
     const [currentPortfolioId, setCurrentPortfolioId] = useState('all'); // 'all' or portfolio id
     const [isWatchlistView, setIsWatchlistView] = useState(false);
     const [watchlistAssets, setWatchlistAssets] = useState([]);
+    const [trackedWallets, setTrackedWallets] = useState([]);
+    const [walletBalances, setWalletBalances] = useState({});
     const [watchlistSort, setWatchlistSort] = useState('custom');
     const [chartMode] = useState('value'); // Chart always shows portfolio Value
     const [monetaxImportStatus, setMonetaxImportStatus] = useState(null);
@@ -347,6 +372,76 @@ export default function Dashboard() {
     const transactionFiatCurrencies = useMemo(() => (
         getFiatCurrenciesFromTransactions(transactions, baseCurrency)
     ), [transactions, baseCurrency]);
+
+    const walletMarketSymbols = useMemo(() => (
+        isWatchlistView
+            ? []
+            : [...new Set(trackedWallets.map(wallet => getWalletPositionSymbol(wallet.chain)).filter(Boolean))]
+    ), [trackedWallets, isWatchlistView]);
+
+    const walletPositionTransactions = useMemo(() => (
+        trackedWallets.flatMap(wallet => {
+            const balance = toFiniteNumber(walletBalances[wallet.id]?.balance);
+            if (balance <= 0) return [];
+
+            const unitValue = getCurrentAssetRate(prices, wallet.chain, baseCurrency);
+            return [{
+                id: `wallet-${wallet.id}`,
+                date: wallet.addedAt || new Date().toISOString(),
+                type: 'DEPOSIT',
+                baseAmount: balance,
+                baseCurrency: getWalletPositionSymbol(wallet.chain),
+                quoteAmount: 0,
+                quoteCurrency: '',
+                fee: 0,
+                feeCurrency: '',
+                portfolioId: wallet.portfolioId,
+                originalType: 'CRYPTOCURRENCY',
+                costBasisBase: unitValue ? balance * unitValue : 0,
+                isWalletPosition: true,
+                walletId: wallet.id
+            }];
+        })
+    ), [trackedWallets, walletBalances, prices, baseCurrency]);
+
+    const portfolioPositionTransactions = useMemo(() => (
+        isWatchlistView ? transactions : [...transactions, ...walletPositionTransactions]
+    ), [transactions, walletPositionTransactions, isWatchlistView]);
+
+    const walletAmountByAsset = useMemo(() => {
+        return walletPositionTransactions.reduce((acc, tx) => {
+            const asset = normalizeAsset(tx.baseCurrency);
+            if (!asset) return acc;
+            acc[asset] = (acc[asset] || 0) + toFiniteNumber(tx.baseAmount);
+            return acc;
+        }, {});
+    }, [walletPositionTransactions]);
+
+    const loadPortfolioWallets = useCallback(async (portfolioId, shouldLoad = true) => {
+        if (!shouldLoad) {
+            setTrackedWallets([]);
+            setWalletBalances({});
+            return;
+        }
+
+        const wallets = await getWalletsForPortfolio(portfolioId);
+        setTrackedWallets(wallets);
+
+        if (wallets.length === 0) {
+            setWalletBalances({});
+            return;
+        }
+
+        const entries = await Promise.all(wallets.map(async wallet => [wallet.id, await fetchWalletBalance(wallet)]));
+        setWalletBalances(Object.fromEntries(entries));
+    }, []);
+
+    const handleWalletsChange = useCallback(async () => {
+        if (isWatchlistView) return;
+        setPricesLoading(true);
+        await loadPortfolioWallets(currentPortfolioId, true);
+        setRefreshTrigger(prev => prev + 1);
+    }, [currentPortfolioId, isWatchlistView, loadPortfolioWallets]);
 
     // Handle Android back button/gesture
     // When modals are open, close them; when on main Dashboard, exit the app
@@ -413,10 +508,12 @@ export default function Dashboard() {
                 if (isWatchlist) {
                     const assets = await getWatchlistAssets(initialPortfolioId);
                     setWatchlistAssets(assets);
+                    await loadPortfolioWallets(initialPortfolioId, false);
                     setTransactions([]);
                 } else {
                     // Load transactions for current portfolio
                     const savedTransactions = await loadPortfolioTransactions(initialPortfolioId, savedCurrency);
+                    await loadPortfolioWallets(initialPortfolioId, true);
                     setTransactions(savedTransactions);
                 }
 
@@ -439,7 +536,7 @@ export default function Dashboard() {
             setLoading(false);
         }
         loadData();
-    }, []);
+    }, [loadPortfolioWallets]);
 
     // Auto-open settings modal if ?settings=true is in URL (fallback for direct links)
     const searchParams = useSearchParams();
@@ -588,11 +685,13 @@ export default function Dashboard() {
             // Load watchlist assets instead of transactions
             const assets = await getWatchlistAssets(portfolioId);
             setWatchlistAssets(assets);
+            await loadPortfolioWallets(portfolioId, false);
             setTransactions([]);
         } else {
             // Reload transactions for the new portfolio
             setWatchlistAssets([]);
             const newTransactions = await loadPortfolioTransactions(portfolioId, baseCurrency);
+            await loadPortfolioWallets(portfolioId, true);
             setTransactions(newTransactions);
         }
 
@@ -645,9 +744,12 @@ export default function Dashboard() {
         setPrices({});
         setRawHistory([]);
         setRefreshTrigger(prev => prev + 1);
+        if (!isWatchlistView) {
+            await loadPortfolioWallets(currentPortfolioId, true);
+        }
         // Small delay to show the refresh indicator
         await new Promise(resolve => setTimeout(resolve, 300));
-    }, []);
+    }, [currentPortfolioId, isWatchlistView, loadPortfolioWallets]);
 
     useEffect(() => {
         if (loading || isWatchlistView || !transactions || transactions.length === 0) {
@@ -686,7 +788,7 @@ export default function Dashboard() {
         // and fee balances can be valued, not only the transaction base asset.
         const marketAssets = isWatchlistView
             ? [...new Set(watchlistAssets.map(a => a.symbol))]
-            : transactionMarketSymbols;
+            : [...new Set([...transactionMarketSymbols, ...walletMarketSymbols])];
         const initialQuoteAssets = isWatchlistView
             ? new Set()
             : transactionFiatCurrencies;
@@ -832,7 +934,7 @@ export default function Dashboard() {
             clearInterval(interval);
         };
 
-    }, [transactionMarketSymbols, transactionFiatCurrencies, loading, baseCurrency, refreshTrigger, isWatchlistView, watchlistAssets, currentPortfolioId]);
+    }, [transactionMarketSymbols, transactionFiatCurrencies, walletMarketSymbols, loading, baseCurrency, refreshTrigger, isWatchlistView, watchlistAssets, currentPortfolioId]);
 
     // Recalculate Holdings when transactions or prices change
     useEffect(() => {
@@ -911,13 +1013,30 @@ export default function Dashboard() {
             });
         } else {
             if (transactionFxLoading) return;
-            const h = calculateHoldings(transactions, prices, baseCurrency, historicalRateResolver);
+            const h = calculateHoldings(portfolioPositionTransactions, prices, baseCurrency, historicalRateResolver)
+                .map(holding => {
+                    const walletAmount = walletAmountByAsset[normalizeAsset(holding.asset)] || 0;
+                    return walletAmount > 0
+                        ? { ...holding, walletAmount, hasWalletPosition: true }
+                        : holding;
+                });
             startTransition(() => {
                 setHoldings(h);
                 if (!loading && !pricesLoading) setHasBooted(true);
             });
         }
-    }, [transactions, prices, baseCurrency, isWatchlistView, watchlistAssets, transactionFxLoading, historicalRateResolver, loading, pricesLoading]);
+    }, [
+        prices,
+        baseCurrency,
+        isWatchlistView,
+        watchlistAssets,
+        transactionFxLoading,
+        historicalRateResolver,
+        loading,
+        pricesLoading,
+        portfolioPositionTransactions,
+        walletAmountByAsset
+    ]);
 
     // UI Scroll reset: Only on timeframe change
     useEffect(() => {
@@ -928,7 +1047,7 @@ export default function Dashboard() {
     useEffect(() => {
         if (pricesLoading) return;
 
-        if (!transactions || transactions.length === 0) {
+        if (!portfolioPositionTransactions || portfolioPositionTransactions.length === 0) {
             setRawHistory([]);
             setHistoryLoading(false);
             return;
@@ -944,7 +1063,7 @@ export default function Dashboard() {
             prevTimeframeRef.current = timeframe;
             prevBaseCurrencyRef.current = baseCurrency;
             // 1. Identify all assets/currencies that can appear as balances.
-            const marketAssets = transactionMarketSymbols;
+            const marketAssets = [...new Set([...transactionMarketSymbols, ...walletMarketSymbols])];
             const explicitQuoteAssets = transactionFiatCurrencies;
 
             const historyMap = {};
@@ -1091,7 +1210,7 @@ export default function Dashboard() {
                 }
             });
 
-            transactions.forEach(t => {
+            portfolioPositionTransactions.forEach(t => {
                 const base = normalizeAsset(t.baseCurrency);
                 if (!base || quoteMap[base]) return;
 
@@ -1109,7 +1228,7 @@ export default function Dashboard() {
             // the final point uses live quotes and unpriceable assets are excluded
             // from the whole curve (they contribute nothing to the live total either).
             const livePriceResolver = (asset) => getCurrentAssetRate(pricesRef.current, asset, baseCurrency);
-            const chartData = calculatePortfolioHistory(transactions, historyMap, baseCurrency, quoteMap, livePriceResolver);
+            const chartData = calculatePortfolioHistory(portfolioPositionTransactions, historyMap, baseCurrency, quoteMap, livePriceResolver);
             if (isCancelled) return;
             startTransition(() => {
                 setRawHistory(chartData);
@@ -1123,7 +1242,17 @@ export default function Dashboard() {
             isCancelled = true;
         };
 
-    }, [transactions, transactionMarketSymbols, transactionFiatCurrencies, timeframe, baseCurrency, pricesLoading, refreshTrigger, priceMetadataKey]);
+    }, [
+        portfolioPositionTransactions,
+        transactionMarketSymbols,
+        walletMarketSymbols,
+        transactionFiatCurrencies,
+        timeframe,
+        baseCurrency,
+        pricesLoading,
+        refreshTrigger,
+        priceMetadataKey
+    ]);
 
     // DERIVED HISTORY: Apply timeframe cutoff to raw history.
     // The chart is TWR-like performance adjusted for external deposits/withdrawals;
@@ -1143,8 +1272,8 @@ export default function Dashboard() {
         else if (timeframe === '1Y') cutoff.setFullYear(now.getFullYear() - 1);
         else if (timeframe === 'YTD') cutoff = new Date(now.getFullYear(), 0, 1);
         else if (timeframe === 'ALL') {
-            const firstTxDate = transactions.length > 0
-                ? new Date(Math.min(...transactions.map(t => new Date(t.date))))
+            const firstTxDate = portfolioPositionTransactions.length > 0
+                ? new Date(Math.min(...portfolioPositionTransactions.map(t => new Date(t.date))))
                 : new Date(0);
             cutoff = firstTxDate;
         }
@@ -1200,7 +1329,7 @@ export default function Dashboard() {
 
         startTransition(() => setHistory(filtered));
 
-    }, [rawHistory, transactions, timeframe, prices, pricesLoading, holdings, chartMode]);
+    }, [rawHistory, portfolioPositionTransactions, timeframe, prices, pricesLoading, holdings, chartMode]);
 
 
     const syncTransactionsToFile = async (updatedTx) => {
@@ -1353,6 +1482,8 @@ export default function Dashboard() {
             symbol: holding.originalAsset, // Pass the actual market symbol
             price: holding.localPrice,
             amount: holding.amount,
+            walletAmount: holding.walletAmount || 0,
+            hasWalletPosition: !!holding.hasWalletPosition,
             originalType: holding.originalType,
             isBareCurrencyOrigin: holding.isBareCurrencyOrigin || false,
             currency: holding.quoteCurrency,
@@ -1725,6 +1856,7 @@ export default function Dashboard() {
                             setRefreshTrigger(prev => prev + 1);
                         }
                     }}
+                    onWalletsChange={handleWalletsChange}
                 />
             )}
 

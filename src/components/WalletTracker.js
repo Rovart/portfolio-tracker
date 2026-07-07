@@ -18,7 +18,7 @@ function shortenAddress(address) {
 
 // Watch-only wallet tracking for on-chain assets (BTC / ETH).
 // Balances are read from public endpoints via /api/wallet — no keys, read-only.
-export default function WalletTracker({ chain, price, changePercent, baseCurrency, hideBalances }) {
+export default function WalletTracker({ chain, price, changePercent, baseCurrency, hideBalances, portfolioId = 1, onWalletsChange, onBalanceChange }) {
     const [wallets, setWallets] = useState([]);
     const [balances, setBalances] = useState({}); // walletId -> { balance } | { error }
     const [adding, setAdding] = useState(false);
@@ -35,6 +35,17 @@ export default function WalletTracker({ chain, price, changePercent, baseCurrenc
     const isValidAddress = useMemo(() => (
         ADDRESS_PATTERNS[chain] ? ADDRESS_PATTERNS[chain].test(trimmedAddress) : false
     ), [chain, trimmedAddress]);
+
+    const totalBalance = useMemo(() => (
+        wallets.reduce((sum, wallet) => {
+            const balance = balances[wallet.id]?.balance;
+            return Number.isFinite(balance) ? sum + balance : sum;
+        }, 0)
+    ), [wallets, balances]);
+
+    useEffect(() => {
+        onBalanceChange?.(totalBalance);
+    }, [onBalanceChange, totalBalance]);
 
     const loadBalance = useCallback(async (wallet) => {
         try {
@@ -57,13 +68,13 @@ export default function WalletTracker({ chain, price, changePercent, baseCurrenc
     useEffect(() => {
         let cancelled = false;
         (async () => {
-            const list = await getWalletsForChain(chain);
+            const list = await getWalletsForChain(chain, portfolioId);
             if (cancelled) return;
             setWallets(list);
             if (list.length > 0) refreshAll(list);
         })();
         return () => { cancelled = true; };
-    }, [chain, refreshAll]);
+    }, [chain, portfolioId, refreshAll]);
 
     const closeAddSheet = useCallback(() => {
         setAdding(false);
@@ -83,11 +94,12 @@ export default function WalletTracker({ chain, price, changePercent, baseCurrenc
             const json = await res.json();
             if (!res.ok) throw new Error(json.error || 'Could not verify address');
 
-            const id = await addWallet(chain, trimmedAddress, label);
-            const wallet = { id, chain, address: trimmedAddress, label: label.trim() };
+            const id = await addWallet(chain, trimmedAddress, label, portfolioId);
+            const wallet = { id, portfolioId, chain, address: trimmedAddress, label: label.trim(), addedAt: new Date().toISOString() };
             setWallets(prev => [...prev, wallet]);
             setBalances(prev => ({ ...prev, [id]: { balance: json.balance } }));
             closeAddSheet();
+            await onWalletsChange?.();
         } catch (err) {
             setError(err.message || 'Failed to add wallet');
         } finally {
@@ -98,6 +110,12 @@ export default function WalletTracker({ chain, price, changePercent, baseCurrenc
     const handleRemove = async (id) => {
         await removeWallet(id);
         setWallets(prev => prev.filter(w => w.id !== id));
+        setBalances(prev => {
+            const next = { ...prev };
+            delete next[id];
+            return next;
+        });
+        await onWalletsChange?.();
     };
 
     const labelStyle = { fontSize: '0.72rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em' };

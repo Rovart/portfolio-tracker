@@ -76,19 +76,49 @@ db.version(5).stores({
     wallets: '++id, chain, address'
 });
 
+// Version 6: Wallets belong to portfolios, so watch-only balances can be valued
+// alongside transaction-based positions and included in the "All" portfolio.
+db.version(6).stores({
+    transactions: '++id, date, type, baseCurrency, quoteCurrency, portfolioId',
+    settings: 'key',
+    portfolios: '++id, name, createdAt, isWatchlist, position',
+    watchlistAssets: '++id, portfolioId, symbol, addedAt, position',
+    wallets: '++id, portfolioId, chain, address'
+}).upgrade(async tx => {
+    await tx.table('wallets').toCollection().modify(wallet => {
+        if (!wallet.portfolioId) wallet.portfolioId = 1;
+    });
+});
+
 // Watch-only wallet helpers
-export async function getWalletsForChain(chain) {
-    return await db.wallets.where('chain').equals(chain).toArray();
+export async function getWalletsForPortfolio(portfolioId = 'all') {
+    const wallets = portfolioId === 'all'
+        ? await db.wallets.toArray()
+        : await db.wallets.where('portfolioId').equals(portfolioId).toArray();
+
+    return wallets.sort((a, b) => new Date(a.addedAt || 0) - new Date(b.addedAt || 0));
 }
 
-export async function addWallet(chain, address, label = '') {
+export async function getWalletsForChain(chain, portfolioId = 'all') {
+    const wallets = await db.wallets.where('chain').equals(chain).toArray();
+    return wallets
+        .filter(w => portfolioId === 'all' || w.portfolioId === portfolioId)
+        .sort((a, b) => new Date(a.addedAt || 0) - new Date(b.addedAt || 0));
+}
+
+export async function addWallet(chain, address, label = '', portfolioId = 1) {
     const normalized = address.trim();
-    // Prevent duplicates per chain
+    const targetPortfolioId = portfolioId === 'all' ? 1 : portfolioId;
+    // Prevent duplicates per chain within the same portfolio.
     const existing = await db.wallets.where('chain').equals(chain).toArray();
-    if (existing.some(w => w.address.toLowerCase() === normalized.toLowerCase())) {
+    if (existing.some(w =>
+        w.portfolioId === targetPortfolioId &&
+        w.address.toLowerCase() === normalized.toLowerCase()
+    )) {
         throw new Error('This address is already being tracked.');
     }
     return await db.wallets.add({
+        portfolioId: targetPortfolioId,
         chain,
         address: normalized,
         label: label.trim(),
@@ -134,6 +164,8 @@ export async function deletePortfolio(id) {
     await db.transactions.where('portfolioId').equals(id).delete();
     // Delete all watchlist assets in this portfolio
     await db.watchlistAssets.where('portfolioId').equals(id).delete();
+    // Delete all watch-only wallets in this portfolio
+    await db.wallets.where('portfolioId').equals(id).delete();
     // Delete the portfolio
     await db.portfolios.delete(id);
 }
