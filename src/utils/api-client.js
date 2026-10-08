@@ -68,6 +68,11 @@ export async function apiFetch(endpoint, options = {}) {
         } else if (!response.ok && saved) {
             return cachedResponse(saved);
         }
+        if (response.ok) {
+            const headers = new Headers(response.headers);
+            headers.set('X-Monetra-Fetched-At', String(Date.now()));
+            return new Response(response.body, { status: response.status, statusText: response.statusText, headers });
+        }
         return response;
     } catch (error) {
         if (saved && !options.signal?.aborted) return cachedResponse(saved);

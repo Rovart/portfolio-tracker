@@ -2,6 +2,7 @@ import Papa from 'papaparse';
 
 export function parsePortfolioCsv(text) {
     const parsedCsv = Papa.parse(String(text || ''), { header: true, skipEmptyLines: true });
+    if (parsedCsv.errors.length) throw new Error('The CSV contains malformed rows. No transactions were imported.');
     const rows = parsedCsv.data || [];
     const transactions = [];
     const csvPortfolioNames = new Set();
@@ -20,6 +21,8 @@ export function parsePortfolioCsv(text) {
             exchange: row.Exchange || null,
             fee: parseFloat(row['Fee amount']) || 0,
             feeCurrency: row['Fee currency (name)'] || null,
+            ...(row['Cost Basis'] !== undefined && row['Cost Basis'] !== ''
+                ? { costBasisBase: Number(row['Cost Basis']) } : {}),
             affectsFiatBalance: affectsQuoteBalance,
             affectsQuoteBalance,
             notes: row.Notes || null,
@@ -30,6 +33,11 @@ export function parsePortfolioCsv(text) {
         if (tx.csvPortfolioName) csvPortfolioNames.add(tx.csvPortfolioName);
 
         if (tx.date && tx.baseCurrency) {
+            if (!Number.isFinite(Date.parse(tx.date)) || !['BUY', 'SELL', 'DEPOSIT', 'WITHDRAW'].includes(tx.type) ||
+                !Number.isFinite(tx.baseAmount) || tx.baseAmount <= 0 ||
+                (tx.quoteAmount !== null && (!Number.isFinite(tx.quoteAmount) || tx.quoteAmount < 0))) {
+                throw new Error('The CSV contains an invalid date, transaction type or amount. No transactions were imported.');
+            }
             transactions.push(tx);
         }
     }

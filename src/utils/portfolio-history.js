@@ -218,7 +218,7 @@ export function calculatePortfolioHistory(transactions, historicalPrices, baseCu
     timestampSet.add(nowStr);
     const sortedTimestamps = [...timestampSet].sort();
 
-    const sortedTransactions = [...transactions].sort((a, b) => new Date(a.date) - new Date(b.date));
+    const sortedTransactions = [...transactions].sort((a, b) => new Date(a.date) - new Date(b.date) || (Number(a.id) || 0) - (Number(b.id) || 0));
     const cashTrackedCurrencies = collectCashTrackedCurrencies(sortedTransactions);
     const metadata = { priceSymbolMap: {}, quoteMap: {} };
 

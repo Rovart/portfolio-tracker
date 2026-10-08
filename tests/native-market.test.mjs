@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { createNativeMarketApi, nativeHistoryQuery } from '../src/utils/native-market.js';
 import { getIconSources } from '../src/utils/icon-data.js';
+import { getQuoteMarketTime } from '../src/utils/market-data.js';
 
 const reply = (data, status = 200) => ({ data, status, headers: {} });
 const chartReply = (currency = 'USD', closes = [100, 110], timestamps = [1790942400, 1791028800]) => reply({ chart: { result: [{
@@ -46,6 +47,33 @@ test('native history discards missing prices and applies the same currency scale
     const result = await (await api('/api/history?symbol=VOD.L&range=1Y')).json();
     assert.deepEqual(result.history.map(point => point.price), [1, 1.2]);
     assert.equal(result.history[0].date, new Date(1790942400000).toISOString());
+});
+
+test('native history preserves provider prices including isolated legitimate spikes', async () => {
+    const closes = [100, 100, 100, 100, 100, 150, 100, 100, 100, 100, 100, 100];
+    const api = createNativeMarketApi(async () => chartReply('USD', closes, closes.map((_, i) => 1790942400 + i * 3600)), clock);
+    const result = await (await api('/api/history?symbol=AAPL&range=1D')).json();
+    assert.deepEqual(result.history.map(point => point.price), closes);
+});
+
+test('partial quote results recover missing symbols without refetching the symbols already priced', async () => {
+    const calls = [];
+    const api = createNativeMarketApi(sessionTransport(options => options.url.includes('/finance/quote')
+        ? reply({ quoteResponse: { result: [{ symbol: 'MSFT', regularMarketPrice: 200, currency: 'USD' }] } })
+        : chartReply(), calls), clock);
+    const result = await (await api('/api/quote?symbols=AAPL,MSFT')).json();
+    assert.equal(result.data.find(quote => quote.symbol === 'MSFT').price, 200);
+    assert.equal(result.data.find(quote => quote.symbol === 'AAPL').price, 110);
+    assert.equal(calls.filter(call => call.url.includes('/finance/chart/')).length, 1);
+});
+
+test('quote timestamps use the displayed session and accept web Date objects as well as native Unix seconds', () => {
+    const regular = 1790942400;
+    const post = regular + 3600;
+    assert.equal(getQuoteMarketTime({ regularMarketTime: regular }), new Date(regular * 1000).toISOString());
+    assert.equal(getQuoteMarketTime({ regularMarketTime: new Date(regular * 1000) }), new Date(regular * 1000).toISOString());
+    assert.equal(getQuoteMarketTime({ regularMarketTime: regular, postMarketTime: post, postMarketPrice: 100, marketState: 'POST' }), new Date(post * 1000).toISOString());
+    assert.equal(getQuoteMarketTime({ regularMarketTime: 'bad' }), null);
 });
 
 test('daily history on a non-trading day retrieves only the latest trading session', async () => {

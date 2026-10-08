@@ -12,6 +12,15 @@ export function scalePrice(value, currency) {
     return isPenceCurrency(currency) ? value * 0.01 : value;
 }
 
+export function getQuoteMarketTime(quote) {
+    let time = quote.regularMarketTime;
+    if (quote.marketState === 'PRE' && quote.preMarketPrice > 0) time = quote.preMarketTime || time;
+    if (['POST', 'POSTPOST'].includes(quote.marketState) && quote.postMarketPrice > 0) time = quote.postMarketTime || time;
+    if (!time) return null;
+    const date = new Date(typeof time === 'number' ? time * 1000 : time);
+    return Number.isFinite(date.getTime()) ? date.toISOString() : null;
+}
+
 
 // IQR-based outlier smoothing + percentage-based V-shape detection
 export function smoothOutliers(data) {

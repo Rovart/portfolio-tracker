@@ -7,6 +7,7 @@ import { useSearchParams, useRouter } from 'next/navigation';
 import { Eye, EyeOff, Plus, Settings, ArrowUpRight, ArrowDownRight } from 'lucide-react';
 import ProfitChart from './ProfitChart';
 import CompositionChart from './CompositionChart';
+import useMarketActivity from './useMarketActivity';
 import HoldingsList, { WATCHLIST_SORT_OPTIONS } from './HoldingsList';
 import TransactionModal from './TransactionModal';
 import SettingsModal from './SettingsModal';
@@ -282,6 +283,7 @@ function DashboardSkeleton({ isWatchlist = false }) {
 }
 
 export default function Dashboard() {
+    const { active: marketActive, revision: marketRevision } = useMarketActivity();
     const [transactions, setTransactions] = useState([]);
     const [holdings, setHoldings] = useState([]);
     const [prices, setPrices] = useState({});
@@ -742,9 +744,8 @@ export default function Dashboard() {
     const handleRefresh = useCallback(async () => {
         setPricesLoading(true);
         setHistoryLoading(true);
-        // Clear cached data and increment trigger to force useEffect to re-run
-        setPrices({});
-        setRawHistory([]);
+        // Invalidate memory freshness while retaining last-known prices for outages.
+        clearFxCache({ keepQuotes: true });
         setRefreshTrigger(prev => prev + 1);
         if (!isWatchlistView) {
             await loadPortfolioWallets(currentPortfolioId, true);
@@ -754,6 +755,13 @@ export default function Dashboard() {
     }, [currentPortfolioId, isWatchlistView, loadPortfolioWallets]);
 
     useEffect(() => {
+        if (marketActive && marketRevision > 0 && !loading && !isWatchlistView) {
+            loadPortfolioWallets(currentPortfolioId, true);
+        }
+    }, [marketActive, marketRevision, loading, isWatchlistView, currentPortfolioId, loadPortfolioWallets]);
+
+    useEffect(() => {
+        if (!marketActive) return;
         if (loading || isWatchlistView || !transactions || transactions.length === 0) {
             setTransactionFx({});
             setTransactionFxLoading(false);
@@ -780,11 +788,11 @@ export default function Dashboard() {
         return () => {
             isCancelled = true;
         };
-    }, [transactions, baseCurrency, loading, isWatchlistView, refreshTrigger]);
+    }, [transactions, baseCurrency, loading, isWatchlistView, refreshTrigger, marketActive, marketRevision]);
 
     // Fetch Prices when transactions change (implies holdings might change)
     useEffect(() => {
-        if (loading) return;
+        if (loading || !marketActive) return;
 
         // Identification of unique assets - include quote/fee assets so crypto-to-crypto
         // and fee balances can be valued, not only the transaction base asset.
@@ -848,7 +856,10 @@ export default function Dashboard() {
                         preMarketChangePercent: q.preMarketChangePercent,
                         postMarketPrice: q.postMarketPrice,
                         postMarketChangePercent: q.postMarketChangePercent,
-                        marketState: q.marketState
+                        marketState: q.marketState,
+                        fetchedAt: q.fetchedAt,
+                        marketTime: q.marketTime,
+                        isStale: q.isStale
                     };
 
                     if (q.quoteType === 'CURRENCY' && q.symbol.endsWith('USD=X')) {
@@ -883,10 +894,10 @@ export default function Dashboard() {
                     if (isCancelled) return;
 
                     fxData.forEach(q => {
-                        pxMap[q.symbol] = { price: q.price, changePercent: q.changePercent, currency: 'USD', quoteType: 'CURRENCY' };
+                        pxMap[q.symbol] = { ...q, currency: 'USD', quoteType: 'CURRENCY' };
                         const bare = q.symbol.replace('USD=X', '');
                         if (bare.length === 3) {
-                            pxMap[bare] = { price: q.price, changePercent: q.changePercent, currency: 'USD', quoteType: 'CURRENCY' };
+                            pxMap[bare] = { ...q, currency: 'USD', quoteType: 'CURRENCY' };
                         }
                     });
                 }
@@ -898,8 +909,8 @@ export default function Dashboard() {
 
                     if (usdData[0]) {
                         const q = usdData[0];
-                        pxMap[`${baseCurrency}USD=X`] = { price: q.price, changePercent: q.changePercent, currency: 'USD', quoteType: 'CURRENCY' };
-                        pxMap[baseCurrency] = { price: q.price, changePercent: q.changePercent, currency: 'USD', quoteType: 'CURRENCY' };
+                        pxMap[`${baseCurrency}USD=X`] = { ...q, currency: 'USD', quoteType: 'CURRENCY' };
+                        pxMap[baseCurrency] = { ...q, currency: 'USD', quoteType: 'CURRENCY' };
                     }
                 }
 
@@ -936,7 +947,7 @@ export default function Dashboard() {
             clearInterval(interval);
         };
 
-    }, [transactionMarketSymbols, transactionFiatCurrencies, walletMarketSymbols, loading, baseCurrency, refreshTrigger, isWatchlistView, watchlistAssets, currentPortfolioId]);
+    }, [transactionMarketSymbols, transactionFiatCurrencies, walletMarketSymbols, loading, baseCurrency, refreshTrigger, isWatchlistView, watchlistAssets, currentPortfolioId, marketActive, marketRevision]);
 
     // Recalculate Holdings when transactions or prices change
     useEffect(() => {
@@ -952,10 +963,11 @@ export default function Dashboard() {
 
                 const fxRate = assetCurrency === baseCurrency
                     ? 1
-                    : (getCurrentAssetRate(prices, assetCurrency, baseCurrency) || 1);
+                    : getCurrentAssetRate(prices, assetCurrency, baseCurrency);
                 const fxMissing = assetCurrency !== baseCurrency && !getCurrentAssetRate(prices, assetCurrency, baseCurrency);
 
-                const price = rawPrice * fxRate;
+                const valuationUnavailable = fxMissing || rawPrice <= 0;
+                const price = valuationUnavailable ? null : rawPrice * fxRate;
 
                 // Nominal change (dailyPnl for watchlist items) - also converted
                 let change = priceData.change;
@@ -978,7 +990,7 @@ export default function Dashboard() {
                     displayChange = priceData.postMarketChangePercent || change24h;
                 }
 
-                const convertedDisplayPrice = displayPrice * fxRate;
+                const convertedDisplayPrice = valuationUnavailable ? null : displayPrice * fxRate;
 
                 // Recalculate dailyPnl based on display price
                 const displayPriceChange = displayPrice - (displayPrice / (1 + displayChange / 100));
@@ -991,8 +1003,13 @@ export default function Dashboard() {
                     amount: 1, // Watchlist tracks with notional 1 unit
                     price: convertedDisplayPrice,
                     value: convertedDisplayPrice, // Value = price * 1
-                    change24h: displayChange,
-                    dailyPnl: displayDailyPnl,
+                    change24h: valuationUnavailable ? null : displayChange,
+                    dailyPnl: valuationUnavailable ? null : displayDailyPnl,
+                    valuationUnavailable,
+                    priceMissing: rawPrice <= 0,
+                    fetchedAt: priceData.fetchedAt,
+                    marketTime: priceData.marketTime,
+                    isStale: priceData.isStale,
                     originalType: asset.type,
                     currency: asset.currency,
                     quoteCurrency: assetCurrency, // Track original currency for display
@@ -1047,7 +1064,7 @@ export default function Dashboard() {
 
     // TRUE PORTFOLIO HISTORY
     useEffect(() => {
-        if (pricesLoading) return;
+        if (pricesLoading || !marketActive) return;
 
         if (!portfolioPositionTransactions || portfolioPositionTransactions.length === 0) {
             setRawHistory([]);
@@ -1253,7 +1270,9 @@ export default function Dashboard() {
         baseCurrency,
         pricesLoading,
         refreshTrigger,
-        priceMetadataKey
+        priceMetadataKey,
+        marketActive,
+        marketRevision
     ]);
 
     // DERIVED HISTORY: Apply timeframe cutoff to raw history.
@@ -1541,10 +1560,13 @@ export default function Dashboard() {
         };
     }, [holdings, history, timeframe]);
 
+    const unavailableCount = holdings.filter(holding => holding.valuationUnavailable).length;
+    const knownValueCount = holdings.length - unavailableCount;
     const currencyLabel = baseCurrency === 'USD' ? '$' : baseCurrency;
     const summarySign = totalValue < 0 ? '-' : '';
     const formattedSummaryValue = hideBalances
         ? '••••••'
+        : unavailableCount > 0 && knownValueCount === 0 ? 'Price unavailable'
         : `${summarySign}${Math.abs(totalValue).toLocaleString(undefined, { maximumFractionDigits: 2 })} ${currencyLabel}`;
     return (
         <>
@@ -1741,7 +1763,9 @@ export default function Dashboard() {
                                                         {formattedSummaryValue}
                                                     </span>
                                                 </div>
-                                                <div className="flex items-center flex-wrap" style={{ gap: '8px', marginTop: '2px' }}>
+                                                {unavailableCount > 0 ? (
+                                                    <p role="status" className="text-muted text-xs" style={{ marginTop: '6px' }}>Partial value · {unavailableCount} {unavailableCount === 1 ? 'asset needs' : 'assets need'} a price</p>
+                                                ) : <div className="flex items-center flex-wrap" style={{ gap: '8px', marginTop: '2px' }}>
                                                     <span
                                                         className={safeDiff >= 0 ? 'text-success' : 'text-danger'}
                                                         style={{ display: 'inline-flex', alignItems: 'center', gap: '3px', fontWeight: 600, fontSize: '0.95rem' }}
@@ -1764,7 +1788,7 @@ export default function Dashboard() {
                                                             </span>
                                                         )}
                                                     </span>
-                                                </div>
+                                                </div>}
                                             </>
                                         )}
                                     </div>

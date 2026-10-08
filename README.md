@@ -14,7 +14,8 @@ A premium, dark-mode portfolio tracker built with Next.js, Recharts, and Yahoo F
 - **Transaction Notes**: Add optional notes to any transaction for better record keeping
 - **Deposits & Withdrawals**: Track fiat currency movements in and out of your portfolios
 - **Privacy Mode**: Toggle to hide sensitive balance information
-- **CSV Import/Export**: Seamlessly import and export portfolio data with automatic portfolio detection
+- **CSV Import/Export**: Transfers transactions with complete timestamps, deterministic FIFO ordering, cost basis and multiline notes
+- **Complete Backups**: Export and restore portfolios, transactions, watchlists, public wallet addresses and preferences as a versioned JSON file. Restore validates the file and previews its contents before replacing local data.
 
 ### Visual Analytics
 - **Interactive Performance Charts**: 
@@ -28,10 +29,13 @@ A premium, dark-mode portfolio tracker built with Next.js, Recharts, and Yahoo F
 - **Per-Transaction P/L**: See profit/loss for each individual buy transaction
 
 ### Performance & Reliability
-- **Smart Caching**: Timeframe-aware caching reduces API calls (5min for intraday, 30min for weekly, 1hr for longer periods)
+- **Smart Caching**: Timeframe-aware caching reduces API calls (15min for intraday, 30min for weekly, 1hr for longer periods)
 - **Shared History Requests**: Asset and FX views reuse pending requests, while chart sampling preserves peaks and troughs within a 300-point rendering budget
 - **Robust FX Handling**: USD-pivot FX conversion strategy ensures accurate cross-currency calculations
-- **Outlier Detection**: Statistical smoothing catches data anomalies without affecting real market movements
+- **Original Market Prices**: Historical charts retain valid provider prices, including spikes; no statistical smoothing rewrites prices
+- **Unavailable Prices**: Missing quotes or FX rates show an unavailable price and a partial portfolio value rather than a fabricated loss
+- **Quote Timestamps**: Asset rows and details show the market quote time (or retrieval time when the provider omits it), with a saved-data label during outages
+- **Refresh & App Activity**: Pull-to-refresh invalidates history freshness; returning to the app or reconnecting refreshes immediately. Recurring market queries pause in the background. Per-symbol saved quotes survive changes to portfolio batches.
 
 ### Advanced UI/UX
 - **Premium Dark Mode**: Carefully crafted glassmorphic design with smooth animations
@@ -79,6 +83,9 @@ A premium, dark-mode portfolio tracker built with Next.js, Recharts, and Yahoo F
 2. Create new portfolios with the "+" button
 3. Switch between portfolios using the dropdown in the header
 4. View "All Portfolios" for a combined view across all portfolios
+
+### Complete Backups
+Open Settings → Export/Import → Create Complete Backup and save the JSON file. To move data to another device, choose Restore Complete Backup, review the portfolio/transaction/wallet counts and confirm replacement. CSV transfers transactions only; complete backups also retain watchlists, wallet addresses, portfolio ordering and preferences.
 
 ### Adding Assets
 1. Click the "Add Asset" button

@@ -1,10 +1,10 @@
 import { CapacitorHttp } from '@capacitor/core';
-import { normalizeCurrency, normalizeFinancials, normalizeSearch, scalePrice, smoothOutliers } from './market-data.js';
+import { normalizeCurrency, normalizeFinancials, normalizeSearch, scalePrice, getQuoteMarketTime } from './market-data.js';
 
 const YAHOO_HOSTS = ['https://query1.finance.yahoo.com', 'https://query2.finance.yahoo.com'];
 const FINANCIAL_MODULES = ['summaryDetail', 'defaultKeyStatistics', 'financialData', 'calendarEvents', 'earnings', 'earningsHistory', 'earningsTrend', 'incomeStatementHistory', 'balanceSheetHistory', 'cashflowStatementHistory'];
 const DATE_FIELDS = new Set(['endDate', 'quarter', 'earningsDate', 'exDividendDate', 'dividendDate']);
-const USER_AGENT = 'Mozilla/5.0 (compatible; Monetra/1.6.0)';
+const USER_AGENT = 'Mozilla/5.0 (compatible; Monetra/1.6.1)';
 
 const jsonResponse = (body, status = 200) => new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } });
 
@@ -57,7 +57,8 @@ function normalizeQuote(quote) {
         preMarketChangePercent: quote.preMarketChangePercent ?? null,
         postMarketPrice: scalePrice(quote.postMarketPrice, quote.currency) ?? null,
         postMarketChangePercent: quote.postMarketChangePercent ?? null,
-        marketState: quote.marketState ?? null
+        marketState: quote.marketState ?? null,
+        marketTime: getQuoteMarketTime(quote)
     };
 }
 
@@ -123,22 +124,24 @@ export function createNativeMarketApi(transport = options => CapacitorHttp.reque
     }
 
     async function quotes(symbols) {
+        const data = [];
         try {
             const body = await yahoo('/v7/finance/quote', { symbols: symbols.join(',') }, true);
-            const data = (body.quoteResponse?.result || []).map(normalizeQuote).filter(item => Number.isFinite(item.price));
-            if (data.length) return { data, source: 'yahoo-native' };
+            data.push(...(body.quoteResponse?.result || []).map(normalizeQuote)
+                .filter(item => symbols.includes(item.symbol) && Number.isFinite(item.price) && item.price > 0));
+            if (symbols.every(symbol => data.some(quote => quote.symbol === symbol))) return { data, source: 'yahoo-native' };
         } catch { /* Chart metadata provides a quote when the quote endpoint is unavailable. */ }
-        const data = [];
+        const missing = symbols.filter(symbol => !data.some(quote => quote.symbol === symbol));
         // Bound parallel chart fallbacks to avoid flooding Yahoo for large portfolios.
-        for (let offset = 0; offset < symbols.length; offset += 4) {
-            const batch = await Promise.allSettled(symbols.slice(offset, offset + 4).map(async symbol => {
+        for (let offset = 0; offset < missing.length; offset += 4) {
+            const batch = await Promise.allSettled(missing.slice(offset, offset + 4).map(async symbol => {
                 const result = await chart(symbol, { range: '1d', interval: '5m' });
                 const meta = result.meta;
                 const previous = meta.previousClose ?? meta.chartPreviousClose;
                 const change = Number.isFinite(previous) ? meta.regularMarketPrice - previous : null;
                 return normalizeQuote({ ...meta, quoteType: meta.instrumentType, regularMarketChange: change, regularMarketChangePercent: previous > 0 ? change / previous * 100 : null });
             }));
-            data.push(...batch.filter(item => item.status === 'fulfilled' && Number.isFinite(item.value.price)).map(item => item.value));
+            data.push(...batch.filter(item => item.status === 'fulfilled' && Number.isFinite(item.value.price) && item.value.price > 0).map(item => item.value));
         }
         if (!data.length) throw new MarketError('No quotes available');
         return { data, source: 'yahoo-native-chart' };
@@ -157,7 +160,7 @@ export function createNativeMarketApi(transport = options => CapacitorHttp.reque
                 points = points.filter(point => formatter.format(new Date(point.date)) === lastDay);
             }
         }
-        return { history: smoothOutliers(points), source: 'yahoo-native' };
+        return { history: points, source: 'yahoo-native' };
     }
 
     async function wallet(chain, address) {

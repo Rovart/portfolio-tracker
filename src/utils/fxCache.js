@@ -1,6 +1,7 @@
 'use client';
 
 import { apiFetch } from './api-client.js';
+import { readMarketQuotes, saveMarketQuotes } from './market-cache.js';
 
 // Global cache for FX data and asset history to avoid redundant API calls
 const fxCache = {
@@ -11,6 +12,7 @@ const fxCache = {
 };
 
 const inFlightQuoteRequests = new Map();
+const quoteRequestTokens = new Map();
 const inFlightAssetHistoryRequests = new Map();
 const inFlightFxHistoryRequests = new Map();
 const QUOTE_CACHE_DURATION = 20 * 1000;
@@ -57,62 +59,64 @@ function normalizeQuoteSymbol(symbol) {
 
 export async function getCachedQuotes(symbols, maxAge = QUOTE_CACHE_DURATION) {
     const uniqueSymbols = [...new Set((symbols || []).map(normalizeQuoteSymbol).filter(Boolean))];
-    if (uniqueSymbols.length === 0) return [];
+    if (!uniqueSymbols.length) return [];
+    const missingSymbols = uniqueSymbols.filter(symbol =>
+        !isCacheValid(fxCache.quotes[symbol], maxAge) || fxCache.quotes[symbol].data.isStale
+    ).sort();
+    if (!missingSymbols.length) return uniqueSymbols.map(symbol => fxCache.quotes[symbol].data);
 
-    const freshQuotes = [];
-    const missingSymbols = [];
-
-    uniqueSymbols.forEach(symbol => {
-        const cached = fxCache.quotes[symbol];
-        if (isCacheValid(cached, maxAge)) {
-            freshQuotes.push(cached.data);
-        } else {
-            missingSymbols.push(symbol);
-        }
-    });
-
-    if (missingSymbols.length === 0) return freshQuotes;
-
-    const requestKey = missingSymbols.slice().sort().join(',');
+    const requestKey = missingSymbols.join(',');
     let request = inFlightQuoteRequests.get(requestKey);
-
     if (!request) {
-        request = apiFetch(`/api/quote?symbols=${encodeURIComponent(missingSymbols.join(','))}`)
-            .then(async res => {
-                if (!res.ok) {
-                    console.warn(`Quote fetch failed ${res.status}: ${res.statusText}`);
-                    return [];
-                }
-
-                const text = await res.text();
-                if (!text) return [];
-
+        const token = {};
+        missingSymbols.forEach(symbol => quoteRequestTokens.set(symbol, token));
+        request = (async () => {
+            const received = [];
+            // Keep every native request within its 200-symbol limit.
+            for (let offset = 0; offset < missingSymbols.length; offset += 200) {
+                const batch = missingSymbols.slice(offset, offset + 200);
                 try {
-                    const json = JSON.parse(text);
-                    return Array.isArray(json.data) ? json.data : [];
-                } catch (e) {
-                    console.error('Invalid JSON from quote API:', text.substring(0, 100));
-                    return [];
-                }
-            })
-            .finally(() => {
-                inFlightQuoteRequests.delete(requestKey);
-            });
+                    const res = await apiFetch(`/api/quote?symbols=${encodeURIComponent(batch.join(','))}`, { cache: 'no-store' });
+                    if (!res.ok) continue;
+                    const json = await res.json();
+                    const fetchedAt = Number(res.headers.get('X-Monetra-Cached-At') || res.headers.get('X-Monetra-Fetched-At')) || Date.now();
+                    const isStale = res.headers.get('X-Monetra-Cache') === 'offline';
+                    const saved = isStale ? new Map((await readMarketQuotes(batch)).map(quote => [quote.symbol, quote])) : new Map();
+                    for (const quote of Array.isArray(json.data) ? json.data : []) {
+                        const symbol = normalizeQuoteSymbol(quote?.symbol);
+                        if (!batch.includes(symbol) || !Number.isFinite(quote.price) || quote.price <= 0) continue;
+                        let data = { ...quote, symbol, fetchedAt, isStale };
+                        const previous = [fxCache.quotes[symbol]?.data, saved.get(symbol)].filter(Boolean)
+                            .sort((a, b) => b.fetchedAt - a.fetchedAt)[0];
+                        if (isStale && previous?.fetchedAt > fetchedAt) data = { ...previous, isStale: true };
+                        if (quoteRequestTokens.get(symbol) === token) {
+                            fxCache.quotes[symbol] = { data, timestamp: data.fetchedAt };
+                            received.push(data);
+                        } else if (fxCache.quotes[symbol]) {
+                            received.push(fxCache.quotes[symbol].data);
+                        }
+                    }
+                } catch (error) { console.warn('Quote request failed:', error.message); }
+            }
+            await saveMarketQuotes(received.filter(quote => quoteRequestTokens.get(quote.symbol) === token));
+            return received;
+        })().finally(() => {
+            if (inFlightQuoteRequests.get(requestKey) === request) inFlightQuoteRequests.delete(requestKey);
+        });
         inFlightQuoteRequests.set(requestKey, request);
     }
-
-    const fetchedQuotes = await request;
-    const now = Date.now();
-    fetchedQuotes.forEach(quote => {
-        if (quote?.symbol) {
-            fxCache.quotes[normalizeQuoteSymbol(quote.symbol)] = {
-                data: quote,
-                timestamp: now
-            };
-        }
+    const received = new Map((await request).map(quote => [quote.symbol, quote]));
+    const saved = new Map((await readMarketQuotes(uniqueSymbols.filter(symbol =>
+        !received.has(symbol) && !fxCache.quotes[symbol]
+    ))).map(quote => [quote.symbol, quote]));
+    return uniqueSymbols.flatMap(symbol => {
+        const fresh = received.get(symbol);
+        if (fresh) return [fresh];
+        const entry = fxCache.quotes[symbol];
+        const fallback = entry?.data || saved.get(symbol);
+        if (!fallback) return [];
+        return [{ ...fallback, isStale: !isCacheValid(entry, maxAge) || !!fallback.isStale }];
     });
-
-    return [...freshQuotes, ...fetchedQuotes];
 }
 
 /**
@@ -122,61 +126,11 @@ export async function getCachedQuotes(symbols, maxAge = QUOTE_CACHE_DURATION) {
  * @returns {Promise<{rate: number, changePercent: number}>}
  */
 export async function getCachedFxRate(fromCurrency, toCurrency) {
-    const from = fromCurrency.toUpperCase();
-    const to = toCurrency.toUpperCase();
-
-    // Same currency = no conversion
-    if (from === to) {
-        return { rate: 1, changePercent: 0 };
-    }
-
-    const key = getCacheKey(from, to);
-
-    // Check cache
-    if (isCacheValid(fxCache.current[key], CACHE_DURATIONS.current)) {
-        return fxCache.current[key].data;
-    }
-
-    // Fetch fresh data
-    try {
-        const symbol = `${from}${to}=X`;
-        const res = await apiFetch(`/api/quote?symbols=${symbol}`);
-
-        if (!res.ok) {
-            console.warn(`FX rate fetch failed ${res.status}: ${res.statusText}`);
-            return { rate: 1, changePercent: 0 };
-        }
-
-        const text = await res.text();
-        if (!text) return { rate: 1, changePercent: 0 };
-
-        let json;
-        try {
-            json = JSON.parse(text);
-        } catch (e) {
-            console.error('Invalid JSON from quote API:', text.substring(0, 100));
-            return { rate: 1, changePercent: 0 };
-        }
-
-        if (json.data && json.data[0]) {
-            const data = {
-                rate: json.data[0].price || 1,
-                changePercent: json.data[0].changePercent || 0
-            };
-
-            // Update cache
-            fxCache.current[key] = {
-                data,
-                timestamp: Date.now()
-            };
-
-            return data;
-        }
-    } catch (e) {
-        console.error(`Failed to fetch FX rate ${from}→${to}:`, e);
-    }
-
-    return { rate: 1, changePercent: 0 };
+    const from = normalizeQuoteSymbol(fromCurrency);
+    const to = normalizeQuoteSymbol(toCurrency);
+    if (from === to) return { rate: 1, changePercent: 0 };
+    const quote = (await getCachedQuotes([`${from}${to}=X`]))[0];
+    return { rate: quote?.price ?? null, changePercent: quote?.changePercent ?? null, isStale: !!quote?.isStale };
 }
 
 /**
@@ -248,11 +202,13 @@ export async function getCachedFxHistory(fromCurrency, toCurrency, range = 'ALL'
 /**
  * Clear all cached data
  */
-export function clearFxCache() {
+export function clearFxCache({ keepQuotes = false } = {}) {
     fxCache.current = {};
     fxCache.history = {};
     fxCache.assetHistory = {};
-    fxCache.quotes = {};
+    if (keepQuotes) Object.values(fxCache.quotes).forEach(entry => { entry.timestamp = 0; });
+    else fxCache.quotes = {};
+    quoteRequestTokens.clear();
     inFlightQuoteRequests.clear();
     inFlightAssetHistoryRequests.clear();
     inFlightFxHistoryRequests.clear();

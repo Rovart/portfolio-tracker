@@ -1,4 +1,4 @@
-import { scalePrice, smoothOutliers } from '@/utils/market-data';
+import { scalePrice } from '@/utils/market-data';
 import { yahooApiCall, randomDelay } from '@/utils/yahooHelper';
 import { fetchAlternativeHistory, shouldUseFallback } from '@/utils/defeatbetaFallback';
 import { NextResponse } from 'next/server';
@@ -77,7 +77,7 @@ export async function GET(request) {
 
                 if (fallbackResult?.history?.length > 0) {
                     usedFallback = true;
-                    let history = smoothOutliers(fallbackResult.history);
+                    const history = fallbackResult.history.filter(point => Number.isFinite(point.price) && point.price > 0);
                     return NextResponse.json({
                         history,
                         source: fallbackResult.source,

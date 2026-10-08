@@ -5,6 +5,7 @@ import { GripVertical, ChevronDown, ChevronRight, Wallet, Sun, Moon, Plus } from
 import { updateWatchlistAssetPositions } from '@/utils/db';
 import { formatSymbol } from '@/utils/commodities';
 import AssetIcon from './AssetIcon';
+import QuoteTime from './QuoteTime';
 
 // Extracted memoized component for holding rows to prevent unnecessary re-renders
 const HoldingRow = memo(function HoldingRow({
@@ -28,6 +29,8 @@ const HoldingRow = memo(function HoldingRow({
     const isBeingDragged = draggedIndex === index;
     const isDragOver = dragOverIndex === index;
     const showDragHandle = isDraggable && !isFiatItem;
+    const unavailable = holding.valuationUnavailable || !Number.isFinite(holding.price);
+    const profitUnavailable = returnMode === 'total' && holding.totalProfit === null;
     const totalProfit = holding.totalProfit || 0;
     const totalProfitPercent = holding.costBasis > 0 ? (totalProfit / holding.costBasis) * 100 : 0;
     const displayedChangeValue = returnMode === 'total' && !isWatchlist ? totalProfit : (holding.dailyPnl || 0);
@@ -90,7 +93,7 @@ const HoldingRow = memo(function HoldingRow({
                         <span className="inline-block w-24 h-3 bg-white-10 rounded animate-pulse" />
                     ) : (
                         <>
-                            {isWatchlist ? (
+                            {unavailable ? 'Price unavailable' : isWatchlist ? (
                                 // Watchlist: Just show price
                                 `${holding.price.toLocaleString(undefined, { maximumFractionDigits: 2 })} ${baseCurrency === 'USD' ? '$' : baseCurrency}`
                             ) : (
@@ -100,6 +103,7 @@ const HoldingRow = memo(function HoldingRow({
                         </>
                     )}
                 </span>
+                {!loading && !unavailable && <QuoteTime fetchedAt={holding.fetchedAt} marketTime={holding.marketTime} isStale={holding.isStale} />}
             </div>
 
             <div className="flex flex-col items-end shrink-0" style={{ textAlign: 'right' }}>
@@ -108,13 +112,13 @@ const HoldingRow = memo(function HoldingRow({
                         <div className="w-24 sm:w-32 h-6 bg-white-10 rounded animate-pulse ml-auto" />
                     ) : (
                         // For watchlists, 'value' is just the price (since amount is 1)
-                        ((hideBalances && !isWatchlist) ? '••••••' : `${holding.value.toLocaleString(undefined, { maximumFractionDigits: 2 })} ${baseCurrency === 'USD' ? '$' : baseCurrency}`)
+                        ((hideBalances && !isWatchlist) ? '••••••' : unavailable ? '—' : `${holding.value.toLocaleString(undefined, { maximumFractionDigits: 2 })} ${baseCurrency === 'USD' ? '$' : baseCurrency}`)
                     )}
                 </span>
                 {loading ? (
                     <div className="w-16 sm:w-20 h-4 bg-white-10 rounded animate-pulse mt-1 ml-auto" />
                 ) : (
-                    holding.asset !== baseCurrency && (
+                    !unavailable && !profitUnavailable && holding.asset !== baseCurrency && (
                         <span
                             className="text-[10px] sm:text-xs font-semibold"
                             style={{
@@ -131,6 +135,7 @@ const HoldingRow = memo(function HoldingRow({
                         </span>
                     )
                 )}
+                {!loading && !unavailable && profitUnavailable && <span className="text-muted text-xs">Cost basis unavailable</span>}
             </div>
         </div>
     );
@@ -391,6 +396,7 @@ export default function HoldingsList({ holdings, onSelect, onAddAsset, loading, 
 
     const activeOptions = isWatchlist ? WATCHLIST_SORT_OPTIONS : SORT_OPTIONS;
     const isDraggable = isWatchlist && sortBy === 'custom';
+    const fiatValueUnavailable = fiatHoldings.some(holding => holding.valuationUnavailable);
     const displayedFiatChange = returnMode === 'total' ? totalFiatProfit : totalFiatDailyPnl;
 
     return (
@@ -534,11 +540,11 @@ export default function HoldingsList({ holdings, onSelect, onAddAsset, loading, 
 
                         <div className="flex flex-col items-end">
                             <span className="text-base sm:text-lg font-bold">
-                                {hideBalances ? '••••••' : `${totalFiatValue.toLocaleString(undefined, { maximumFractionDigits: 2 })} ${baseCurrency === 'USD' ? '$' : baseCurrency}`}
+                                {hideBalances ? '••••••' : fiatValueUnavailable ? 'Partial value' : `${totalFiatValue.toLocaleString(undefined, { maximumFractionDigits: 2 })} ${baseCurrency === 'USD' ? '$' : baseCurrency}`}
                             </span>
-                            <span className={`text-[10px] sm:text-sm font-medium ${displayedFiatChange >= 0 ? 'text-success' : 'text-danger'}`}>
+                            {!fiatValueUnavailable && <span className={`text-[10px] sm:text-sm font-medium ${displayedFiatChange >= 0 ? 'text-success' : 'text-danger'}`}>
                                 {!hideBalances && `${displayedFiatChange >= 0 ? '+' : '-'}${Math.abs(displayedFiatChange).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ${baseCurrency === 'USD' ? '$' : baseCurrency}`}
-                            </span>
+                            </span>}
                         </div>
                     </div>
 

@@ -1,4 +1,4 @@
-import { normalizeCurrency, scalePrice } from '@/utils/market-data';
+import { normalizeCurrency, scalePrice, getQuoteMarketTime } from '@/utils/market-data';
 import { yahooApiCall } from '@/utils/yahooHelper';
 import { shouldUseFallback } from '@/utils/defeatbetaFallback';
 import { NextResponse } from 'next/server';
@@ -39,7 +39,8 @@ export async function GET(request) {
                 preMarketChangePercent: q.preMarketChangePercent || null,
                 postMarketPrice: q.postMarketPrice != null ? scalePrice(q.postMarketPrice, rawCurrency) : null,
                 postMarketChangePercent: q.postMarketChangePercent || null,
-                marketState: q.marketState || null // PRE, REGULAR, POST, CLOSED
+                marketState: q.marketState || null, // PRE, REGULAR, POST, CLOSED
+                marketTime: getQuoteMarketTime(q)
             };
         });
 

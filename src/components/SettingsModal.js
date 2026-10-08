@@ -5,6 +5,9 @@ import Link from 'next/link';
 import { ArrowLeft, Plus, Trash2, Edit2, Check, X, Upload, Download, FolderOpen, ChevronDown, Star, Bell, Eye, GripVertical, Shield, FileText, ChevronRight } from 'lucide-react';
 import ConfirmModal from './ConfirmModal';
 import { parsePortfolioCsv } from '@/utils/csvImport';
+import { createBackup, restoreBackup, validateBackup } from '@/utils/backup';
+import { downloadFile } from '@/utils/download-file';
+import { clearFxCache } from '@/utils/fxCache';
 import {
     getAllPortfolios,
     addPortfolio,
@@ -29,6 +32,10 @@ export default function SettingsModal({ onClose, onPortfolioChange, currentPortf
     const [loading, setLoading] = useState(true);
     const [ioPortfolioId, setIoPortfolioId] = useState(currentPortfolioId);
     const fileInputRef = useRef(null);
+    const backupInputRef = useRef(null);
+    const [pendingBackup, setPendingBackup] = useState(null);
+    const [ioBusy, setIoBusy] = useState(false);
+    const [ioStatus, setIoStatus] = useState(null);
 
     // Drag and drop state for portfolio reordering
     const [draggedIndex, setDraggedIndex] = useState(null);
@@ -260,56 +267,61 @@ export default function SettingsModal({ onClose, onPortfolioChange, currentPortf
         const filename = `portfolio-${pName.toLowerCase().replace(/\s+/g, '-')}-${new Date().toISOString().split('T')[0]}.csv`;
 
         try {
-            const { Capacitor } = await import('@capacitor/core');
-            if (Capacitor.isNativePlatform()) {
-                const { Filesystem, Directory } = await import('@capacitor/filesystem');
-                const { Share } = await import('@capacitor/share');
-
-                // Write file to cache with explicit encoding
-                const result = await Filesystem.writeFile({
-                    path: filename,
-                    data: csv,
-                    directory: Directory.Cache,
-                    encoding: 'utf8'
-                });
-
-                // Use files array with proper MIME type for better compatibility
-                await Share.share({
-                    title: filename,
-                    files: [result.uri],
-                    dialogTitle: 'Save or Share CSV'
-                });
-                return;
-            }
-        } catch (e) {
-            console.log('Native export failed:', e);
-        }
-
-        const blob = new Blob([csv], { type: 'text/csv' });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = filename;
-        a.click();
-        URL.revokeObjectURL(url);
+            await downloadFile(filename, csv, 'text/csv');
+        } catch (error) { setIoStatus({ error: true, text: error.message || 'Could not export CSV.' }); }
     };
 
-    const handleImportCsv = async (e) => {
-        const file = e.target.files?.[0];
+    const handleExportBackup = async () => {
+        setIoBusy(true);
+        setIoStatus(null);
+        try {
+            const backup = await createBackup();
+            await downloadFile(`monetra-backup-${new Date().toISOString().split('T')[0]}.json`, JSON.stringify(backup, null, 2), 'application/json');
+            setIoStatus({ text: 'Backup ready. Save the file somewhere you can access from another device.' });
+        } catch (error) { setIoStatus({ error: true, text: error.message || 'Could not create backup.' }); }
+        finally { setIoBusy(false); }
+    };
+
+    const handleReadBackup = async event => {
+        const file = event.target.files?.[0];
+        event.target.value = '';
         if (!file) return;
+        setIoStatus(null);
+        try {
+            if (file.size > 20 * 1024 * 1024) throw new Error('The backup file is too large (maximum 20 MB).');
+            const backup = validateBackup(JSON.parse(await file.text()));
+            setPendingBackup({ fileName: file.name, backup });
+        } catch (error) { setIoStatus({ error: true, text: error.message || 'Could not read backup.' }); }
+    };
 
-        const text = await file.text();
-        const { transactions, portfolioNames } = parsePortfolioCsv(text);
-
-        if (transactions.length === 0) {
-            alert('No valid transactions found in CSV');
-            return;
+    const handleRestoreBackup = async () => {
+        if (!pendingBackup) return;
+        setIoBusy(true);
+        setIoStatus(null);
+        try {
+            await restoreBackup(pendingBackup.backup);
+            clearFxCache();
+            await cancelAllNotifications();
+            if (localStorage.getItem('notifications_enabled') === 'true' && await checkPermissions()) {
+                await scheduleDailyNotifications(localStorage.getItem('notification_time') || '09:00', pendingBackup.backup.tables.portfolios);
+            }
+            window.location.reload();
+        } catch (error) {
+            setIoStatus({ error: true, text: error.message || 'Could not restore backup.' });
+            setIoBusy(false);
         }
+    };
 
-        // Reset file input so same file can be re-selected
-        if (fileInputRef.current) fileInputRef.current.value = '';
-
-        await processImportedTransactions(transactions, portfolioNames);
+    const handleImportCsv = async (event) => {
+        const file = event.target.files?.[0];
+        event.target.value = '';
+        if (!file) return;
+        setIoStatus(null);
+        try {
+            const { transactions, portfolioNames } = parsePortfolioCsv(await file.text());
+            if (!transactions.length) throw new Error('No valid transactions found in CSV.');
+            await processImportedTransactions(transactions, portfolioNames);
+        } catch (error) { setIoStatus({ error: true, text: error.message || 'Could not import CSV.' }); }
     };
 
     const processImportedTransactions = async (transactions, uniquePortfolioNames) => {
@@ -724,7 +736,17 @@ export default function SettingsModal({ onClose, onPortfolioChange, currentPortf
                     )}
 
                     {activeTab === 'export' && (
-                        <div className="flex flex-col gap-4">
+                        <div className="flex flex-col gap-4" aria-busy={ioBusy}>
+                            <p className="text-muted text-sm">Complete backups include every portfolio, transaction, wallet, watchlist and preference.</p>
+                            <button onClick={handleExportBackup} disabled={ioBusy} className="btn flex items-center gap-3 p-4 rounded-xl" style={{ border: '1px solid rgba(255,255,255,0.1)' }}>
+                                <Download size={20} /> {ioBusy ? 'Working…' : 'Create Complete Backup'}
+                            </button>
+                            <button onClick={() => backupInputRef.current?.click()} disabled={ioBusy} className="btn flex items-center gap-3 p-4 rounded-xl" style={{ border: '1px solid rgba(255,255,255,0.1)' }}>
+                                <Upload size={20} /> Restore Complete Backup
+                            </button>
+                            <input ref={backupInputRef} type="file" accept=".json,application/json" onChange={handleReadBackup} style={{ display: 'none' }} />
+                            {ioStatus && <p role={ioStatus.error ? 'alert' : 'status'} className={ioStatus.error ? 'text-danger text-sm' : 'text-muted text-sm'}>{ioStatus.text}</p>}
+                            <p className="text-muted text-xs">CSV below transfers transactions only. Restoring a complete backup replaces the current data.</p>
                             <div className="flex flex-col gap-2">
                                 <label className="text-muted text-xs font-semibold uppercase tracking-wider">Target Portfolio</label>
                                 <select
@@ -1042,6 +1064,15 @@ export default function SettingsModal({ onClose, onPortfolioChange, currentPortf
                     </div>
                 </div>
             )}
+
+            <ConfirmModal
+                isOpen={pendingBackup !== null}
+                onClose={() => setPendingBackup(null)}
+                onConfirm={handleRestoreBackup}
+                title="Restore Complete Backup"
+                message={pendingBackup ? `Replace the current data with "${pendingBackup.fileName}"? It contains ${pendingBackup.backup.tables.portfolios.length} portfolios, ${pendingBackup.backup.tables.transactions.length} transactions, ${pendingBackup.backup.tables.wallets.length} wallets and ${pendingBackup.backup.tables.watchlistAssets.length} watchlist assets. Export a backup first if you want to keep the current data.` : ''}
+                confirmText="Replace and Restore"
+            />
 
             {/* Delete Confirmation Modal */}
             <ConfirmModal

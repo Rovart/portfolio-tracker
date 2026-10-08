@@ -1,4 +1,5 @@
 import Dexie from 'dexie';
+import Papa from 'papaparse';
 import { getMissingQuoteCurrencyPatch } from './portfolio-logic.js';
 
 // Create IndexedDB database
@@ -257,10 +258,13 @@ export async function exportToCsv(portfolioId = null) {
     const portfolios = await getAllPortfolios();
     const portfolioMap = portfolios.reduce((acc, p) => ({ ...acc, [p.id]: p.name }), {});
 
-    const csvRows = transactions.map(tx => {
+    // Preserve chronological order even when several trades have the same timestamp.
+    const csvRows = [...transactions].sort((a, b) =>
+        new Date(a.date) - new Date(b.date) || (a.id || 0) - (b.id || 0)
+    ).map(tx => {
         const quoteBalanceFlag = tx.affectsQuoteBalance ?? tx.affectsFiatBalance;
         return {
-            'Date': new Date(tx.date).toISOString().split('T')[0],
+            'Date': new Date(tx.date).toISOString(),
             'Way': tx.type,
             'Base amount': tx.baseAmount,
             'Base currency (name)': tx.baseCurrency,
@@ -270,6 +274,7 @@ export async function exportToCsv(portfolioId = null) {
             'Exchange': tx.exchange || '',
             'Fee amount': tx.fee || 0,
             'Fee currency (name)': tx.feeCurrency || '',
+            'Cost Basis': tx.costBasisBase ?? '',
             'Affects Quote Balance': quoteBalanceFlag === undefined ? '' : (quoteBalanceFlag ? 'TRUE' : 'FALSE'),
             'Affects Cash Balance': quoteBalanceFlag === undefined ? '' : (quoteBalanceFlag ? 'TRUE' : 'FALSE'),
             'Notes': tx.notes || '',
@@ -281,20 +286,7 @@ export async function exportToCsv(portfolioId = null) {
     // Convert to CSV string
     if (csvRows.length === 0) return '';
 
-    const headers = Object.keys(csvRows[0]);
-    const lines = [
-        headers.join(','),
-        ...csvRows.map(row => headers.map(h => {
-            const val = row[h];
-            // Escape commas and quotes
-            if (typeof val === 'string' && (val.includes(',') || val.includes('"'))) {
-                return `"${val.replace(/"/g, '""')}"`;
-            }
-            return val;
-        }).join(','))
-    ];
-
-    return lines.join('\n');
+    return Papa.unparse(csvRows, { newline: '\n' });
 }
 
 // Ensure default portfolio exists

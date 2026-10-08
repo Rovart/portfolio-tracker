@@ -1,6 +1,9 @@
 'use client';
 
 import { apiFetch } from '@/utils/api-client';
+import { getCachedQuotes } from '@/utils/fxCache';
+import useMarketActivity from './useMarketActivity';
+import QuoteTime from './QuoteTime';
 
 import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import dynamic from 'next/dynamic';
@@ -28,7 +31,8 @@ import {
     normalizeAsset,
     isFiatAsset,
     getQuoteCurrencyFromSymbol,
-    calculateAssetAccounting
+    calculateAssetAccounting,
+    getCurrentFxRate
 } from '@/utils/portfolio-logic';
 import {
     buildHistoricalConversionMap,
@@ -48,36 +52,21 @@ function toFiniteNumber(value) {
 }
 
 // Live FX rate helper: how many units of `to` one unit of `from` is worth.
-// Tries the direct Yahoo pair first, then pivots via USD when needed.
-async function fetchLiveFxRate(from, to) {
+// Reuses available quotes and USD pairs before requesting a direct cross pair.
+async function fetchLiveFxRate(from, to, quotes = []) {
     const F = String(from || '').toUpperCase();
     const T = String(to || '').toUpperCase();
-    if (!F || !T || F === T) return 1;
-
-    try {
-        const res = await apiFetch(`/api/quote?symbols=${F}${T}=X`);
-        const json = await res.json();
-        const direct = json.data?.[0]?.price;
-        if (direct) return direct;
-    } catch (e) {
-        console.error('Direct FX fetch failed', e);
-    }
-
-    const toUsd = async (code) => {
-        if (code === 'USD') return 1;
-        try {
-            const res = await apiFetch(`/api/quote?symbols=${code}USD=X`);
-            const json = await res.json();
-            return json.data?.[0]?.price || null;
-        } catch (e) {
-            console.error('Pivot FX fetch failed', e);
-            return null;
-        }
-    };
-
-    const [fromUsd, toUsdRate] = await Promise.all([toUsd(F), toUsd(T)]);
-    if (fromUsd && toUsdRate) return fromUsd / toUsdRate;
-    return 1;
+    if (!F || !T) return null;
+    if (F === T) return 1;
+    const priceMap = Object.fromEntries(quotes.map(quote => [quote.symbol, quote]));
+    const existing = getCurrentFxRate(priceMap, F, T);
+    if (existing) return existing;
+    const symbols = [F, T].filter(code => code !== 'USD').map(code => `${code}USD=X`);
+    for (const quote of await getCachedQuotes(symbols)) priceMap[quote.symbol] = quote;
+    const pivot = getCurrentFxRate(priceMap, F, T);
+    if (pivot) return pivot;
+    const direct = (await getCachedQuotes([`${F}${T}=X`]))[0]?.price;
+    return direct || null;
 }
 
 export default function TransactionModal({
@@ -96,6 +85,7 @@ export default function TransactionModal({
     onWatchlistUpdate,
     onWalletsChange
 }) {
+    const { active: marketActive, revision: marketRevision } = useMarketActivity();
     const modalRef = useRef(null);
     const heavyRafRef = useRef(0);
     const [currentView, setCurrentView] = useState(mode === 'ADD' ? 'SEARCH' : 'LIST');
@@ -259,7 +249,8 @@ export default function TransactionModal({
     }, [isWatchlist, selectedAsset?.symbol, currentPortfolioId, watchlistAssets]);
 
     useEffect(() => {
-        if (!selectedAssetSymbol) return;
+        if (!selectedAssetSymbol || !marketActive) return;
+        let isCancelled = false;
 
         const isNewAsset = prevSymbolRef.current !== selectedAssetSymbol;
 
@@ -291,17 +282,18 @@ export default function TransactionModal({
                 fetchSym = `${fetchSym.toUpperCase()}USD=X`;
             }
 
-            let symbolsToFetch = [fetchSym];
+            const isUsdCash = isCurrencyType && fetchSym.toUpperCase() === 'USD';
+            let symbolsToFetch = isUsdCash ? [] : [fetchSym];
             // For USD-to-base conversion, always fetch {base}USD=X (e.g., EURUSD=X), not the other way around
             if (baseCurrency !== 'USD') {
                 symbolsToFetch.push(`${baseCurrency}USD=X`);
             }
 
             try {
-                const res = await apiFetch(`/api/quote?symbols=${symbolsToFetch.join(',')}`);
-                const json = await res.json();
+                const json = { data: await getCachedQuotes(symbolsToFetch) };
+                if (isCancelled) return;
 
-                let fetchedPrice = null;
+                let fetchedPrice = isUsdCash ? 1 : null;
                 let fetchedChange = null;
                 let fetchedAbsChange = null;
                 let fetchedCurrency = quoteCurr;
@@ -333,125 +325,19 @@ export default function TransactionModal({
                         fetchedPostMarketChange = assetQuote.postMarketChangePercent;
                     }
 
-                    // For bare currencies (EUR from EUR=X → EURUSD=X), special handling:
-                    // The assetPrice from EURUSD=X IS already the EUR/USD conversion rate
-                    // So we should NOT multiply by fxRate again!
+                    // A bare currency is priced through its USD pair; regular
+                    // instruments are priced in the feed's actual quote currency.
                     let bareCurrCode = null;
                     if ((selectedAssetIsBareCurrencyOrigin && fetchSym.endsWith('=X')) || (fetchSym.endsWith('USD=X') && fetchSym.length === 8)) {
-                        const base = fetchSym.replace(/=X$/, '').replace(/USD$/, '');
-                        bareCurrCode = base.toUpperCase();
+                        bareCurrCode = fetchSym.replace(/=X$/, '').replace(/USD$/, '').toUpperCase();
                     }
-
-
-                    // Track the actual FX rate for calculations (separate from display fxRate)
-                    let actualFxRateValue = fetchedFxRate;
-
-                    if (bareCurrCode) {
-                        // BARE CURRENCY CASE:
-                        // For EUR (EURUSD=X) with baseCurrency USD: price IS the rate, fxRate = 1 for display
-                        // For EUR (EURUSD=X) with baseCurrency EUR: price = 1, fxRate = 1
-                        // For AUD (AUDUSD=X) with baseCurrency EUR: price = AUDUSD, fxRate = USD/EUR = 1/EURUSD
-                        if (bareCurrCode === baseCurrency) {
-                            // Holding EUR, displaying in EUR → price is 1
-                            fetchedPrice = 1;
-                            fetchedFxRate = 1;
-                            actualFxRateValue = 1;
-                        } else if (baseCurrency === 'USD') {
-                            // Holding EUR/AUD, displaying in USD → price = XXXUSD rate, fxRate = 1
-                            actualFxRateValue = fetchedPrice; // The price IS the FX rate
-                            fetchedFxRate = 1; // Don't double-convert for display!
-                        } else {
-                            // Holding AUD (AUDUSD=X price), displaying in EUR
-                            // We need: AUD/EUR = (AUD/USD) * (USD/EUR) = AUDUSD * (1/EURUSD)
-                            // fetchedPrice is already AUD/USD
-                            // We need to get USD/EUR = 1 / EURUSD
-                            try {
-                                const baseToUsdSymbol = `${baseCurrency}USD=X`;
-                                const fxRes = await apiFetch(`/api/quote?symbols=${baseToUsdSymbol}`);
-                                const fxJson = await fxRes.json();
-                                if (fxJson.data?.[0]?.price) {
-                                    // baseToUsd is EURUSD = 1.04, so USD/EUR = 1/1.04 = 0.96
-                                    const usdToBaseRate = 1 / fxJson.data[0].price;
-                                    actualFxRateValue = fetchedPrice * usdToBaseRate;
-                                    fetchedFxRate = usdToBaseRate; // For display of the conversion
-                                } else {
-                                    // Fallback: just use the USD price without conversion
-                                    actualFxRateValue = fetchedPrice;
-                                    fetchedFxRate = 1;
-                                    console.warn(`Could not fetch ${baseToUsdSymbol} for conversion`);
-                                }
-                            } catch (e) {
-                                console.error('Failed to fetch USD to base rate:', e);
-                                actualFxRateValue = fetchedPrice;
-                                fetchedFxRate = 1;
-                            }
-                        }
+                    if (bareCurrCode === baseCurrency) {
+                        fetchedPrice = 1;
+                        fetchedFxRate = 1;
                     } else {
-                        // REGULAR ASSET CASE: normal FX conversion
-                        if (fetchedCurrency === baseCurrency) {
-                            fetchedFxRate = 1;
-                            actualFxRateValue = 1;
-                        } else {
-                            const expectedFxSymbol = `${fetchedCurrency}${baseCurrency}=X`;
-                            let fxQuote = json.data?.find(q => q.symbol === expectedFxSymbol);
-
-                            if (!fxQuote) {
-                                try {
-                                    const fxRes = await apiFetch(`/api/quote?symbols=${expectedFxSymbol}`);
-                                    const fxJson = await fxRes.json();
-                                    if (fxJson.data?.[0]) {
-                                        fxQuote = fxJson.data[0];
-                                    }
-                                } catch (e) {
-                                    console.error('Failed to fetch FX rate:', e);
-                                }
-                            }
-
-                            if (fxQuote && fxQuote.price) {
-                                fetchedFxRate = fxQuote.price;
-                                actualFxRateValue = fxQuote.price;
-                            } else {
-                                // Yahoo often lacks direct USD->non-USD or cross pairs. Pivot via USD.
-                                let toUsdRate = 1;
-                                if (fetchedCurrency !== 'USD') {
-                                    const toUsdSymbol = `${fetchedCurrency}USD=X`;
-                                    let toUsdQuote = json.data?.find(q => q.symbol === toUsdSymbol);
-                                    if (!toUsdQuote) {
-                                        try {
-                                            const fxRes = await apiFetch(`/api/quote?symbols=${toUsdSymbol}`);
-                                            const fxJson = await fxRes.json();
-                                            toUsdQuote = fxJson.data?.[0];
-                                        } catch (e) {
-                                            console.error('Failed to fetch quote-to-USD FX rate:', e);
-                                        }
-                                    }
-                                    if (toUsdQuote?.price) toUsdRate = toUsdQuote.price;
-                                }
-
-                                let fromUsdRate = 1;
-                                if (baseCurrency !== 'USD') {
-                                    const baseToUsdSymbol = `${baseCurrency}USD=X`;
-                                    let baseToUsdQuote = json.data?.find(q => q.symbol === baseToUsdSymbol);
-                                    if (!baseToUsdQuote) {
-                                        try {
-                                            const fxRes = await apiFetch(`/api/quote?symbols=${baseToUsdSymbol}`);
-                                            const fxJson = await fxRes.json();
-                                            baseToUsdQuote = fxJson.data?.[0];
-                                        } catch (e) {
-                                            console.error('Failed to fetch base-to-USD FX rate:', e);
-                                        }
-                                    }
-                                    if (baseToUsdQuote?.price) fromUsdRate = 1 / baseToUsdQuote.price;
-                                }
-
-                                fetchedFxRate = toUsdRate * fromUsdRate;
-                                actualFxRateValue = fetchedFxRate;
-                            }
-                        }
+                        fetchedFxRate = await fetchLiveFxRate(bareCurrCode ? 'USD' : fetchedCurrency, baseCurrency, json.data);
                     }
-
-                    // Store actualFxRate for later use
-                    var fetchedActualFxRate = actualFxRateValue;
+                    var fetchedActualFxRate = bareCurrCode ? (fetchedPrice && fetchedFxRate ? fetchedPrice * fetchedFxRate : null) : fetchedFxRate;
                 }
 
                 // Initializer vars for update
@@ -498,6 +384,7 @@ export default function TransactionModal({
                     }));
                 }
 
+                if (isCancelled) return;
                 // Update currency in selectedAsset if needed (won't re-trigger effect)
                 if (fetchedCurrency !== selectedAssetCurrency) {
                     setSelectedAsset(prev => prev ? { ...prev, currency: fetchedCurrency } : prev);
@@ -523,6 +410,9 @@ export default function TransactionModal({
                     actualFxRate: fetchedActualFxRate || fetchedFxRate,
                     historicalFx: fetchedHMap,
                     transactionFx: fetchedTransactionFx,
+                    fetchedAt: json.data.find(q => q.symbol === fetchSym)?.fetchedAt,
+                    marketTime: json.data.find(q => q.symbol === fetchSym)?.marketTime,
+                    isStale: json.data.find(q => q.symbol === fetchSym)?.isStale,
                     marketState: fetchedMarketState,
                     preMarketPrice: fetchedPreMarketPrice,
                     preMarketChange: fetchedPreMarketChange,
@@ -532,14 +422,16 @@ export default function TransactionModal({
                 });
             } catch (e) {
                 console.error(e);
-                setPriceData(prev => ({ ...prev, isLoading: false }));
+                if (!isCancelled) setPriceData(prev => ({ ...prev, isLoading: false }));
             }
         }
 
         fetchData();
         const interval = setInterval(fetchData, 30000);
-        return () => clearInterval(interval);
+        return () => { isCancelled = true; clearInterval(interval); };
     }, [
+        marketActive,
+        marketRevision,
         selectedAssetSymbol,
         selectedAssetCurrency,
         selectedAssetOriginalType,
@@ -671,16 +563,19 @@ export default function TransactionModal({
         currentBalance = 0,
         averagePurchasePrice = 0,
         remainingCostBasis: currentCostBasisBase = 0,
-        realizedPnl: realizedProfitBase = 0
+        realizedPnl: realizedProfitBase = 0,
+        missingCostFx,
+        missingCostBasis
     } = assetAccounting;
 
     const walletBalance = toFiniteNumber(selectedAsset?.walletAmount);
     const combinedCurrentBalance = currentBalance + walletBalance;
-    const transactionValueBase = currentBalance * liveAssetPrice * fxRate;
-    const currentValueBase = combinedCurrentBalance * liveAssetPrice * fxRate;
+    const valuationUnavailable = !liveAssetPrice || !Number.isFinite(fxRate) || fxRate <= 0;
+    const transactionValueBase = valuationUnavailable ? null : currentBalance * liveAssetPrice * fxRate;
+    const currentValueBase = valuationUnavailable ? null : combinedCurrentBalance * liveAssetPrice * fxRate;
     const isSelectedFiat = isFiatAsset(selectedSymbol);
-    const unrealizedProfitBase = isSelectedFiat ? 0 : transactionValueBase - currentCostBasisBase;
-    const totalProfitBase = isSelectedFiat ? 0 : unrealizedProfitBase + realizedProfitBase;
+    const unrealizedProfitBase = isSelectedFiat ? 0 : valuationUnavailable || missingCostFx || missingCostBasis ? null : transactionValueBase - currentCostBasisBase;
+    const totalProfitBase = isSelectedFiat ? 0 : unrealizedProfitBase === null || missingCostFx ? null : unrealizedProfitBase + realizedProfitBase;
 
     const getDisplayQuoteCurrency = (tx) => {
         const explicitQuote = normalizeAsset(tx.quoteCurrency);
@@ -719,7 +614,7 @@ export default function TransactionModal({
     const isAssetRealizedMetric = assetSummaryMetric === 'realized';
     const isAssetUnrealizedMetric = assetSummaryMetric === 'unrealized';
     const assetSummaryValue = isAssetRealizedMetric
-        ? realizedProfitBase
+        ? (missingCostFx ? null : realizedProfitBase)
         : isAssetUnrealizedMetric
             ? unrealizedProfitBase
             : assetSummaryMetric === 'total'
@@ -745,7 +640,7 @@ export default function TransactionModal({
     const assetSummaryClass = isAssetProfitMetric
         ? (assetSummaryValue >= 0 ? 'text-success' : 'text-danger')
         : 'text-success';
-    const canShowAssetSummary = !loadingPrice && (isAssetRealizedMetric || liveAssetPrice);
+    const canShowAssetSummary = !loadingPrice && Number.isFinite(assetSummaryValue);
 
     const handleAssetSelect = (asset) => {
         const balance = calculateAssetAccounting(transactions, asset.symbol, baseCurrency).currentBalance;
@@ -1011,9 +906,9 @@ export default function TransactionModal({
                                                     </span>
                                                 )}
                                             </span>
-                                            {loadingPrice || !liveAssetPrice ? (
+                                            {loadingPrice ? (
                                                 <div className="h-7 w-24 bg-white-10 rounded animate-pulse mt-1" />
-                                            ) : (() => {
+                                            ) : valuationUnavailable ? <p className="text-muted text-sm">Price unavailable</p> : (() => {
                                                 const displayChange = livePriceSnapshot.changePercent;
                                                 const displayAbsChange = livePriceSnapshot.absChange;
                                                 return (
@@ -1029,6 +924,7 @@ export default function TransactionModal({
                                                                 </span>
                                                             )}
                                                         </div>
+                                                        <QuoteTime fetchedAt={priceData.fetchedAt} marketTime={priceData.marketTime} isStale={priceData.isStale} />
                                                         {/* Show 1D change below when viewing 1D, or selected timeframe when not 1D */}
                                                         {(!rangePerformance || rangePerformance.range === '1D') ? (
                                                             <span className={`text-xs font-medium ${displayChange >= 0 ? 'text-success' : 'text-danger'}`}>
@@ -1085,11 +981,11 @@ export default function TransactionModal({
                                                         minHeight: '48px'
                                                     }}
                                                     title={`Show ${nextAssetSummaryLabel}`}
-                                                    aria-label={`${assetSummaryLabel}: ${hideBalances ? 'hidden' : `${assetSummarySign}${Math.abs(assetSummaryValue).toLocaleString(undefined, { maximumFractionDigits: 2 })} ${baseCurrency === 'USD' ? '$' : baseCurrency}`}`}
+                                                    aria-label={`${assetSummaryLabel}: ${hideBalances ? 'hidden' : !canShowAssetSummary ? 'unavailable' : `${assetSummarySign}${Math.abs(assetSummaryValue).toLocaleString(undefined, { maximumFractionDigits: 2 })} ${baseCurrency === 'USD' ? '$' : baseCurrency}`}`}
                                                 >
                                                     <span className="text-xs sm:text-sm text-muted uppercase tracking-wider text-right">{assetSummaryLabel}</span>
                                                     {!canShowAssetSummary ? (
-                                                        <div className="h-7 w-32 bg-white-10 rounded animate-pulse mt-1" />
+                                                        loadingPrice ? <div className="h-7 w-32 bg-white-10 rounded animate-pulse mt-1" /> : <span className="text-muted text-sm">Unavailable</span>
                                                     ) : (
                                                         <span className={`text sm:text-2xl text-right ${assetSummaryClass}`}>
                                                             {hideBalances ? '••••••' : `${assetSummarySign}${Math.abs(assetSummaryValue).toLocaleString(undefined, { maximumFractionDigits: 2 })} ${baseCurrency === 'USD' ? '$' : baseCurrency}`}
@@ -1182,7 +1078,7 @@ export default function TransactionModal({
                                                             <div className="flex-1 flex flex-col items-end">
                                                                 {tx.type === 'BUY' && !tx.isReverse && (
                                                                     <>
-                                                                        {loadingPrice || !liveAssetPrice ? (
+                                                                        {loadingPrice || valuationUnavailable ? (
                                                                             <div className="h-5 w-20 bg-white-10 rounded animate-pulse ml-auto" style={{ marginRight: '10px' }} />
                                                                         ) : (
                                                                             (() => {
@@ -1228,7 +1124,7 @@ export default function TransactionModal({
                                                                                 </span>
                                                                             )}
                                                                             {tx.type === 'BUY' && (
-                                                                                loadingPrice || !liveAssetPrice ? (
+                                                                                loadingPrice || valuationUnavailable ? (
                                                                                     <div className="h-3 w-8 bg-white-10 rounded animate-pulse ml-auto" style={{ marginLeft: '5px' }} />
                                                                                 ) : (
                                                                                     <span className={`text-xs text-[10px] ${(tx.affectsQuoteBalance ?? tx.affectsFiatBalance) === false ? 'text-muted/50 decoration-line-through' : 'text-muted'}`} title={(tx.affectsQuoteBalance ?? tx.affectsFiatBalance) === false ? "Did not affect balance" : "Affected balance"}>
@@ -1507,8 +1403,7 @@ function TransactionForm({ holding, existingTx, transactions, onSave, onCancel, 
                     if (holding.originalType === 'CRYPTOCURRENCY' && !fetchSym.includes('-')) {
                         fetchSym += '-USD';
                     }
-                    const res = await apiFetch(`/api/quote?symbols=${fetchSym}`);
-                    const json = await res.json();
+                    const json = { data: await getCachedQuotes([fetchSym]) };
                     if (json.data && json.data[0]) {
                         const quote = json.data[0];
                         const nativeCurrency = (quote.currency || 'USD').toUpperCase();
@@ -1518,6 +1413,7 @@ function TransactionForm({ holding, existingTx, transactions, onSave, onCancel, 
                         let unitPrice = quote.price;
                         if (targetCurrency !== nativeCurrency) {
                             const rate = await fetchLiveFxRate(nativeCurrency, targetCurrency);
+                            if (!rate) throw new Error('Exchange rate unavailable. Enter the execution price manually.');
                             unitPrice = quote.price * rate;
                         }
                         setPrice(unitPrice);
@@ -1557,6 +1453,7 @@ function TransactionForm({ holding, existingTx, transactions, onSave, onCancel, 
                             // Use the FX rate for the transaction date, not today's rate.
                             const fxMap = await buildHistoricalConversionMap(nativeCurrency, targetCurrency);
                             const rate = getMapRateForDate(fxMap, date) || await fetchLiveFxRate(nativeCurrency, targetCurrency);
+                            if (!rate) throw new Error('Exchange rate unavailable. Enter the execution price manually.');
                             unitPrice = dayPrice.price * rate;
                         }
                         setPrice(unitPrice);

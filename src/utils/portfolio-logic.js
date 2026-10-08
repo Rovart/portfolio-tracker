@@ -412,7 +412,7 @@ function convertTxAmount(amount, assetOrCurrency, baseCurrency, dateStr, convert
 }
 
 export function calculatePortfolioAccounting(transactions, baseCurrency = 'USD', convertRateForTx = null) {
-    const sortedTransactions = [...(transactions || [])].sort((a, b) => new Date(a.date) - new Date(b.date));
+    const sortedTransactions = [...(transactions || [])].sort((a, b) => new Date(a.date) - new Date(b.date) || (Number(a.id) || 0) - (Number(b.id) || 0));
     const cashTrackedCurrencies = collectCashTrackedCurrencies(sortedTransactions);
     const balances = {};
     const accounts = {};
@@ -613,11 +613,13 @@ function getAssetPriceSnapshot(asset, amount, priceMap, baseCurrency, preferredS
         }
     }
 
-    const value = amount * localPrice * fxRate;
+    const priceMissing = !isFiat && localPrice <= 0;
+    const valuationUnavailable = fxMissing || priceMissing;
+    const value = valuationUnavailable ? null : amount * localPrice * fxRate;
     const combinedChangePercent = ((1 + assetChangePercent / 100) * (1 + fxChangePercent / 100) - 1) * 100;
     const combinedChangeFactor = 1 + (combinedChangePercent / 100);
     const prevValueBase = value / (Math.abs(combinedChangeFactor) < EPSILON ? 1 : combinedChangeFactor);
-    const dailyPnl = value - prevValueBase;
+    const dailyPnl = valuationUnavailable ? null : value - prevValueBase;
 
     const qt = upper(quote.quoteType);
     const td = upper(quote.typeDisp);
@@ -641,14 +643,18 @@ function getAssetPriceSnapshot(asset, amount, priceMap, baseCurrency, preferredS
         name: quote.name || normalized,
         amount,
         localPrice,
-        price: localPrice * fxRate,
+        price: valuationUnavailable ? null : localPrice * fxRate,
         value,
-        change24h: combinedChangePercent,
+        change24h: valuationUnavailable ? null : combinedChangePercent,
         dailyPnl,
         quoteCurrency,
         fxRate,
         fxMissing,
-        priceMissing: !isFiat && localPrice <= 0,
+        priceMissing,
+        valuationUnavailable,
+        fetchedAt: quote.fetchedAt,
+        marketTime: quote.marketTime,
+        isStale: quote.isStale,
         isFiat: category === 'Currencies',
         category,
         isBareCurrencyOrigin: category === 'Currencies',
@@ -693,9 +699,10 @@ export function calculateHoldings(transactions, priceMap, baseCurrency = 'USD', 
             );
             const position = accounting.positions[asset] || createAccount();
             const costBasis = snapshot.isFiat ? 0 : position.remainingCostBasis;
-            const unrealizedProfit = snapshot.isFiat ? 0 : snapshot.value - costBasis;
-            const realizedProfit = snapshot.isFiat ? 0 : position.realizedPnl;
-            const totalProfit = realizedProfit + unrealizedProfit;
+            const costUnavailable = !!position.missingCostFx || !!position.missingCostBasis;
+            const unrealizedProfit = snapshot.isFiat ? 0 : snapshot.valuationUnavailable || costUnavailable ? null : snapshot.value - costBasis;
+            const realizedProfit = snapshot.isFiat ? 0 : position.missingCostFx ? null : position.realizedPnl;
+            const totalProfit = unrealizedProfit === null || realizedProfit === null ? null : realizedProfit + unrealizedProfit;
             const averagePurchasePrice = !snapshot.isFiat && amount > EPSILON && costBasis > 0
                 ? costBasis / amount
                 : 0;
