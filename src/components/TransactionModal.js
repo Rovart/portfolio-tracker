@@ -3,7 +3,6 @@
 import { apiFetch } from '@/utils/api-client';
 import { getCachedQuotes } from '@/utils/fxCache';
 import useMarketActivity from './useMarketActivity';
-import QuoteTime from './QuoteTime';
 
 import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import dynamic from 'next/dynamic';
@@ -924,7 +923,6 @@ export default function TransactionModal({
                                                                 </span>
                                                             )}
                                                         </div>
-                                                        <QuoteTime fetchedAt={priceData.fetchedAt} marketTime={priceData.marketTime} isStale={priceData.isStale} />
                                                         {/* Show 1D change below when viewing 1D, or selected timeframe when not 1D */}
                                                         {(!rangePerformance || rangePerformance.range === '1D') ? (
                                                             <span className={`text-xs font-medium ${displayChange >= 0 ? 'text-success' : 'text-danger'}`}>

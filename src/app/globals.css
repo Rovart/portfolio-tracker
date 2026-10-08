@@ -293,7 +293,7 @@ a {
 .grid-desktop {
   display: flex;
   flex-direction: column;
-  gap: 32px;
+  gap: 16px;
 }
 
 .grid-desktop.is-watchlist {
@@ -304,6 +304,11 @@ a {
   .grid-desktop {
     flex-direction: row;
     align-items: flex-start;
+    gap: 32px;
+  }
+
+  .portfolio-timeframes {
+    margin-bottom: 32px;
   }
 
   .grid-desktop.is-watchlist {
@@ -361,6 +366,70 @@ a {
 
 .btn-ghost {
   background: transparent;
+  color: var(--foreground);
+}
+
+.sort-control {
+  position: relative;
+  flex-shrink: 0;
+}
+
+.sort-button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  border: 1px solid var(--card-border);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: background-color 150ms var(--ease-out), color 150ms var(--ease-out);
+}
+
+.sort-button:hover,
+.sort-button[aria-expanded="true"] {
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--foreground);
+}
+
+.sort-menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 30;
+  min-width: 150px;
+  padding: 5px;
+  border: 1px solid var(--card-border);
+  border-radius: 12px;
+  background: var(--background);
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.3);
+}
+
+.sort-menu-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  width: 100%;
+  min-height: 40px;
+  padding: 8px 10px;
+  border: none;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 0.8rem;
+  font-weight: 500;
+  text-align: left;
+  cursor: pointer;
+}
+
+.sort-menu-item:hover,
+.sort-menu-item:focus-visible,
+.sort-menu-item[aria-checked="true"] {
+  background: rgba(255, 255, 255, 0.06);
   color: var(--foreground);
 }
 

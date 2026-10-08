@@ -5,7 +5,7 @@ import { GripVertical, ChevronDown, ChevronRight, Wallet, Sun, Moon, Plus } from
 import { updateWatchlistAssetPositions } from '@/utils/db';
 import { formatSymbol } from '@/utils/commodities';
 import AssetIcon from './AssetIcon';
-import QuoteTime from './QuoteTime';
+import SortMenu from './SortMenu';
 
 // Extracted memoized component for holding rows to prevent unnecessary re-renders
 const HoldingRow = memo(function HoldingRow({
@@ -103,7 +103,6 @@ const HoldingRow = memo(function HoldingRow({
                         </>
                     )}
                 </span>
-                {!loading && !unavailable && <QuoteTime fetchedAt={holding.fetchedAt} marketTime={holding.marketTime} isStale={holding.isStale} />}
             </div>
 
             <div className="flex flex-col items-end shrink-0" style={{ textAlign: 'right' }}>
@@ -434,26 +433,7 @@ export default function HoldingsList({ holdings, onSelect, onAddAsset, loading, 
                             ))}
                         </div>
                         {holdings.length > 1 && (
-                            <select
-                                value={sortBy}
-                                onChange={(e) => handleSortChange(e.target.value)}
-                                className="bg-white-5 hover:bg-white-10 border border-white-10 text-white text-xs font-medium rounded-full cursor-pointer transition-all focus:outline-none"
-                                style={{
-                                    appearance: 'none',
-                                    WebkitAppearance: 'none',
-                                    MozAppearance: 'none',
-                                    padding: '4px 24px 4px 10px',
-                                    backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='10' viewBox='0 0 24 24' fill='none' stroke='white' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E")`,
-                                    backgroundRepeat: 'no-repeat',
-                                    backgroundPosition: 'right 8px center'
-                                }}
-                            >
-                                {activeOptions.map(o => (
-                                    <option key={o.id} value={o.id} style={{ backgroundColor: '#171717', color: 'white' }}>
-                                        {o.label}
-                                    </option>
-                                ))}
-                            </select>
+                            <SortMenu options={activeOptions} value={sortBy} onChange={handleSortChange} />
                         )}
                     </div>
                 </div>

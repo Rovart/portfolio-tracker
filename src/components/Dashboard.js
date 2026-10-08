@@ -9,6 +9,7 @@ import ProfitChart from './ProfitChart';
 import CompositionChart from './CompositionChart';
 import useMarketActivity from './useMarketActivity';
 import HoldingsList, { WATCHLIST_SORT_OPTIONS } from './HoldingsList';
+import SortMenu from './SortMenu';
 import TransactionModal from './TransactionModal';
 import SettingsModal from './SettingsModal';
 import PullToRefresh from './PullToRefresh';
@@ -248,7 +249,7 @@ function DashboardSkeleton({ isWatchlist = false }) {
                 {!isWatchlist && (
                     <>
                         <div className="w-full rounded-2xl bg-white-5 animate-pulse" style={{ height: '300px' }} />
-                        <div className="flex justify-between gap-2 mt-3 mb-8">
+                        <div className="portfolio-timeframes flex justify-between gap-2 mt-3">
                             {TIMEFRAMES.map(tf => (
                                 <div key={tf} className="h-9 flex-1 bg-white-5 rounded-lg animate-pulse" style={{ minWidth: '45px' }} />
                             ))}
@@ -1672,29 +1673,15 @@ export default function Dashboard() {
                                         </div>
                                         {/* Watchlist Sort - only show for watchlists with multiple items */}
                                         {isWatchlistView && holdings.length > 1 && (
-                                            <select
+                                            <SortMenu
+                                                label="Sort watchlist"
+                                                options={WATCHLIST_SORT_OPTIONS}
                                                 value={watchlistSort}
-                                                onChange={(e) => {
-                                                    setWatchlistSort(e.target.value);
-                                                    localStorage.setItem('watchlist_sort', e.target.value);
+                                                onChange={(newSort) => {
+                                                    setWatchlistSort(newSort);
+                                                    localStorage.setItem('watchlist_sort', newSort);
                                                 }}
-                                                className="bg-white-5 hover:bg-white-10 border border-white-10 text-white text-xs font-bold rounded-full cursor-pointer transition-all focus:outline-none"
-                                                style={{
-                                                    appearance: 'none',
-                                                    WebkitAppearance: 'none',
-                                                    MozAppearance: 'none',
-                                                    padding: '6px 28px 6px 12px',
-                                                    backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='white' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E")`,
-                                                    backgroundRepeat: 'no-repeat',
-                                                    backgroundPosition: 'right 10px center'
-                                                }}
-                                            >
-                                                {WATCHLIST_SORT_OPTIONS.map(o => (
-                                                    <option key={o.id} value={o.id} style={{ backgroundColor: '#171717', color: 'white' }}>
-                                                        {o.label}
-                                                    </option>
-                                                ))}
-                                            </select>
+                                            />
                                         )}
                                         <button
                                             onClick={() => setIsSettingsModalOpen(true)}
@@ -1808,7 +1795,7 @@ export default function Dashboard() {
 	                                        />
 	                                    </div>
 
-	                                    <div className="mb-8 no-select" style={{ display: 'flex', gap: '2px', padding: '3px', borderRadius: '12px', background: 'rgba(255,255,255,0.04)', border: '1px solid var(--card-border)' }}>
+	                                    <div className="portfolio-timeframes no-select" style={{ display: 'flex', gap: '2px', padding: '3px', borderRadius: '12px', background: 'rgba(255,255,255,0.04)', border: '1px solid var(--card-border)' }}>
                                         {TIMEFRAMES.map((tf) => (
                                             <button
                                                 key={tf}
