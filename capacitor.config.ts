@@ -4,10 +4,6 @@ const config: CapacitorConfig = {
   appId: 'com.portfolio.tracker',
   appName: 'Monetra',
   webDir: 'out',
-  server: {
-    url: 'https://portfolio-tracker-xi-three.vercel.app/',
-    cleartext: true
-  },
   plugins: {
     SplashScreen: {
       launchShowDuration: 2000,

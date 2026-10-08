@@ -2,15 +2,7 @@
 
 import { memo, useId, useMemo, useState, useCallback, useRef } from 'react';
 import { AreaChart, Area, XAxis, Tooltip, ResponsiveContainer, YAxis, ReferenceArea, ReferenceLine } from 'recharts';
-
-function downsamplePreserveEdges(data, maxPoints = 300) {
-    if (!data || data.length <= maxPoints) return data || [];
-    const step = Math.ceil(data.length / maxPoints);
-    const sampled = data.filter((_, i) => i % step === 0);
-    const last = data[data.length - 1];
-    if (sampled[sampled.length - 1] !== last) sampled.push(last);
-    return sampled;
-}
+import { downsampleChartData } from '@/utils/chart-data';
 
 function ProfitChart({ data, baseCurrency, hideBalances, loading, chartMode = 'performance' }) {
     const [selectionStart, setSelectionStart] = useState(null);
@@ -29,7 +21,7 @@ function ProfitChart({ data, baseCurrency, hideBalances, loading, chartMode = 'p
 
     const { chartData, offset, startValue, yDomain } = useMemo(() => {
         if (!data || data.length === 0) return { chartData: [], offset: 0, startValue: 0, yDomain: [0, 100] };
-        const processedData = downsamplePreserveEdges(data);
+        const processedData = downsampleChartData(data);
         const start = data[0].value;
         const values = processedData.map(d => d.value);
         const max = Math.max(...values);

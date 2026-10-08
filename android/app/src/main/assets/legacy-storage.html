@@ -1,0 +1,40 @@
+<!doctype html>
+<html><head>
+<meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'">
+</head><body><script>
+(async () => {
+    try {
+        const snapshot = { version: 1, tables: Object.create(null), localStorage: Object.create(null) };
+        for (let i = 0; i < localStorage.length; i++) {
+            const key = localStorage.key(i);
+            snapshot.localStorage[key] = localStorage.getItem(key);
+        }
+        const database = await new Promise((resolve, reject) => {
+            const request = indexedDB.open('PortfolioTracker');
+            let absent = false;
+            request.onupgradeneeded = () => { absent = true; request.transaction.abort(); };
+            request.onsuccess = () => resolve(request.result);
+            request.onerror = () => absent ? resolve(null) : reject(request.error);
+            request.onblocked = () => reject(new Error('Database unavailable'));
+        });
+        if (database) {
+            const names = Array.from(database.objectStoreNames);
+            if (names.length > 0) await new Promise((resolve, reject) => {
+                const transaction = database.transaction(names, 'readonly');
+                transaction.oncomplete = resolve;
+                transaction.onerror = () => reject(transaction.error);
+                transaction.onabort = () => reject(transaction.error);
+                for (const name of names) {
+                    const request = transaction.objectStore(name).getAll();
+                    request.onsuccess = () => { snapshot.tables[name] = request.result; };
+                }
+            });
+            database.close();
+        }
+        MonetraLegacy.complete(JSON.stringify(snapshot));
+    } catch {
+        MonetraLegacy.failed();
+    }
+})();
+</script></body></html>

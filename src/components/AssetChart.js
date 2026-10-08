@@ -3,44 +3,12 @@
 import { memo, useEffect, useId, useState, useMemo, useCallback, useRef } from 'react';
 import { AreaChart, Area, XAxis, Tooltip, ResponsiveContainer, YAxis, ReferenceArea, ReferenceLine, ReferenceDot } from 'recharts';
 import { getCachedFxHistory, getCachedAssetHistory } from '@/utils/fxCache';
+import { downsampleChartData, buildTransactionMarkers } from '@/utils/chart-data';
 
 const RANGES = ['1D', '1W', '1M', '3M', '1Y', 'ALL'];
+const EMPTY_TRANSACTIONS = [];
 
-function downsamplePreserveEdges(data, maxPoints = 300) {
-    if (!data || data.length <= maxPoints) return data || [];
-    const step = Math.ceil(data.length / maxPoints);
-    const sampled = data.filter((_, i) => i % step === 0);
-    const last = data[data.length - 1];
-    if (sampled[sampled.length - 1] !== last) sampled.push(last);
-    return sampled;
-}
-
-function findClosestPoint(sortedPoints, targetTime, maxDiff) {
-    let low = 0;
-    let high = sortedPoints.length - 1;
-
-    while (low < high) {
-        const mid = Math.floor((low + high) / 2);
-        if (sortedPoints[mid].time < targetTime) low = mid + 1;
-        else high = mid;
-    }
-
-    const candidates = [sortedPoints[low], sortedPoints[low - 1]].filter(Boolean);
-    let closest = null;
-    let closestDiff = Infinity;
-
-    candidates.forEach(candidate => {
-        const diff = Math.abs(candidate.time - targetTime);
-        if (diff < closestDiff && diff <= maxDiff) {
-            closest = candidate.point;
-            closestDiff = diff;
-        }
-    });
-
-    return closest;
-}
-
-function AssetChart({ symbol, chartSymbol, baseCurrency = 'USD', fxRate = 1, parentLoading = false, assetCurrency, onRangePerformance, transactions = [] }) {
+function AssetChart({ symbol, chartSymbol, baseCurrency = 'USD', fxRate = 1, parentLoading = false, assetCurrency, onRangePerformance, transactions = EMPTY_TRANSACTIONS }) {
     const [rawData, setRawData] = useState([]);
     const [fxHistory, setFxHistory] = useState({});
     const [loading, setLoading] = useState(true);
@@ -75,6 +43,7 @@ function AssetChart({ symbol, chartSymbol, baseCurrency = 'USD', fxRate = 1, par
     const needsFxConversion = assetCurrency && assetCurrency !== baseCurrency;
 
     useEffect(() => {
+        let cancelled = false;
         async function load() {
             setLoading(true);
             try {
@@ -85,6 +54,7 @@ function AssetChart({ symbol, chartSymbol, baseCurrency = 'USD', fxRate = 1, par
                     fxPromise = getCachedFxHistory(assetCurrency, baseCurrency, range);
                 }
                 const [priceData, fxData] = await Promise.all([pricePromise, fxPromise]);
+                if (cancelled) return;
                 if (priceData && priceData.length > 0) {
                     setRawData(priceData.map(p => ({ date: p.date, rawPrice: p.price })));
                 } else {
@@ -93,11 +63,16 @@ function AssetChart({ symbol, chartSymbol, baseCurrency = 'USD', fxRate = 1, par
                 setFxHistory(fxData || {});
             } catch (e) {
                 console.error(e);
+                if (!cancelled) {
+                    setRawData([]);
+                    setFxHistory({});
+                }
             } finally {
-                setLoading(false);
+                if (!cancelled) setLoading(false);
             }
         }
         if (symbol || chartSymbol) load();
+        return () => { cancelled = true; };
     }, [symbol, range, needsFxConversion, assetCurrency, baseCurrency, chartSymbol]);
 
     const fxLookup = useMemo(() => {
@@ -108,9 +83,8 @@ function AssetChart({ symbol, chartSymbol, baseCurrency = 'USD', fxRate = 1, par
             .sort((a, b) => a.date.localeCompare(b.date));
     }, [fxHistory, needsFxConversion]);
 
-    const { chartData, offset, startPrice, yDomain, rangeChange, rangeChangePercent } = useMemo(() => {
-        if (!rawData || rawData.length === 0) return { chartData: [], offset: 0, startPrice: 0, yDomain: [0, 100], rangeChange: 0, rangeChangePercent: 0 };
-        const processedData = downsamplePreserveEdges(rawData);
+    const { chartData, startPrice, rangeChange, rangeChangePercent } = useMemo(() => {
+        if (!rawData || rawData.length === 0) return { chartData: [], startPrice: 0, rangeChange: 0, rangeChangePercent: 0 };
         const startDateKey = rawData[0].date.split('T')[0];
         let fxIndex = 0;
         let firstRate = fxRate;
@@ -123,7 +97,7 @@ function AssetChart({ symbol, chartSymbol, baseCurrency = 'USD', fxRate = 1, par
         }
 
         let lastFxRate = firstRate;
-        const convertedData = processedData.map(d => {
+        const convertedData = rawData.map(d => {
             let rate = fxRate;
             if (fxLookup && fxLookup.length > 0) {
                 const dateKey = d.date.split('T')[0];
@@ -136,27 +110,13 @@ function AssetChart({ symbol, chartSymbol, baseCurrency = 'USD', fxRate = 1, par
             return { date: d.date, value: d.rawPrice * rate };
         });
         const start = rawData[0].rawPrice * firstRate;
-        const prices = convertedData.map(d => d.value);
-        const max = Math.max(...prices);
-        const min = Math.min(...prices);
-
-        // Calculate fixed Y domain with padding
-        const padding = (max - min) * 0.05 || max * 0.05;
-        const fixedYDomain = [min - padding, max + padding];
-
-        let off = 0;
-        if (max === min) off = 0.5;
-        else {
-            off = (max - start) / (max - min);
-            if (isNaN(off) || !isFinite(off)) off = 0;
-            off = Math.max(0, Math.min(1, off));
-        }
         // Calculate range performance
         const endPrice = convertedData.length > 0 ? convertedData[convertedData.length - 1].value : 0;
         const rangeChange = endPrice - start;
         const rangeChangePercent = start !== 0 ? (rangeChange / start) * 100 : 0;
 
-        return { chartData: convertedData, offset: off, startPrice: start, yDomain: fixedYDomain, rangeChange, rangeChangePercent };
+        const sampledData = downsampleChartData(convertedData).map((point, chartIndex) => ({ ...point, chartIndex }));
+        return { chartData: sampledData, startPrice: start, rangeChange, rangeChangePercent };
     }, [rawData, fxRate, fxLookup]);
 
     // Report range performance to parent when it changes
@@ -188,66 +148,25 @@ function AssetChart({ symbol, chartSymbol, baseCurrency = 'USD', fxRate = 1, par
         if (!selectionMetrics) return null;
         return chartData.map((d, idx) => ({
             date: d.date,
+            chartIndex: d.chartIndex,
             value: idx >= selectionMetrics.startIdx && idx <= selectionMetrics.endIdx ? d.value : null
         }));
     }, [selectionMetrics, chartData]);
 
-    // Transaction dots - map transactions to chart points using pre-built date index
-    const transactionDots = useMemo(() => {
-        if (chartData.length === 0) return [];
+    const transactionDots = useMemo(() => buildTransactionMarkers(chartData, transactions), [transactions, chartData]);
 
-        const indexMap = new Map();
-        const sortedPoints = [];
-        chartData.forEach((point, idx) => {
-            const dateKey = point.date.split('T')[0];
-            if (!indexMap.has(dateKey)) {
-                indexMap.set(dateKey, { point, idx });
-                sortedPoints.push({ time: new Date(dateKey).getTime(), point });
-            }
-        });
-
-        if (!transactions || transactions.length === 0) {
-            return [];
+    const yDomain = useMemo(() => {
+        let min = Infinity;
+        let max = -Infinity;
+        for (const point of chartData) {
+            min = Math.min(min, point.value);
+            max = Math.max(max, point.value);
         }
-
-        const dots = [];
-        const twoDaysMs = 2 * 24 * 60 * 60 * 1000;
-
-        transactions.forEach(tx => {
-            if (!tx.date || !['BUY', 'SELL', 'DEPOSIT', 'WITHDRAW'].includes(tx.type)) return;
-
-            const txDate = tx.date.split('T')[0];
-
-            // Try exact match first (O(1))
-            const exactPoint = indexMap.get(txDate);
-            if (exactPoint) {
-                dots.push({
-                    x: exactPoint.point.date,
-                    y: exactPoint.point.value,
-                    type: tx.type,
-                    amount: tx.baseAmount,
-                    isBuy: ['BUY', 'DEPOSIT'].includes(tx.type)
-                });
-                return;
-            }
-
-            // For non-exact matches, use binary search to find closest within 2 days
-            const txTime = new Date(txDate).getTime();
-            const closestPoint = findClosestPoint(sortedPoints, txTime, twoDaysMs);
-
-            if (closestPoint) {
-                dots.push({
-                    x: closestPoint.date,
-                    y: closestPoint.value,
-                    type: tx.type,
-                    amount: tx.baseAmount,
-                    isBuy: ['BUY', 'DEPOSIT'].includes(tx.type)
-                });
-            }
-        });
-
-        return dots;
-    }, [transactions, chartData]);
+        if (!Number.isFinite(min)) return [0, 100];
+        const padding = (max - min) * 0.05 || Math.abs(max) * 0.05 || 1;
+        return [min - padding, max + padding];
+    }, [chartData]);
+    const offset = Math.max(0, Math.min(1, (yDomain[1] - startPrice) / (yDomain[1] - yDomain[0])));
 
     // Throttle ref for touch/mouse moves
     const lastMoveTimeRef = useRef(0);
@@ -396,7 +315,7 @@ function AssetChart({ symbol, chartSymbol, baseCurrency = 'USD', fxRate = 1, par
                                 <stop offset={offset} stopColor={red} stopOpacity={0.2} />
                             </linearGradient>
                         </defs>
-                        <XAxis dataKey="date" hide />
+                        <XAxis dataKey="chartIndex" type="number" domain={[0, Math.max(1, chartData.length - 1)]} hide />
                         <YAxis domain={yDomain} hide />
 
                         {/* Gray overlay for areas OUTSIDE selection */}
@@ -405,8 +324,8 @@ function AssetChart({ symbol, chartSymbol, baseCurrency = 'USD', fxRate = 1, par
                                 {/* Left gray zone */}
                                 {selectionMetrics.startIdx > 0 && (
                                     <ReferenceArea
-                                        x1={chartData[0].date}
-                                        x2={chartData[selectionMetrics.startIdx].date}
+                                        x1={0}
+                                        x2={selectionMetrics.startIdx}
                                         fill="rgba(0,0,0,0.6)"
                                         fillOpacity={1}
                                     />
@@ -414,21 +333,21 @@ function AssetChart({ symbol, chartSymbol, baseCurrency = 'USD', fxRate = 1, par
                                 {/* Right gray zone */}
                                 {selectionMetrics.endIdx < chartData.length - 1 && (
                                     <ReferenceArea
-                                        x1={chartData[selectionMetrics.endIdx].date}
-                                        x2={chartData[chartData.length - 1].date}
+                                        x1={selectionMetrics.endIdx}
+                                        x2={chartData.length - 1}
                                         fill="rgba(0,0,0,0.6)"
                                         fillOpacity={1}
                                     />
                                 )}
                                 {/* Vertical lines at selection boundaries */}
                                 <ReferenceLine
-                                    x={chartData[selectionMetrics.startIdx].date}
+                                    x={selectionMetrics.startIdx}
                                     stroke="rgba(255,255,255,0.5)"
                                     strokeWidth={1}
                                     strokeDasharray="3 3"
                                 />
                                 <ReferenceLine
-                                    x={chartData[selectionMetrics.endIdx].date}
+                                    x={selectionMetrics.endIdx}
                                     stroke="rgba(255,255,255,0.5)"
                                     strokeWidth={1}
                                     strokeDasharray="3 3"
@@ -446,7 +365,7 @@ function AssetChart({ symbol, chartSymbol, baseCurrency = 'USD', fxRate = 1, par
                                     </span>,
                                     'Price'
                                 ]}
-                                labelFormatter={(label) => new Date(label).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                                labelFormatter={(label, payload) => new Date(payload?.[0]?.payload?.date || chartData[Math.round(label)]?.date).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
                                 labelStyle={{ color: '#a1a1aa', fontSize: '0.75rem', marginBottom: '4px' }}
                                 cursor={{ stroke: '#525252', strokeWidth: 1 }}
                                 isAnimationActive={false}
@@ -455,7 +374,7 @@ function AssetChart({ symbol, chartSymbol, baseCurrency = 'USD', fxRate = 1, par
 
                         {/* Main chart line - always visible with original colors */}
                         <Area
-                            type="monotone"
+                            type="linear"
                             dataKey="value"
                             stroke={`url(#${splitColorId})`}
                             fill={`url(#${splitFillId})`}
@@ -468,7 +387,7 @@ function AssetChart({ symbol, chartSymbol, baseCurrency = 'USD', fxRate = 1, par
                         {selectionMetrics && selectionChartData && (
                             <Area
                                 data={selectionChartData}
-                                type="monotone"
+                                type="linear"
                                 dataKey="value"
                                 stroke="#ffffff"
                                 fill="none"
@@ -481,7 +400,7 @@ function AssetChart({ symbol, chartSymbol, baseCurrency = 'USD', fxRate = 1, par
                         {/* Transaction dots - Buy (green) and Sell (red) */}
                         {!isSelecting && !hasSelection && transactionDots.map((dot, i) => (
                             <ReferenceDot
-                                key={`tx-${i}`}
+                                key={dot.id ?? `tx-${i}`}
                                 x={dot.x}
                                 y={dot.y}
                                 r={4}
@@ -490,6 +409,12 @@ function AssetChart({ symbol, chartSymbol, baseCurrency = 'USD', fxRate = 1, par
                                 strokeWidth={1.5}
                                 fillOpacity={1}
                                 isFront={true}
+                                shape={({ cx, cy }) => (
+                                    <g>
+                                        <title>{`${dot.type} · ${new Date(dot.date).toLocaleString()} · ${(dot.executionPrice ?? dot.y).toLocaleString(undefined, { maximumFractionDigits: 8 })} ${baseCurrency}${dot.executionPrice !== null && dot.executionPrice !== dot.y ? ` · Chart: ${dot.y.toLocaleString(undefined, { maximumFractionDigits: 8 })} ${baseCurrency}` : ''}`}</title>
+                                        <circle cx={cx} cy={cy} r={4} fill={dot.isBuy ? green : red} stroke="#fff" strokeWidth={1.5} />
+                                    </g>
+                                )}
                             />
                         ))}
                     </AreaChart>

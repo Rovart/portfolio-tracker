@@ -1,5 +1,7 @@
 'use client';
 
+import { apiFetch } from '@/utils/api-client';
+
 import { useState, useEffect, memo } from 'react';
 import { Calendar, TrendingUp, TrendingDown, Clock } from 'lucide-react';
 
@@ -17,7 +19,7 @@ const EarningsEvent = memo(function EarningsEvent({ symbol }) {
         async function fetchEarnings() {
             setLoading(true);
             try {
-                const res = await fetch(`/api/financials?symbol=${encodeURIComponent(symbol)}`);
+                const res = await apiFetch(`/api/financials?symbol=${encodeURIComponent(symbol)}`);
                 if (!res.ok) throw new Error('Failed to fetch');
                 const json = await res.json();
                 setData(json.data);

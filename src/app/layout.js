@@ -1,6 +1,8 @@
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import MobileInit from "@/components/MobileInit";
+import StorageReady from "@/components/StorageReady";
+import OfflineStatus from "@/components/OfflineStatus";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -51,7 +53,10 @@ export default function RootLayout({ children }) {
       </head>
       <body className={`${geistSans.variable} ${geistMono.variable}`}>
         <MobileInit />
-        {children}
+        <StorageReady>
+          <OfflineStatus />
+          {children}
+        </StorageReady>
       </body>
     </html>
   );

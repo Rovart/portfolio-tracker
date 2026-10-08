@@ -1,11 +1,13 @@
 import Image from 'next/image';
+import { apiUrl } from '@/utils/api-client';
+import { getIconSources } from '@/utils/icon-data';
 import { useState, useMemo, memo } from 'react';
 
 const COMMON_FIAT = ['USD', 'EUR', 'AUD', 'GBP', 'JPY', 'CAD', 'CHF', 'CNY', 'HKD', 'NZD', 'MXN', 'SGD', 'INR', 'BRL', 'RUB'];
 
 const AssetIcon = memo(function AssetIcon({ symbol, type, isFiat, size = 40, className = "" }) {
     const imageKey = `${symbol || ''}|${type || ''}`;
-    const [imageErrorKey, setImageErrorKey] = useState(null);
+    const [imageError, setImageError] = useState({ key: null, index: 0 });
 
     // Clean symbol for icon lookup and display
     // Removes trailing =X, =F, .X, =, . and other common suffixes
@@ -39,9 +41,11 @@ const AssetIcon = memo(function AssetIcon({ symbol, type, isFiat, size = 40, cla
         return s.replace(/[=.]/g, '');
     }, [symbol]);
 
-    const iconSrc = !shouldSkipLogo && symbol && imageErrorKey !== imageKey
-        ? `/api/icon?symbol=${encodeURIComponent(symbol)}&type=${type || ''}`
-        : null;
+    const imageIndex = imageError.key === imageKey ? imageError.index : 0;
+    const sources = process.env.NEXT_PUBLIC_BUNDLED_APP === 'true'
+        ? getIconSources(symbol, type)
+        : [apiUrl(`/api/icon?symbol=${encodeURIComponent(symbol || '')}&type=${encodeURIComponent(type || '')}`)];
+    const iconSrc = !shouldSkipLogo && symbol ? sources[imageIndex] : null;
 
     // Skip logo and show initials if it's a fiat currency or image failed
     if (iconSrc) {
@@ -57,7 +61,7 @@ const AssetIcon = memo(function AssetIcon({ symbol, type, isFiat, size = 40, cla
                     height={size}
                     unoptimized
                     style={{ objectFit: 'contain' }}
-                    onError={() => setImageErrorKey(imageKey)}
+                    onError={() => setImageError({ key: imageKey, index: imageIndex + 1 })}
                 />
             </div>
         );

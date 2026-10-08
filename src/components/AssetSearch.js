@@ -1,5 +1,7 @@
 'use client';
 
+import { apiFetch } from '@/utils/api-client';
+
 import { useState, useEffect, useRef } from 'react';
 import { Search, X, TrendingUp } from 'lucide-react';
 import { formatSymbol } from '@/utils/commodities';
@@ -55,7 +57,7 @@ export default function AssetSearch({ onSelect }) {
         setSearching(true);
         const delayDebounceFn = setTimeout(async () => {
             try {
-                const res = await fetch(`/api/search?q=${encodeURIComponent(query)}`);
+                const res = await apiFetch(`/api/search?q=${encodeURIComponent(query)}`);
                 const data = await res.json();
                 setResults(data.results || []);
             } catch (err) {

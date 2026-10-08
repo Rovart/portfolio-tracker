@@ -1,5 +1,7 @@
 'use client';
 
+import { apiFetch } from '@/utils/api-client';
+
 import { useState, useEffect } from 'react';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell, AreaChart, Area, ComposedChart, Line } from 'recharts';
 import { Wallet, Banknote, ShieldCheck, AlertCircle } from 'lucide-react';
@@ -15,7 +17,7 @@ export default function FinancialInfo({ symbol, baseCurrency = 'USD' }) {
             setLoading(true);
             setError(null);
             try {
-                const res = await fetch(`/api/financials?symbol=${encodeURIComponent(symbol)}`);
+                const res = await apiFetch(`/api/financials?symbol=${encodeURIComponent(symbol)}`);
                 if (!res.ok) throw new Error('Failed to fetch');
                 const json = await res.json();
                 setData(json.data);

@@ -7,7 +7,10 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "build:mobile": "next build && npx cap sync",
+    "test": "node --test --test-isolation=none tests/*.test.mjs",
+    "build:mobile": "node scripts/build-mobile.mjs",
+    "build:android": "npm run build:mobile && cd android && ./gradlew assembleDebug",
+    "build:android:release": "npm run build:mobile && cd android && ./gradlew -PmonetraRequireSigning=true assembleRelease bundleRelease",
     "ios": "npm run build:mobile && npx cap open ios",
     "android": "npm run build:mobile && npx cap open android"
   },
@@ -35,6 +38,7 @@
     "@capacitor/assets": "^3.0.5",
     "babel-plugin-react-compiler": "1.0.0",
     "eslint": "^9",
-    "eslint-config-next": "16.0.10"
+    "eslint-config-next": "16.0.10",
+    "fake-indexeddb": "^6.2.5"
   }
 }

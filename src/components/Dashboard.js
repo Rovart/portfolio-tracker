@@ -1,5 +1,7 @@
 'use client';
 
+import { apiFetch } from '@/utils/api-client';
+
 import { startTransition, useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
 import { Eye, EyeOff, Plus, Settings, ArrowUpRight, ArrowDownRight } from 'lucide-react';
@@ -134,7 +136,7 @@ function toFiniteNumber(value) {
 
 async function fetchWalletBalance(wallet) {
     try {
-        const res = await fetch(`/api/wallet?chain=${wallet.chain}&address=${encodeURIComponent(wallet.address)}`);
+        const res = await apiFetch(`/api/wallet?chain=${wallet.chain}&address=${encodeURIComponent(wallet.address)}`);
         const json = await res.json();
         if (!res.ok) throw new Error(json.error || 'Lookup failed');
         return { balance: json.balance };
@@ -1333,8 +1335,10 @@ export default function Dashboard() {
 
 
     const syncTransactionsToFile = async (updatedTx) => {
+        // The bundled Android app keeps its ledger on the device.
+        if (process.env.NEXT_PUBLIC_BUNDLED_APP === 'true') return;
         try {
-            await fetch('/api/sync-csv', {
+            await apiFetch('/api/sync-csv', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ transactions: updatedTx })

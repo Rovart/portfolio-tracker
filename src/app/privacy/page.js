@@ -10,6 +10,7 @@ function PrivacyPolicyContent() {
     const router = useRouter();
     const searchParams = useSearchParams();
     const { legal, name, storage } = APP_CONFIG;
+    const bundledApp = process.env.NEXT_PUBLIC_BUNDLED_APP === 'true';
     const fromSettings = searchParams.get('from') === 'settings';
 
     const handleBack = useCallback(() => {
@@ -156,7 +157,7 @@ function PrivacyPolicyContent() {
                     </div>
                     <div className={styles.sectionContent}>
                         <p>
-                            Your data never leaves your device. It is used solely within the app to:
+                            Your portfolio records are used within the app to:
                         </p>
                         <ul className={styles.dataList}>
                             <li>Display your portfolio holdings and performance</li>
@@ -195,9 +196,19 @@ function PrivacyPolicyContent() {
                     </div>
                     <div className={styles.sectionContent}>
                         <p>
-                            {name} does not share any data with third parties. We do not use
-                            analytics services, advertising networks, or any third-party tracking.
+                            {name} uses external providers for market data, asset logos and public
+                            wallet balances. Market requests contain asset symbols. Wallet balance
+                            requests contain the public address you choose to track. Providers can
+                            also see the IP address making the request.
                         </p>
+                        {bundledApp && <p>
+                            The Android app contacts Yahoo Finance directly for prices, history,
+                            search and financial data. Logos come from Financial Modeling Prep,
+                            CoinCap or CryptoCompare. Wallet balances come from mempool.space or
+                            public Ethereum RPC providers. Portfolio transactions, amounts and
+                            notes remain on your device and are not included in these requests.
+                        </p>}
+                        <p>We do not integrate analytics or advertising services.</p>
                     </div>
                 </section>
 
@@ -267,9 +278,14 @@ function PrivacyPolicyContent() {
                             <li>Cache data for performance</li>
                         </ul>
                         <p>
-                            <strong>No tracking cookies are used.</strong> We do not use analytics,
-                            advertising, or any third-party cookies.
+                            We do not use analytics or advertising cookies.
                         </p>
+                        {bundledApp && <p>
+                            Yahoo Finance uses anonymous session cookies for its market data API.
+                            The Android app retains these provider cookies locally to make those
+                            requests. Provider cookies and requests are subject to the provider&apos;s
+                            own privacy practices.
+                        </p>}
                     </div>
                 </section>
 

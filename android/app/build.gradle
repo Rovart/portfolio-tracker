@@ -1,5 +1,31 @@
 apply plugin: 'com.android.application'
 
+// Keep signing credentials outside the repository. Values may also be supplied
+// through environment variables for CI; a supplied configuration must be complete.
+def signingProperties = new Properties()
+def signingPropertiesPath = System.getenv('MONETRA_SIGNING_PROPERTIES')
+if (signingPropertiesPath) {
+    def propertiesFile = new File(signingPropertiesPath)
+    if (!propertiesFile.isFile()) throw new GradleException('Android signing properties file is missing.')
+    propertiesFile.withInputStream { signingProperties.load(it) }
+}
+def keystorePath = System.getenv('MONETRA_KEYSTORE_FILE') ?: signingProperties.getProperty('storeFile')
+def keystorePassword = System.getenv('MONETRA_KEYSTORE_PASSWORD') ?: signingProperties.getProperty('storePassword')
+def signingAlias = System.getenv('MONETRA_KEY_ALIAS') ?: signingProperties.getProperty('keyAlias')
+def signingKeyPassword = System.getenv('MONETRA_KEY_PASSWORD') ?: signingProperties.getProperty('keyPassword') ?: keystorePassword
+def signingRequested = signingPropertiesPath || keystorePath || keystorePassword || signingAlias
+if (signingRequested && (!keystorePath || !keystorePassword || !signingAlias)) {
+    throw new GradleException('Android signing requires storeFile, storePassword and keyAlias.')
+}
+if (project.hasProperty('monetraRequireSigning') && !signingRequested) {
+    throw new GradleException('Set MONETRA_SIGNING_PROPERTIES or the MONETRA_KEYSTORE_* signing environment variables.')
+}
+def keystoreFile = keystorePath ? new File(keystorePath) : null
+if (keystoreFile && !keystoreFile.isAbsolute()) {
+    keystoreFile = signingPropertiesPath ? new File(new File(signingPropertiesPath).parentFile, keystorePath) : file(keystorePath)
+}
+if (signingRequested && !keystoreFile.isFile()) throw new GradleException('Android signing keystore is missing.')
+
 android {
     namespace = "com.portfolio.tracker"
     compileSdk = rootProject.ext.compileSdkVersion
@@ -7,8 +33,8 @@ android {
         applicationId "com.portfolio.tracker"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 10
-        versionName "1.5.2"
+        versionCode 11
+        versionName "1.6.0"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         aaptOptions {
              // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.
@@ -16,8 +42,19 @@ android {
             ignoreAssetsPattern = '!.svn:!.git:!.ds_store:!*.scc:.*:!CVS:!thumbs.db:!picasa.ini:!*~'
         }
     }
+    signingConfigs {
+        if (signingRequested) {
+            release {
+                storeFile keystoreFile
+                storePassword keystorePassword
+                keyAlias signingAlias
+                keyPassword signingKeyPassword
+            }
+        }
+    }
     buildTypes {
         release {
+            if (signingRequested) signingConfig signingConfigs.release
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
         }

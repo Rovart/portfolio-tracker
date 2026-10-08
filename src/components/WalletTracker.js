@@ -1,5 +1,7 @@
 'use client';
 
+import { apiFetch } from '@/utils/api-client';
+
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { Wallet, Plus, Trash2, RefreshCw } from 'lucide-react';
 import { getWalletsForChain, addWallet, removeWallet } from '@/utils/db';
@@ -49,7 +51,7 @@ export default function WalletTracker({ chain, price, changePercent, baseCurrenc
 
     const loadBalance = useCallback(async (wallet) => {
         try {
-            const res = await fetch(`/api/wallet?chain=${chain}&address=${encodeURIComponent(wallet.address)}`);
+            const res = await apiFetch(`/api/wallet?chain=${chain}&address=${encodeURIComponent(wallet.address)}`);
             const json = await res.json();
             if (!res.ok) throw new Error(json.error || 'Lookup failed');
             return { balance: json.balance };
@@ -90,7 +92,7 @@ export default function WalletTracker({ chain, price, changePercent, baseCurrenc
         setError('');
         try {
             // Validate the address by fetching its balance before saving
-            const res = await fetch(`/api/wallet?chain=${chain}&address=${encodeURIComponent(trimmedAddress)}`);
+            const res = await apiFetch(`/api/wallet?chain=${chain}&address=${encodeURIComponent(trimmedAddress)}`);
             const json = await res.json();
             if (!res.ok) throw new Error(json.error || 'Could not verify address');
 

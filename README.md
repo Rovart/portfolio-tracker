@@ -21,6 +21,7 @@ A premium, dark-mode portfolio tracker built with Next.js, Recharts, and Yahoo F
   - Main portfolio chart with customizable timeframes (1D, 1W, 1M, 3M, 1Y, YTD, ALL)
   - Split-color gradients (green for gains, red for losses)
   - Asset-specific historical charts with FX-adjusted pricing
+  - Buy/sell markers match execution prices at the latest crossing of the displayed curve; when there is no crossing, they stay on the nearest curve point and retain the actual execution price in their details
   - Intelligent resampling for smooth weekly charts
 - **Composition Chart**: Visual breakdown of portfolio allocation by asset
 - **Profit Chart**: Track your gains and losses over time
@@ -28,6 +29,7 @@ A premium, dark-mode portfolio tracker built with Next.js, Recharts, and Yahoo F
 
 ### Performance & Reliability
 - **Smart Caching**: Timeframe-aware caching reduces API calls (5min for intraday, 30min for weekly, 1hr for longer periods)
+- **Shared History Requests**: Asset and FX views reuse pending requests, while chart sampling preserves peaks and troughs within a 300-point rendering budget
 - **Robust FX Handling**: USD-pivot FX conversion strategy ensures accurate cross-currency calculations
 - **Outlier Detection**: Statistical smoothing catches data anomalies without affecting real market movements
 
@@ -42,7 +44,7 @@ A premium, dark-mode portfolio tracker built with Next.js, Recharts, and Yahoo F
 
 ### Prerequisites
 
-- Node.js 18.x or later
+- Node.js 24.x or later (the test runner uses `--test-isolation=none`)
 - npm or yarn
 
 ### Installation
@@ -104,11 +106,49 @@ A premium, dark-mode portfolio tracker built with Next.js, Recharts, and Yahoo F
 
 ## 🗂️ Data Persistence
 
-Transactions are saved locally in your browser's `localStorage` and can be exported to CSV for backup or migration. Each portfolio maintains its own transaction history.
+Transactions, portfolios, watchlists, settings and watch-only wallets are saved in local IndexedDB. Display preferences use `localStorage`. Export portfolios to CSV for backup or transfer between devices.
+
+## Android app
+
+Android packages the production interface, JavaScript, fonts and the market API inside the APK. It starts from bundled files with no Vercel page or API dependency. The app's API adapter calls Yahoo Finance through Capacitor's native HTTP plugin; logos and watch-only wallet balances come directly from their existing public providers. New market data requires internet access. Previously consulted JSON responses persist locally for offline use, with a visible stale-data notice and a bounded cache (100 responses, at most 2 MiB per response).
+
+On the first Android start after an update from the old hosted wrapper, a bundled read-only WebView reads the previous origin's IndexedDB and preferences from the same app profile. It transfers IDs and portfolio relationships before mounting the dashboard, records completion in the same database transaction, and preserves any data already present at the new origin. A failed transfer blocks startup with a retry button. It neither downloads the old website nor deletes or uploads the original ledger. This requires an in-place update with the same Android application ID and signing key; browser data is a separate profile and can be transferred with CSV.
+
+Build requirements: JDK 21, Android SDK platform 36 / build-tools 36.0.0, and `ANDROID_HOME` pointing to the SDK.
+
+```bash
+npm ci
+npm test
+npm run lint
+npm run build:android
+```
+
+The installable test APK is `android/app/build/outputs/apk/debug/app-debug.apk`. `npm run android` builds the bundled interface and opens Android Studio. To prepare a production APK or Play Store bundle:
+
+```bash
+npm run build:mobile
+cd android
+./gradlew assembleRelease bundleRelease
+```
+
+Release outputs require your existing signing configuration/key before installation or distribution. A debug signature cannot replace an installed release signed with a different key. Do not uninstall an existing installation to work around that if you need to retain its portfolios.
+
+For signed builds, keep `storeFile`, `storePassword`, `keyAlias` and `keyPassword` in an external Java properties file. Relative `storeFile` paths resolve next to that file. You can override an old file path after moving a keystore:
+
+```bash
+MONETRA_SIGNING_PROPERTIES=/absolute/path/signing.properties \
+MONETRA_KEYSTORE_FILE=/absolute/path/keystore.jks \
+npm run build:android:release
+```
+
+Alternatively, provide `MONETRA_KEYSTORE_FILE`, `MONETRA_KEYSTORE_PASSWORD`, `MONETRA_KEY_ALIAS` and optionally `MONETRA_KEY_PASSWORD` via the build environment. The release script requires signing configuration; credentials and keys must not be committed. Signed outputs are `android/app/build/outputs/apk/release/app-release.apk` and `android/app/build/outputs/bundle/release/app-release.aab`.
+
+`npm run build:mobile` exports the client in an ignored `.mobile-build/` staging directory, leaving the web app's server routes available to the normal `npm run build` / Vercel deployment. `NEXT_PUBLIC_BUNDLED_APP=true` is injected only into this static build. The native API replaces the server endpoints for quotes, historical prices, search, financial statements and wallet balances; shared normalization keeps currency scaling and search results consistent. The native build does not call `/api/sync-csv`. iOS migration and packaging are outside this Android change.
 
 ## 🛠️ Tech Stack
 
-- **Frontend**: Next.js 15, React 19
+- **Frontend**: Next.js 16, React 19
+- **Android**: Capacitor 8 with bundled UI and local market API
 - **Charts**: Recharts
 - **Styling**: Vanilla CSS with custom design system
 - **Data Source**: Yahoo Finance API

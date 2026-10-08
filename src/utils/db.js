@@ -1,5 +1,5 @@
 import Dexie from 'dexie';
-import { getMissingQuoteCurrencyPatch } from './portfolio-logic';
+import { getMissingQuoteCurrencyPatch } from './portfolio-logic.js';
 
 // Create IndexedDB database
 const db = new Dexie('PortfolioTracker');

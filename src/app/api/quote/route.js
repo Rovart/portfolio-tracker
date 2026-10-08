@@ -1,20 +1,7 @@
+import { normalizeCurrency, scalePrice } from '@/utils/market-data';
 import { yahooApiCall } from '@/utils/yahooHelper';
 import { shouldUseFallback } from '@/utils/defeatbetaFallback';
 import { NextResponse } from 'next/server';
-
-function isPenceCurrency(currency) {
-    const raw = String(currency || '').trim();
-    return raw === 'GBp' || raw.toUpperCase() === 'GBX';
-}
-
-function normalizeCurrency(currency) {
-    return isPenceCurrency(currency) ? 'GBP' : currency;
-}
-
-function scalePrice(value, currency) {
-    if (value === null || value === undefined) return value;
-    return isPenceCurrency(currency) ? value * 0.01 : value;
-}
 
 export async function GET(request) {
     const { searchParams } = new URL(request.url);

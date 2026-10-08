@@ -1,5 +1,7 @@
 'use client';
 
+import { apiFetch } from './api-client.js';
+
 // Global cache for FX data and asset history to avoid redundant API calls
 const fxCache = {
     current: {},       // { 'EUR-USD': { data: {...}, timestamp: Date.now() } }
@@ -9,6 +11,8 @@ const fxCache = {
 };
 
 const inFlightQuoteRequests = new Map();
+const inFlightAssetHistoryRequests = new Map();
+const inFlightFxHistoryRequests = new Map();
 const QUOTE_CACHE_DURATION = 20 * 1000;
 
 // Cache durations based on timeframe
@@ -73,7 +77,7 @@ export async function getCachedQuotes(symbols, maxAge = QUOTE_CACHE_DURATION) {
     let request = inFlightQuoteRequests.get(requestKey);
 
     if (!request) {
-        request = fetch(`/api/quote?symbols=${encodeURIComponent(missingSymbols.join(','))}`)
+        request = apiFetch(`/api/quote?symbols=${encodeURIComponent(missingSymbols.join(','))}`)
             .then(async res => {
                 if (!res.ok) {
                     console.warn(`Quote fetch failed ${res.status}: ${res.statusText}`);
@@ -136,7 +140,7 @@ export async function getCachedFxRate(fromCurrency, toCurrency) {
     // Fetch fresh data
     try {
         const symbol = `${from}${to}=X`;
-        const res = await fetch(`/api/quote?symbols=${symbol}`);
+        const res = await apiFetch(`/api/quote?symbols=${symbol}`);
 
         if (!res.ok) {
             console.warn(`FX rate fetch failed ${res.status}: ${res.statusText}`);
@@ -199,95 +203,46 @@ export async function getCachedFxHistory(fromCurrency, toCurrency, range = 'ALL'
         return fxCache.history[key].data;
     }
 
-    // Fetch fresh data
-    // Implement STRICT USD Pivot Logic:
-    // If not converting to/from USD, we MUST pivot via USD.
-    // e.g. EUR -> GBP becomes (EUR -> USD) * (USD -> GBP)
+    if (inFlightFxHistoryRequests.has(key)) return inFlightFxHistoryRequests.get(key);
 
-    try {
-        let finalData = {};
-
-        // Case 1: Direct to/from USD
-        if (to === 'USD') {
-            // EUR -> USD (Fetch EURUSD=X)
-            const symbol = `${from}USD=X`;
-            const res = await fetch(`/api/history?symbol=${symbol}&range=${range}`);
-            if (res.ok) {
-                const text = await res.text();
-                if (text) {
-                    try {
-                        const json = JSON.parse(text);
-                        if (json.history?.length > 0) {
-                            json.history.forEach(d => { finalData[d.date.split('T')[0]] = d.price; });
-                        }
-                    } catch (e) { console.error('JSON parse error 1', e); }
+    const request = (async () => {
+        try {
+            const finalData = {};
+            // FX and asset charts share the same underlying history requests.
+            if (to === 'USD' || from === 'USD') {
+                let history = await getCachedAssetHistory(`${from}${to}=X`, range);
+                let inverse = false;
+                if (history.length === 0 && from === 'USD') {
+                    history = await getCachedAssetHistory(`${to}USD=X`, range);
+                    inverse = true;
                 }
-            }
-        } else if (from === 'USD') {
-            // USD -> EUR (Fetch USDEUR=X, or 1/EURUSD=X)
-            // Ideally fetch USDEUR=X directly
-            const symbol = `USD${to}=X`;
-            const res = await fetch(`/api/history?symbol=${symbol}&range=${range}`);
-            let succeeded = false;
-
-            if (res.ok) {
-                const text = await res.text();
-                if (text) {
-                    try {
-                        const json = JSON.parse(text);
-                        if (json.history?.length > 0) {
-                            json.history.forEach(d => { finalData[d.date.split('T')[0]] = d.price; });
-                            succeeded = true;
-                        }
-                    } catch (e) { console.error('JSON parse error 2', e); }
+                for (const point of history) {
+                    finalData[point.date.split('T')[0]] = inverse ? 1 / point.price : point.price;
+                }
+            } else {
+                // Cross rates continue to pivot through USD.
+                const [toUsdMap, fromUsdMap] = await Promise.all([
+                    getCachedFxHistory(from, 'USD', range),
+                    getCachedFxHistory('USD', to, range)
+                ]);
+                for (const date of Object.keys(toUsdMap)) {
+                    if (fromUsdMap[date]) finalData[date] = toUsdMap[date] * fromUsdMap[date];
                 }
             }
 
-            if (!succeeded) {
-                // Fallback: Fetch EURUSD=X and inverse
-                const invSymbol = `${to}USD=X`;
-                const invRes = await fetch(`/api/history?symbol=${invSymbol}&range=${range}`);
-                if (invRes.ok) {
-                    const text = await invRes.text();
-                    if (text) {
-                        try {
-                            const invJson = JSON.parse(text);
-                            if (invJson.history?.length > 0) {
-                                invJson.history.forEach(d => {
-                                    if (d.price) finalData[d.date.split('T')[0]] = 1 / d.price;
-                                });
-                            }
-                        } catch (e) { console.error('JSON parse error 3', e); }
-                    }
-                }
+            if (Object.keys(finalData).length > 0 && inFlightFxHistoryRequests.get(key) === request) {
+                fxCache.history[key] = { data: finalData, timestamp: Date.now() };
             }
-        } else {
-            // Case 2: Cross Rate (EUR -> GBP)
-            // Pivot: (EUR -> USD) * (USD -> GBP)
-            const [toUsdMap, fromUsdMap] = await Promise.all([
-                getCachedFxHistory(from, 'USD', range),
-                getCachedFxHistory('USD', to, range)
-            ]);
-
-            // Combine histories
-            // Iterate over dates present in BOTH maps
-            Object.keys(toUsdMap).forEach(date => {
-                if (fromUsdMap[date]) {
-                    finalData[date] = toUsdMap[date] * fromUsdMap[date];
-                }
-            });
-        }
-
-        if (Object.keys(finalData).length > 0) {
-            fxCache.history[key] = { data: finalData, timestamp: Date.now() };
             return finalData;
+        } catch (e) {
+            console.error(`Failed to fetch FX history via pivot ${from}→${to}:`, e);
+            return {};
         }
-
-    } catch (e) {
-        console.error(`Failed to fetch FX history via pivot ${from}→${to}:`, e);
-    }
-
-    return {};
+    })().finally(() => {
+        if (inFlightFxHistoryRequests.get(key) === request) inFlightFxHistoryRequests.delete(key);
+    });
+    inFlightFxHistoryRequests.set(key, request);
+    return request;
 }
 
 /**
@@ -299,6 +254,8 @@ export function clearFxCache() {
     fxCache.assetHistory = {};
     fxCache.quotes = {};
     inFlightQuoteRequests.clear();
+    inFlightAssetHistoryRequests.clear();
+    inFlightFxHistoryRequests.clear();
 }
 
 /**
@@ -326,7 +283,9 @@ export function setCachedFxHistory(fromCurrency, toCurrency, range, data) {
  * @returns {Promise<Array>} - Array of { date, price } objects
  */
 export async function getCachedAssetHistory(symbol, range = 'ALL') {
-    const key = `${symbol.toUpperCase()}-${range}`;
+    const normalizedSymbol = normalizeQuoteSymbol(symbol);
+    if (!normalizedSymbol) return [];
+    const key = `${normalizedSymbol}-${range}`;
     const cacheDuration = getCacheDuration(range);
 
     // Check cache
@@ -334,47 +293,37 @@ export async function getCachedAssetHistory(symbol, range = 'ALL') {
         return fxCache.assetHistory[key].data;
     }
 
-    // Fetch fresh data
-    try {
-        const res = await fetch(`/api/history?symbol=${symbol}&range=${range}`);
+    if (inFlightAssetHistoryRequests.has(key)) return inFlightAssetHistoryRequests.get(key);
 
-        if (!res.ok) {
-            console.warn(`Asset history fetch failed ${res.status}: ${res.statusText}`);
-            return [];
-        }
-
-        const text = await res.text();
-        if (!text) return [];
-
-        let json;
+    const request = (async () => {
         try {
-            json = JSON.parse(text);
+            const res = await apiFetch(`/api/history?symbol=${encodeURIComponent(normalizedSymbol)}&range=${encodeURIComponent(range)}`);
+            if (!res.ok) {
+                console.warn(`Asset history fetch failed ${res.status}: ${res.statusText}`);
+                return [];
+            }
+
+            const text = await res.text();
+            if (!text) return [];
+            const json = JSON.parse(text);
+            if (!Array.isArray(json.history)) return [];
+
+            const data = json.history
+                .filter(d => Number.isFinite(d.price) && d.price > 0 && Number.isFinite(Date.parse(d.date)))
+                .map(d => ({ date: d.date, price: d.price }));
+            if (data.length > 0 && inFlightAssetHistoryRequests.get(key) === request) {
+                fxCache.assetHistory[key] = { data, timestamp: Date.now() };
+            }
+            return data;
         } catch (e) {
-            console.error('Invalid JSON from history API:', text.substring(0, 100));
+            console.error(`Failed to fetch asset history for ${normalizedSymbol}:`, e);
             return [];
         }
-
-        if (json.history && json.history.length > 0) {
-            const data = json.history
-                .filter(d => d.price !== null && d.price !== undefined && d.price > 0)
-                .map(d => ({
-                    date: d.date,
-                    price: d.price
-                }));
-
-            // Update cache
-            fxCache.assetHistory[key] = {
-                data,
-                timestamp: Date.now()
-            };
-
-            return data;
-        }
-    } catch (e) {
-        console.error(`Failed to fetch asset history for ${symbol}:`, e);
-    }
-
-    return [];
+    })().finally(() => {
+        if (inFlightAssetHistoryRequests.get(key) === request) inFlightAssetHistoryRequests.delete(key);
+    });
+    inFlightAssetHistoryRequests.set(key, request);
+    return request;
 }
 
 /**
@@ -403,6 +352,9 @@ export function invalidateAssetCache(symbol) {
             delete fxCache.assetHistory[key];
         }
     });
+    for (const key of inFlightAssetHistoryRequests.keys()) {
+        if (key.startsWith(upper + '-')) inFlightAssetHistoryRequests.delete(key);
+    }
 
     // Also check for bare currency variants (EUR from EURUSD=X)
     if (upper.endsWith('=X')) {

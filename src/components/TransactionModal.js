@@ -1,5 +1,7 @@
 'use client';
 
+import { apiFetch } from '@/utils/api-client';
+
 import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import dynamic from 'next/dynamic';
 import AssetSearch from './AssetSearch';
@@ -35,6 +37,7 @@ import {
 } from '@/utils/historical-conversion';
 import { addWatchlistAsset, removeWatchlistAsset, isSymbolInWatchlist } from '@/utils/db';
 import { COMMODITY_NAMES } from '@/utils/commodities';
+import { getTransactionExecutionPrice } from '@/utils/chart-data';
 
 // Header display logic: Title = Name, Subtitle = Symbol
 const ASSET_SUMMARY_METRICS = ['value', 'total', 'realized', 'unrealized'];
@@ -52,7 +55,7 @@ async function fetchLiveFxRate(from, to) {
     if (!F || !T || F === T) return 1;
 
     try {
-        const res = await fetch(`/api/quote?symbols=${F}${T}=X`);
+        const res = await apiFetch(`/api/quote?symbols=${F}${T}=X`);
         const json = await res.json();
         const direct = json.data?.[0]?.price;
         if (direct) return direct;
@@ -63,7 +66,7 @@ async function fetchLiveFxRate(from, to) {
     const toUsd = async (code) => {
         if (code === 'USD') return 1;
         try {
-            const res = await fetch(`/api/quote?symbols=${code}USD=X`);
+            const res = await apiFetch(`/api/quote?symbols=${code}USD=X`);
             const json = await res.json();
             return json.data?.[0]?.price || null;
         } catch (e) {
@@ -295,7 +298,7 @@ export default function TransactionModal({
             }
 
             try {
-                const res = await fetch(`/api/quote?symbols=${symbolsToFetch.join(',')}`);
+                const res = await apiFetch(`/api/quote?symbols=${symbolsToFetch.join(',')}`);
                 const json = await res.json();
 
                 let fetchedPrice = null;
@@ -364,7 +367,7 @@ export default function TransactionModal({
                             // We need to get USD/EUR = 1 / EURUSD
                             try {
                                 const baseToUsdSymbol = `${baseCurrency}USD=X`;
-                                const fxRes = await fetch(`/api/quote?symbols=${baseToUsdSymbol}`);
+                                const fxRes = await apiFetch(`/api/quote?symbols=${baseToUsdSymbol}`);
                                 const fxJson = await fxRes.json();
                                 if (fxJson.data?.[0]?.price) {
                                     // baseToUsd is EURUSD = 1.04, so USD/EUR = 1/1.04 = 0.96
@@ -394,7 +397,7 @@ export default function TransactionModal({
 
                             if (!fxQuote) {
                                 try {
-                                    const fxRes = await fetch(`/api/quote?symbols=${expectedFxSymbol}`);
+                                    const fxRes = await apiFetch(`/api/quote?symbols=${expectedFxSymbol}`);
                                     const fxJson = await fxRes.json();
                                     if (fxJson.data?.[0]) {
                                         fxQuote = fxJson.data[0];
@@ -415,7 +418,7 @@ export default function TransactionModal({
                                     let toUsdQuote = json.data?.find(q => q.symbol === toUsdSymbol);
                                     if (!toUsdQuote) {
                                         try {
-                                            const fxRes = await fetch(`/api/quote?symbols=${toUsdSymbol}`);
+                                            const fxRes = await apiFetch(`/api/quote?symbols=${toUsdSymbol}`);
                                             const fxJson = await fxRes.json();
                                             toUsdQuote = fxJson.data?.[0];
                                         } catch (e) {
@@ -431,7 +434,7 @@ export default function TransactionModal({
                                     let baseToUsdQuote = json.data?.find(q => q.symbol === baseToUsdSymbol);
                                     if (!baseToUsdQuote) {
                                         try {
-                                            const fxRes = await fetch(`/api/quote?symbols=${baseToUsdSymbol}`);
+                                            const fxRes = await apiFetch(`/api/quote?symbols=${baseToUsdSymbol}`);
                                             const fxJson = await fxRes.json();
                                             baseToUsdQuote = fxJson.data?.[0];
                                         } catch (e) {
@@ -596,10 +599,11 @@ export default function TransactionModal({
 
     const liveAssetPrice = livePriceSnapshot.localPrice;
 
-    const assetTransactions = selectedAsset
-        ? transactions.filter(t => {
+    const assetTransactions = useMemo(() => {
+        if (!selectedAssetSymbol) return [];
+        const normalizedTarget = normalizeAsset(selectedAssetSymbol);
+        return transactions.filter(t => {
             const normalizedBase = normalizeAsset(t.baseCurrency);
-            const normalizedTarget = normalizeAsset(selectedAsset.symbol);
 
             // Case 1: This asset is the base (e.g. Bought BTC)
             if (normalizedBase === normalizedTarget) return true;
@@ -613,11 +617,25 @@ export default function TransactionModal({
             return false;
         })
             .map(t => {
-                const isReverse = normalizeAsset(t.quoteCurrency) === normalizeAsset(selectedAsset.symbol);
+                const isReverse = normalizeAsset(t.quoteCurrency) === normalizedTarget;
                 return { ...t, isReverse };
             })
             .sort((a, b) => new Date(b.date) - new Date(a.date))
-        : [];
+    }, [transactions, selectedAssetSymbol]);
+
+    const chartTransactions = useMemo(() => assetTransactions
+        .filter(tx => !tx.isReverse)
+        .map(tx => ({
+            ...tx,
+            executionPrice: getTransactionExecutionPrice(tx, baseCurrency, (currency, date) => {
+                const historicalRate = getHistoricalConversionRate(transactionFx, currency, baseCurrency, date);
+                if (historicalRate) return historicalRate;
+                if (currency === normalizeAsset(selectedAssetCurrency)) {
+                    return getMapRateForDate(priceData.historicalFx, date) || fxRate;
+                }
+                return null;
+            })
+        })), [assetTransactions, baseCurrency, transactionFx, selectedAssetCurrency, priceData.historicalFx, fxRate]);
 
     const selectedSymbol = selectedAsset?.symbol;
 
@@ -1107,7 +1125,7 @@ export default function TransactionModal({
                                                 return s;
                                             })()}
                                             onRangePerformance={setRangePerformance}
-                                            transactions={assetTransactions.filter(tx => !tx.isReverse)}
+                                            transactions={chartTransactions}
                                         />
                                         )}
                                     </div>
@@ -1489,7 +1507,7 @@ function TransactionForm({ holding, existingTx, transactions, onSave, onCancel, 
                     if (holding.originalType === 'CRYPTOCURRENCY' && !fetchSym.includes('-')) {
                         fetchSym += '-USD';
                     }
-                    const res = await fetch(`/api/quote?symbols=${fetchSym}`);
+                    const res = await apiFetch(`/api/quote?symbols=${fetchSym}`);
                     const json = await res.json();
                     if (json.data && json.data[0]) {
                         const quote = json.data[0];
@@ -1527,7 +1545,7 @@ function TransactionForm({ holding, existingTx, transactions, onSave, onCancel, 
                 if (holding.originalType === 'CRYPTOCURRENCY' && !fetchSym.includes('-')) {
                     fetchSym += '-USD';
                 }
-                const res = await fetch(`/api/history?symbol=${fetchSym}&range=ALL`);
+                const res = await apiFetch(`/api/history?symbol=${fetchSym}&range=ALL`);
                 const json = await res.json();
                 if (json.history) {
                     const dayPrice = json.history.find(h => h.date.startsWith(date));
