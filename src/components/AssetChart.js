@@ -1,90 +1,147 @@
 'use client';
 
-import { memo, useEffect, useId, useState, useMemo, useCallback, useRef } from 'react';
-import { AreaChart, Area, XAxis, Tooltip, ResponsiveContainer, YAxis, ReferenceArea, ReferenceLine, ReferenceDot } from 'recharts';
+import { memo, useEffect, useMemo, useState } from 'react';
+import LineChart, { ChartPlaceholder } from './LineChart';
+import { Segmented } from './ui';
 import { getCachedFxHistory, getCachedAssetHistory } from '@/utils/fxCache';
-import { downsampleChartData, buildTransactionMarkers } from '@/utils/chart-data';
+import { downsampleChartData, buildTransactionMarkers, getMarkerKeepIndices, mapMarkersToSampled } from '@/utils/chart-data';
+import { formatDate, formatPrice } from '@/utils/format';
 
-const RANGES = ['1D', '1W', '1M', '3M', '1Y', 'ALL'];
+const DEFAULT_RANGES = ['1D', '1W', '1M', '3M', '1Y', 'ALL'];
 const EMPTY_TRANSACTIONS = [];
+const HEIGHT = 240;
 
-function AssetChart({ symbol, chartSymbol, baseCurrency = 'USD', fxRate = 1, parentLoading = false, assetCurrency, onRangePerformance, transactions = EMPTY_TRANSACTIONS }) {
-    const [rawData, setRawData] = useState([]);
-    const [fxHistory, setFxHistory] = useState({});
-    const [loading, setLoading] = useState(true);
-    const [range, setRange] = useState(() => {
-        if (typeof window !== 'undefined') {
-            return localStorage.getItem('asset_chart_timeframe') || '1Y';
-        }
+function getRangeStart(range, now = new Date()) {
+    const start = new Date(now);
+    if (range === '1D') start.setDate(start.getDate() - 1);
+    else if (range === '1W') start.setDate(start.getDate() - 7);
+    else if (range === '1M') start.setMonth(start.getMonth() - 1);
+    else if (range === '3M') start.setMonth(start.getMonth() - 3);
+    else if (range === '1Y') start.setFullYear(start.getFullYear() - 1);
+    else return null;
+    return start.getTime();
+}
+
+function readStoredRange() {
+    try {
+        return localStorage.getItem('asset_chart_timeframe') || '1Y';
+    } catch {
         return '1Y';
+    }
+}
+
+function formatMarkerTitle(dot, chartData, baseCurrency, labels) {
+    const type = labels?.[dot.type] || dot.type;
+    // Date-placed markers (e.g. loans) describe the curve value, not a unit price.
+    if (labels) return [type, formatDate(dot.date), formatPrice(dot.y, baseCurrency)].join(' · ');
+    const parts = [type, formatDate(dot.date), formatPrice(dot.executionPrice ?? dot.y, baseCurrency)];
+    if (dot.match === 'lookback') {
+        const pointDate = chartData[Math.round(dot.x)]?.date;
+        if (pointDate) parts.push(`price last reached ${formatDate(pointDate)}`);
+    } else if (dot.executionPrice !== null && dot.executionPrice !== dot.y) {
+        parts.push(`chart ${formatPrice(dot.y, baseCurrency)}`);
+    }
+    return parts.join(' · ');
+}
+
+// Warm the cache for the neighbouring ranges once the browser is idle, so
+// switching range usually renders from memory.
+function prefetchNeighbours(symbol, range, ranges, fx) {
+    const index = ranges.indexOf(range);
+    const neighbours = [ranges[index - 1], ranges[index + 1]].filter(Boolean);
+    const run = () => neighbours.forEach(next => {
+        getCachedAssetHistory(symbol, next);
+        if (fx) getCachedFxHistory(fx.from, fx.to, next);
     });
+    if (typeof window.requestIdleCallback === 'function') {
+        const id = window.requestIdleCallback(run, { timeout: 2000 });
+        return () => window.cancelIdleCallback(id);
+    }
+    const id = setTimeout(run, 400);
+    return () => clearTimeout(id);
+}
 
-    // Range selection state
-    const [selectionStart, setSelectionStart] = useState(null);
-    const [selectionEnd, setSelectionEnd] = useState(null);
-    const [isSelecting, setIsSelecting] = useState(false);
-    const containerRef = useRef(null);
-    const chartId = useId().replace(/:/g, '');
-    const splitColorId = `splitColorAsset-${chartId}`;
-    const splitFillId = `splitFillAsset-${chartId}`;
+// localHistory: [{ date, price }] supplied by the caller (e.g. accrued loan value)
+// instead of market history. matchMarkerPrices=false places markers by date only.
+function AssetChart({
+    symbol,
+    chartSymbol,
+    baseCurrency = 'USD',
+    fxRate = 1,
+    parentLoading = false,
+    assetCurrency,
+    onRangePerformance,
+    transactions = EMPTY_TRANSACTIONS,
+    localHistory = null,
+    ranges = DEFAULT_RANGES,
+    matchMarkerPrices = true,
+    markerLabels = null,
+    onScrub,
+    onRangeSelect
+}) {
+    // The loaded series remembers its range: a new range keeps showing the old
+    // curve (dimmed) until its data arrives.
+    const [loaded, setLoaded] = useState({ key: null, raw: [], fx: {} });
+    const [storedRange, setRange] = useState(readStoredRange);
+    const range = ranges.includes(storedRange) ? storedRange : ranges[ranges.length - 1];
+    const targetSymbol = chartSymbol || symbol;
+    const needsFxConversion = !!assetCurrency && assetCurrency !== baseCurrency;
+    const requestKey = `${targetSymbol}|${range}|${needsFxConversion ? `${assetCurrency}>${baseCurrency}` : ''}|${localHistory ? 'local' : 'market'}`;
+    const loading = loaded.key !== requestKey;
 
-    const handleRangeChange = (newRange) => {
-        setRange(newRange);
-        localStorage.setItem('asset_chart_timeframe', newRange);
-        clearSelection();
+    const handleRangeChange = (nextRange) => {
+        onScrub?.(null);
+        onRangeSelect?.(null);
+        setRange(nextRange);
+        try {
+            localStorage.setItem('asset_chart_timeframe', nextRange);
+        } catch {
+            // Preference only.
+        }
     };
 
-    const clearSelection = useCallback(() => {
-        setSelectionStart(null);
-        setSelectionEnd(null);
-        setIsSelecting(false);
-    }, []);
-
-    const needsFxConversion = assetCurrency && assetCurrency !== baseCurrency;
-
     useEffect(() => {
+        if (!targetSymbol) return;
         let cancelled = false;
-        async function load() {
-            setLoading(true);
+        const rangeStart = getRangeStart(range);
+        const fxPair = needsFxConversion ? { from: assetCurrency, to: baseCurrency } : null;
+        (async () => {
             try {
-                const targetSym = chartSymbol || symbol;
-                const pricePromise = getCachedAssetHistory(targetSym, range);
-                let fxPromise = Promise.resolve({});
-                if (needsFxConversion && assetCurrency) {
-                    fxPromise = getCachedFxHistory(assetCurrency, baseCurrency, range);
-                }
-                const [priceData, fxData] = await Promise.all([pricePromise, fxPromise]);
+                const [priceData, fxData] = await Promise.all([
+                    localHistory
+                        ? localHistory.filter(point => rangeStart === null || Date.parse(point.date) >= rangeStart)
+                        : getCachedAssetHistory(targetSymbol, range),
+                    // FX history only exists for market ranges; local daily data uses the full map.
+                    fxPair ? getCachedFxHistory(fxPair.from, fxPair.to, localHistory ? 'ALL' : range) : {}
+                ]);
                 if (cancelled) return;
-                if (priceData && priceData.length > 0) {
-                    setRawData(priceData.map(p => ({ date: p.date, rawPrice: p.price })));
-                } else {
-                    setRawData([]);
-                }
-                setFxHistory(fxData || {});
-            } catch (e) {
-                console.error(e);
-                if (!cancelled) {
-                    setRawData([]);
-                    setFxHistory({});
-                }
-            } finally {
-                if (!cancelled) setLoading(false);
+                setLoaded({
+                    key: requestKey,
+                    raw: (priceData || []).map(point => ({ date: point.date, rawPrice: point.price })),
+                    fx: fxData || {}
+                });
+            } catch (error) {
+                console.error(error);
+                if (!cancelled) setLoaded({ key: requestKey, raw: [], fx: {} });
             }
-        }
-        if (symbol || chartSymbol) load();
-        return () => { cancelled = true; };
-    }, [symbol, range, needsFxConversion, assetCurrency, baseCurrency, chartSymbol]);
+        })();
+        const cancelPrefetch = localHistory ? null : prefetchNeighbours(targetSymbol, range, ranges, fxPair);
+        return () => {
+            cancelled = true;
+            cancelPrefetch?.();
+        };
+    }, [requestKey, targetSymbol, range, ranges, needsFxConversion, assetCurrency, baseCurrency, localHistory]);
 
     const fxLookup = useMemo(() => {
-        if (!needsFxConversion || Object.keys(fxHistory).length === 0) return null;
-
-        return Object.entries(fxHistory)
+        if (!needsFxConversion || Object.keys(loaded.fx).length === 0) return null;
+        return Object.entries(loaded.fx)
             .map(([date, rate]) => ({ date, rate }))
             .sort((a, b) => a.date.localeCompare(b.date));
-    }, [fxHistory, needsFxConversion]);
+    }, [loaded.fx, needsFxConversion]);
 
-    const { chartData, startPrice, rangeChange, rangeChangePercent } = useMemo(() => {
-        if (!rawData || rawData.length === 0) return { chartData: [], startPrice: 0, rangeChange: 0, rangeChangePercent: 0 };
+    const { chartData, transactionDots, startPrice, rangeChange, rangeChangePercent } = useMemo(() => {
+        const rawData = loaded.raw;
+        if (!rawData.length) return { chartData: [], transactionDots: [], startPrice: 0, rangeChange: 0, rangeChangePercent: 0 };
         const startDateKey = rawData[0].date.split('T')[0];
         let fxIndex = 0;
         let firstRate = fxRate;
@@ -97,7 +154,7 @@ function AssetChart({ symbol, chartSymbol, baseCurrency = 'USD', fxRate = 1, par
         }
 
         let lastFxRate = firstRate;
-        const convertedData = rawData.map(d => {
+        const convertedData = rawData.map((d, rawIndex) => {
             let rate = fxRate;
             if (fxLookup && fxLookup.length > 0) {
                 const dateKey = d.date.split('T')[0];
@@ -107,349 +164,66 @@ function AssetChart({ symbol, chartSymbol, baseCurrency = 'USD', fxRate = 1, par
                 }
                 rate = lastFxRate;
             }
-            return { date: d.date, value: d.rawPrice * rate };
+            return { date: d.date, value: d.rawPrice * rate, rawIndex };
         });
         const start = rawData[0].rawPrice * firstRate;
-        // Calculate range performance
-        const endPrice = convertedData.length > 0 ? convertedData[convertedData.length - 1].value : 0;
-        const rangeChange = endPrice - start;
-        const rangeChangePercent = start !== 0 ? (rangeChange / start) * 100 : 0;
+        const endPrice = convertedData[convertedData.length - 1].value;
+        const change = endPrice - start;
 
-        const sampledData = downsampleChartData(convertedData).map((point, chartIndex) => ({ ...point, chartIndex }));
-        return { chartData: sampledData, startPrice: start, rangeChange, rangeChangePercent };
-    }, [rawData, fxRate, fxLookup]);
+        // Markers are placed on the full-resolution curve, then mapped onto the
+        // sampled one, which always keeps the two points around each marker.
+        const markers = buildTransactionMarkers(convertedData, transactions, { matchPrice: matchMarkerPrices });
+        const sampledData = downsampleChartData(convertedData, 300, getMarkerKeepIndices(markers));
+        return {
+            chartData: sampledData,
+            transactionDots: mapMarkersToSampled(markers, sampledData),
+            startPrice: start,
+            rangeChange: change,
+            rangeChangePercent: start !== 0 ? (change / start) * 100 : 0
+        };
+    }, [loaded.raw, fxRate, fxLookup, transactions, matchMarkerPrices]);
 
-    // Report range performance to parent when it changes
+    const chartMarkers = useMemo(() => transactionDots.map(dot => ({
+        ...dot,
+        title: formatMarkerTitle(dot, chartData, baseCurrency, markerLabels)
+    })), [transactionDots, chartData, baseCurrency, markerLabels]);
+
     useEffect(() => {
         if (onRangePerformance && chartData.length > 0 && !loading) {
-            onRangePerformance({
-                range,
-                change: rangeChange,
-                changePercent: rangeChangePercent
-            });
+            onRangePerformance({ range, change: rangeChange, changePercent: rangeChangePercent, startPrice });
         }
-    }, [chartData, range, rangeChange, rangeChangePercent, loading, onRangePerformance]);
+    }, [chartData, range, rangeChange, rangeChangePercent, startPrice, loading, onRangePerformance]);
 
-    // Selection metrics
-    const selectionMetrics = useMemo(() => {
-        if (selectionStart === null || selectionEnd === null || chartData.length === 0) return null;
-        const startIdx = Math.min(selectionStart, selectionEnd);
-        const endIdx = Math.max(selectionStart, selectionEnd);
-        if (startIdx < 0 || endIdx >= chartData.length || startIdx === endIdx) return null;
-        const startVal = chartData[startIdx].value;
-        const endVal = chartData[endIdx].value;
-        const change = endVal - startVal;
-        const changePercent = startVal !== 0 ? (change / startVal) * 100 : 0;
-        return { startIdx, endIdx, startVal, endVal, change, changePercent };
-    }, [selectionStart, selectionEnd, chartData]);
-
-    // Pre-compute selection highlight data (avoids expensive function accessor)
-    const selectionChartData = useMemo(() => {
-        if (!selectionMetrics) return null;
-        return chartData.map((d, idx) => ({
-            date: d.date,
-            chartIndex: d.chartIndex,
-            value: idx >= selectionMetrics.startIdx && idx <= selectionMetrics.endIdx ? d.value : null
-        }));
-    }, [selectionMetrics, chartData]);
-
-    const transactionDots = useMemo(() => buildTransactionMarkers(chartData, transactions), [transactions, chartData]);
-
-    const yDomain = useMemo(() => {
-        let min = Infinity;
-        let max = -Infinity;
-        for (const point of chartData) {
-            min = Math.min(min, point.value);
-            max = Math.max(max, point.value);
-        }
-        if (!Number.isFinite(min)) return [0, 100];
-        const padding = (max - min) * 0.05 || Math.abs(max) * 0.05 || 1;
-        return [min - padding, max + padding];
-    }, [chartData]);
-    const offset = Math.max(0, Math.min(1, (yDomain[1] - startPrice) / (yDomain[1] - yDomain[0])));
-
-    // Throttle ref for touch/mouse moves
-    const lastMoveTimeRef = useRef(0);
-    const rectCacheRef = useRef(null);
-    const THROTTLE_MS = 16; // ~60fps
-
-    const handleMouseDown = useCallback((e) => {
-        if (e && e.activeTooltipIndex !== undefined) {
-            setSelectionStart(e.activeTooltipIndex);
-            setSelectionEnd(e.activeTooltipIndex);
-            setIsSelecting(true);
-        }
-    }, []);
-
-    const handleMouseMove = useCallback((e) => {
-        if (!isSelecting || !e || e.activeTooltipIndex === undefined) return;
-
-        const now = Date.now();
-        if (now - lastMoveTimeRef.current < THROTTLE_MS) return;
-        lastMoveTimeRef.current = now;
-
-        setSelectionEnd(e.activeTooltipIndex);
-    }, [isSelecting]);
-
-    const handleMouseUp = useCallback(() => {
-        setIsSelecting(false);
-    }, []);
-
-    const handleTouchStart = useCallback((e) => {
-        if (e.touches.length === 2 && containerRef.current) {
-            // Cache the rect to avoid layout thrashing
-            rectCacheRef.current = containerRef.current.getBoundingClientRect();
-            const rect = rectCacheRef.current;
-            const count = chartData.length;
-            if (count === 0) return;
-
-            const t1 = e.touches[0].clientX - rect.left;
-            const t2 = e.touches[1].clientX - rect.left;
-
-            const idx1 = Math.max(0, Math.min(count - 1, Math.floor((t1 / rect.width) * count)));
-            const idx2 = Math.max(0, Math.min(count - 1, Math.floor((t2 / rect.width) * count)));
-
-            setSelectionStart(idx1);
-            setSelectionEnd(idx2);
-            setIsSelecting(true);
-        }
-    }, [chartData.length]);
-
-    const handleTouchMove = useCallback((e) => {
-        if (e.touches.length !== 2) return;
-
-        // Throttle updates
-        const now = Date.now();
-        if (now - lastMoveTimeRef.current < THROTTLE_MS) return;
-        lastMoveTimeRef.current = now;
-
-        // Prevent scrolling when using two fingers for selection
-        if (e.cancelable) e.preventDefault();
-
-        // Use cached rect
-        const rect = rectCacheRef.current || containerRef.current?.getBoundingClientRect();
-        if (!rect) return;
-
-        const count = chartData.length;
-        if (count === 0) return;
-
-        const t1 = e.touches[0].clientX - rect.left;
-        const t2 = e.touches[1].clientX - rect.left;
-
-        const idx1 = Math.max(0, Math.min(count - 1, Math.floor((t1 / rect.width) * count)));
-        const idx2 = Math.max(0, Math.min(count - 1, Math.floor((t2 / rect.width) * count)));
-
-        setSelectionStart(idx1);
-        setSelectionEnd(idx2);
-    }, [chartData.length]);
-
-    const handleTouchEnd = useCallback((e) => {
-        if (e.touches.length < 2) {
-            setIsSelecting(false);
-            rectCacheRef.current = null; // Clear cache
-        }
-    }, []);
-
-    if (loading || parentLoading) return <LoadingChart />;
-    if (rawData.length === 0) return <div className="h-40 flex items-center justify-center text-muted">No chart data</div>;
-
-    const green = "#22c55e";
-    const red = "#ef4444";
-    const hasSelection = selectionMetrics !== null;
+    const hasData = chartData.length > 0;
+    const end = hasData ? chartData[chartData.length - 1].value : 0;
 
     return (
-        <div
-            className="flex flex-col gap-4 no-select"
-            style={{
-                cursor: 'default',
-                touchAction: isSelecting ? 'none' : 'pan-y',
-                userSelect: 'none',
-                WebkitUserSelect: 'none'
-            }}
-        >
-            <div
-                ref={containerRef}
-                style={{ height: '240px', width: '100%', position: 'relative' }}
-                onTouchStart={handleTouchStart}
-                onTouchMove={handleTouchMove}
-                onTouchEnd={handleTouchEnd}
-            >
-                {/* Selection metrics overlay on chart */}
-                {selectionMetrics && (
-                    <div
-                        className="absolute top-2 left-1/2 transform -translate-x-1/2 z-50 flex items-center gap-2 px-3 py-1.5 rounded-full cursor-pointer"
-                        style={{ background: 'rgba(0,0,0,0.85)', backdropFilter: 'blur(8px)' }}
-                        onClick={clearSelection}
-                    >
-                        <span className="text-[10px] text-white/60">
-                            {new Date(chartData[selectionMetrics.startIdx].date).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}
-                            {' → '}
-                            {new Date(chartData[selectionMetrics.endIdx].date).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}
-                        </span>
-                        <span className="text-xs text-white/80 font-medium">
-                            {selectionMetrics.change >= 0 ? '+' : ''}{selectionMetrics.change.toLocaleString(undefined, { maximumFractionDigits: 2 })} {baseCurrency}
-                        </span>
-                        <span className={`text-xs font-bold ${selectionMetrics.change >= 0 ? 'text-success' : 'text-danger'}`}>
-                            ({selectionMetrics.change >= 0 ? '+' : ''}{selectionMetrics.changePercent.toFixed(2)}%)
-                        </span>
-                    </div>
-                )}
-
-                <ResponsiveContainer width="100%" height="100%">
-                    <AreaChart
-                        data={chartData}
-                        accessibilityLayer={false}
-                        margin={{ top: 0, right: 0, left: 0, bottom: 0 }}
-                        onMouseDown={handleMouseDown}
-                        onMouseMove={handleMouseMove}
-                        onMouseUp={handleMouseUp}
-                        onMouseLeave={handleMouseUp}
-                    >
-                        <defs>
-                            <linearGradient id={splitColorId} x1="0" y1="0" x2="0" y2="1">
-                                <stop offset={offset} stopColor={green} stopOpacity={1} />
-                                <stop offset={offset} stopColor={red} stopOpacity={1} />
-                            </linearGradient>
-                            <linearGradient id={splitFillId} x1="0" y1="0" x2="0" y2="1">
-                                <stop offset={offset} stopColor={green} stopOpacity={0.2} />
-                                <stop offset={offset} stopColor={red} stopOpacity={0.2} />
-                            </linearGradient>
-                        </defs>
-                        <XAxis dataKey="chartIndex" type="number" domain={[0, Math.max(1, chartData.length - 1)]} hide />
-                        <YAxis domain={yDomain} hide />
-
-                        {/* Gray overlay for areas OUTSIDE selection */}
-                        {selectionMetrics && (
-                            <>
-                                {/* Left gray zone */}
-                                {selectionMetrics.startIdx > 0 && (
-                                    <ReferenceArea
-                                        x1={0}
-                                        x2={selectionMetrics.startIdx}
-                                        fill="rgba(0,0,0,0.6)"
-                                        fillOpacity={1}
-                                    />
-                                )}
-                                {/* Right gray zone */}
-                                {selectionMetrics.endIdx < chartData.length - 1 && (
-                                    <ReferenceArea
-                                        x1={selectionMetrics.endIdx}
-                                        x2={chartData.length - 1}
-                                        fill="rgba(0,0,0,0.6)"
-                                        fillOpacity={1}
-                                    />
-                                )}
-                                {/* Vertical lines at selection boundaries */}
-                                <ReferenceLine
-                                    x={selectionMetrics.startIdx}
-                                    stroke="rgba(255,255,255,0.5)"
-                                    strokeWidth={1}
-                                    strokeDasharray="3 3"
-                                />
-                                <ReferenceLine
-                                    x={selectionMetrics.endIdx}
-                                    stroke="rgba(255,255,255,0.5)"
-                                    strokeWidth={1}
-                                    strokeDasharray="3 3"
-                                />
-                            </>
-                        )}
-
-                        {/* Hide tooltip when selecting */}
-                        {!isSelecting && !hasSelection && (
-                            <Tooltip
-                                contentStyle={{ backgroundColor: '#171717', border: '1px solid #262626', borderRadius: '12px', padding: '8px 12px' }}
-                                formatter={(val) => [
-                                    <span key="price" style={{ color: val >= startPrice ? green : red }}>
-                                        {val.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} {baseCurrency === 'USD' ? '$' : baseCurrency}
-                                    </span>,
-                                    'Price'
-                                ]}
-                                labelFormatter={(label, payload) => new Date(payload?.[0]?.payload?.date || chartData[Math.round(label)]?.date).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
-                                labelStyle={{ color: '#a1a1aa', fontSize: '0.75rem', marginBottom: '4px' }}
-                                cursor={{ stroke: '#525252', strokeWidth: 1 }}
-                                isAnimationActive={false}
-                            />
-                        )}
-
-                        {/* Main chart line - always visible with original colors */}
-                        <Area
-                            type="linear"
-                            dataKey="value"
-                            stroke={`url(#${splitColorId})`}
-                            fill={`url(#${splitFillId})`}
-                            strokeWidth={2}
-                            baseValue={startPrice}
-                            isAnimationActive={false}
-                        />
-
-                        {/* White highlight line for selected portion only */}
-                        {selectionMetrics && selectionChartData && (
-                            <Area
-                                data={selectionChartData}
-                                type="linear"
-                                dataKey="value"
-                                stroke="#ffffff"
-                                fill="none"
-                                strokeWidth={2.5}
-                                connectNulls={false}
-                                isAnimationActive={false}
-                            />
-                        )}
-
-                        {/* Transaction dots - Buy (green) and Sell (red) */}
-                        {!isSelecting && !hasSelection && transactionDots.map((dot, i) => (
-                            <ReferenceDot
-                                key={dot.id ?? `tx-${i}`}
-                                x={dot.x}
-                                y={dot.y}
-                                r={4}
-                                fill={dot.isBuy ? green : red}
-                                stroke="#fff"
-                                strokeWidth={1.5}
-                                fillOpacity={1}
-                                isFront={true}
-                                shape={({ cx, cy }) => (
-                                    <g>
-                                        <title>{`${dot.type} · ${new Date(dot.date).toLocaleString()} · ${(dot.executionPrice ?? dot.y).toLocaleString(undefined, { maximumFractionDigits: 8 })} ${baseCurrency}${dot.executionPrice !== null && dot.executionPrice !== dot.y ? ` · Chart: ${dot.y.toLocaleString(undefined, { maximumFractionDigits: 8 })} ${baseCurrency}` : ''}`}</title>
-                                        <circle cx={cx} cy={cy} r={4} fill={dot.isBuy ? green : red} stroke="#fff" strokeWidth={1.5} />
-                                    </g>
-                                )}
-                            />
-                        ))}
-                    </AreaChart>
-                </ResponsiveContainer>
-            </div>
-
-            {/* Timeframe Selector */}
-            <div className="flex justify-between overflow-x-auto gap-2 no-scrollbar">
-                {RANGES.map(r => (
-                    <button
-                        key={r}
-                        onClick={() => handleRangeChange(r)}
-                        className={`btn ${range === r ? 'bg-white text-black' : 'btn-ghost'}`}
-                        style={{
-                            background: range === r ? 'var(--foreground)' : 'transparent',
-                            color: range === r ? 'var(--background)' : 'var(--muted)',
-                            fontSize: '0.75rem',
-                            padding: '4px 12px'
-                        }}
-                    >
-                        {r}
-                    </button>
-                ))}
-            </div>
+        <div className="flex flex-col" style={{ gap: 'var(--space-3)' }}>
+            {!hasData ? (
+                <ChartPlaceholder height={HEIGHT} message={loading || parentLoading ? null : 'No chart data'} />
+            ) : (
+                <LineChart
+                    data={chartData}
+                    height={HEIGHT}
+                    color={end >= startPrice ? 'var(--success)' : 'var(--danger)'}
+                    baseline={startPrice}
+                    markers={chartMarkers}
+                    stale={loading}
+                    // The series fades in when its data arrives, not when the range is clicked.
+                    transitionKey={loaded.key}
+                    ariaLabel={`${symbol} price, ${range}`}
+                    onScrub={onScrub}
+                    onRangeSelect={onRangeSelect}
+                />
+            )}
+            <Segmented
+                ariaLabel="Chart range"
+                options={ranges.map(id => ({ id, label: id }))}
+                value={range}
+                onChange={handleRangeChange}
+            />
         </div>
     );
 }
 
 export default memo(AssetChart);
-
-function LoadingChart() {
-    return (
-        <div style={{ height: '240px', width: '100%', opacity: 0.35, cursor: 'default', position: 'relative', overflow: 'hidden' }} className="animate-pulse no-select">
-            <div style={{ position: 'absolute', left: 0, right: 0, bottom: 48, height: 2, background: '#525252', transform: 'skewY(-5deg)', transformOrigin: 'left center' }} />
-            <div style={{ position: 'absolute', left: 0, right: 0, bottom: 0, height: 105, background: 'linear-gradient(180deg, rgba(82,82,82,0.22), rgba(82,82,82,0))', clipPath: 'polygon(0 52%, 16% 45%, 32% 50%, 48% 34%, 64% 42%, 82% 24%, 100% 18%, 100% 100%, 0 100%)' }} />
-        </div>
-    );
-}

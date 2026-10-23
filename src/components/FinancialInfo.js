@@ -3,10 +3,23 @@
 import { apiFetch } from '@/utils/api-client';
 
 import { useState, useEffect } from 'react';
-import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell, AreaChart, Area, ComposedChart, Line } from 'recharts';
-import { Wallet, Banknote, ShieldCheck, AlertCircle } from 'lucide-react';
+import { KeyValueList } from './ui';
+import { changeTone, formatCompactMoney, formatMoney, formatPercent, formatQuantity } from '@/utils/format';
 
-export default function FinancialInfo({ symbol, baseCurrency = 'USD' }) {
+const ratio = (value, decimals = 1) => (Number.isFinite(value) && value > 0 ? formatQuantity(value, { maxDecimals: decimals }) : null);
+const share = (fraction, options) => (Number.isFinite(fraction) && fraction !== 0 ? formatPercent(fraction * 100, { signed: false, decimals: 1, ...options }) : null);
+
+function quarterLabel(date) {
+    const time = Date.parse(date);
+    if (!Number.isFinite(time)) return '—';
+    const d = new Date(time);
+    return `Q${Math.floor(d.getUTCMonth() / 3) + 1} ${d.getUTCFullYear()}`;
+}
+
+// Company fundamentals for the Financials tab: annual results, valuation,
+// margins, quarterly EPS against estimates and the balance sheet.
+// currency: the currency the stock trades in (market cap, 52-week range).
+export default function FinancialInfo({ symbol, currency }) {
     const [data, setData] = useState(null);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(null);
@@ -33,368 +46,200 @@ export default function FinancialInfo({ symbol, baseCurrency = 'USD' }) {
     if (loading) return <LoadingSkeleton />;
     if (error || !data) return null;
 
-    // Only show financials for stocks (EQUITY), not ETFs
+    // Only stocks have fundamentals (ETFs and funds do not).
     const quoteType = data.quoteType?.quoteType;
     if (quoteType && quoteType !== 'EQUITY') return null;
+    if (!data.summaryDetail?.marketCap && !(data.earningsHistory?.length > 0)) return null;
 
-    // Check if there's any meaningful data
-    const hasData = data.summaryDetail?.marketCap ||
-        data.earningsHistory?.length > 0;
-
-    if (!hasData) return null;
-
-    const hasEarnings = data.earningsHistory?.length > 0;
-    const hasRevenue = data.incomeStatement?.filter(i => i.totalRevenue).length > 1;
-    const hasBalance = data.financialData?.totalCash || data.financialData?.totalDebt;
+    const reportCurrency = data.financialData?.financialCurrency || currency || 'USD';
+    const priceCurrency = currency || reportCurrency;
 
     return (
-        <div className="flex flex-col gap-6 pb-4">
-            {/* Profitability last - comprehensive view */}
-            {hasRevenue && <ProfitabilityTrend data={data} />}
-
-            {/* Key Stats */}
-            <StatsSection data={data} />
-
-            {/* Quarterly EPS - important for stock analysis */}
-            {hasEarnings && <EarningsChart data={data} />}
-
-            {/* Balance Sheet - interleave with charts */}
-            {hasBalance && <FinancialHealth data={data} />}
-
-            {/* Revenue Trend */}
-            {/*hasRevenue && <RevenueTrend data={data} />*/}
-
-
+        <div className="flex flex-col" style={{ gap: 'var(--space-6)', paddingBottom: 'var(--space-4)' }}>
+            <AnnualResults statements={data.incomeStatement || []} currency={reportCurrency} />
+            <Valuation data={data} currency={priceCurrency} />
+            <Margins data={data} />
+            <QuarterlyEps history={data.earningsHistory || []} currency={reportCurrency} />
+            <BalanceSheet data={data} currency={reportCurrency} />
         </div>
     );
 }
 
-// Number formatting
-const formatNum = (n, d = 1) => {
-    if (n === null || n === undefined || isNaN(n) || n === 0) return null;
-    if (Math.abs(n) >= 1e12) return `$${(n / 1e12).toFixed(d)}T`;
-    if (Math.abs(n) >= 1e9) return `$${(n / 1e9).toFixed(d)}B`;
-    if (Math.abs(n) >= 1e6) return `$${(n / 1e6).toFixed(d)}M`;
-    return `$${n.toFixed(d)}`;
-};
+// Revenue and net income for the last four fiscal years, grey and white bars.
+function AnnualResults({ statements, currency }) {
+    const years = statements
+        .filter(item => Number.isFinite(item.totalRevenue) && item.totalRevenue > 0)
+        .slice()
+        .sort((a, b) => Date.parse(a.date) - Date.parse(b.date))
+        .slice(-4);
+    if (years.length < 2) return null;
 
-const formatPct = (n) => {
-    if (n === null || n === undefined || isNaN(n) || n === 0) return null;
-    return `${(n * 100).toFixed(1)}%`;
-};
-
-// Reusable Premium Tooltip
-const CustomTooltip = ({ active, payload, label, prefix = '', suffix = '' }) => {
-    if (!active || !payload?.length) return null;
+    const max = Math.max(...years.map(item => item.totalRevenue));
+    const yearOf = item => new Date(item.date).getUTCFullYear();
+    const latest = years[years.length - 1];
+    const previous = years[years.length - 2];
+    const growth = (latest.totalRevenue / previous.totalRevenue - 1) * 100;
+    const margin = Number.isFinite(latest.netIncome) ? (latest.netIncome / latest.totalRevenue) * 100 : null;
 
     return (
-        <div className="px-5 py-4 rounded-2xl shadow-2xl border border-white/10 backdrop-blur-xl" style={{ background: 'rgba(10, 10, 10, 0.95)' }}>
-            <div className="text-xs text-white/30 uppercase tracking-[0.2em] font-bold mb-4 border-b border-white/5 pb-2">
-                {label}
+        <section aria-label="Annual results">
+            <div className="flex items-baseline justify-between" style={{ gap: 'var(--space-3)' }}>
+                <h3 className="section-title">Annual results</h3>
+                <span className="fin-legend" aria-hidden="true">
+                    <span><i className="fin-swatch is-revenue" />Revenue</span>
+                    <span><i className="fin-swatch is-income" />Net income</span>
+                </span>
             </div>
-            <div className="flex flex-col gap-3">
-                {payload.map((p, i) => (
-                    <div key={i} className="flex items-center justify-between gap-10">
-                        <div className="flex items-center gap-2.5">
-                            <div className="w-1.5 h-1.5 rounded-full" style={{ background: p.color || p.fill }} />
-                            <span className="text-xs font-medium text-white/50">{p.name}</span>
+            <div
+                className="fin-chart"
+                role="img"
+                aria-label={years.map(item => `${yearOf(item)}: revenue ${formatCompactMoney(item.totalRevenue, currency)}, net income ${formatCompactMoney(item.netIncome, currency)}`).join('; ')}
+            >
+                {years.map(item => (
+                    <div key={item.date} className="fin-bar-group">
+                        <div className="fin-bar-pair">
+                            <span className="fin-bar is-revenue" style={{ height: `${(item.totalRevenue / max) * 100}%` }} />
+                            <span className="fin-bar is-income" style={{ height: `${(Math.max(0, item.netIncome || 0) / max) * 100}%` }} />
                         </div>
-                        <span className="text-xs font-bold" style={{ color: p.color || p.fill }}>
-                            {prefix}{typeof p.value === 'number' ? p.value.toLocaleString(undefined, { maximumFractionDigits: 1 }) : p.value}{suffix}
-                        </span>
+                        <span className="fin-bar-label">{yearOf(item)}</span>
                     </div>
                 ))}
             </div>
-        </div>
-    );
-};
-
-// Specialized EPS Tooltip
-const EpsTooltip = ({ active, payload, label }) => {
-    if (!active || !payload?.length) return null;
-    const estimate = payload.find(p => p.dataKey === 'epsEstimate')?.value;
-    const actual = payload.find(p => p.dataKey === 'epsActual')?.value;
-    const beat = actual >= estimate;
-
-    return (
-        <div className="px-5 py-4 rounded-2xl shadow-2xl border border-white/10 backdrop-blur-xl" style={{ background: 'rgba(10, 10, 10, 0.95)' }}>
-            <div className="text-xs text-white/30 uppercase tracking-[0.2em] font-bold mb-4 border-b border-white/5 pb-2">
-                Q{Math.floor(new Date(label).getMonth() / 3) + 1} {new Date(label).getFullYear()}
-            </div>
-            <div className="flex flex-col gap-3">
-                <div className="flex items-center justify-between gap-10">
-                    <div className="flex items-center gap-2.5">
-                        <div className="w-1.5 h-1.5 rounded-full" style={{ background: '#444446' }} />
-                        <span className="text-xs font-medium text-white/50">Estimate</span>
-                    </div>
-                    <span className="text-xs font-bold text-white/80">${estimate?.toFixed(2)}</span>
-                </div>
-                <div className="flex items-center justify-between gap-10">
-                    <div className="flex items-center gap-2.5">
-                        <div className="w-1.5 h-1.5 rounded-full" style={{ background: beat ? '#22c55e' : '#ef4444' }} />
-                        <span className="text-xs font-medium text-white/50">Actual</span>
-                    </div>
-                    <span className="text-xs font-bold" style={{ color: beat ? '#22c55e' : '#ef4444' }}>
-                        ${actual?.toFixed(2)}
-                    </span>
-                </div>
-                {beat && (
-                    <div className="mt-1 pt-2 border-t border-white/5 text-xs text-success/80 font-semibold tracking-wide uppercase">
-                        Beat by {((actual - estimate) / Math.abs(estimate) * 100).toFixed(1)}%
-                    </div>
-                )}
-            </div>
-        </div>
-    );
-};
-
-// Profitability Trend (Revenue vs Net Income + Margin line)
-function ProfitabilityTrend({ data }) {
-    const chartData = data.incomeStatement
-        .filter(i => i.totalRevenue)
-        .slice()
-        .reverse()
-        .map(i => ({
-            year: `'${new Date(i.date).getFullYear().toString().slice(2)}`,
-            revenue: i.totalRevenue / 1e9,
-            income: i.netIncome ? i.netIncome / 1e9 : 0,
-            margin: i.netIncome && i.totalRevenue ? (i.netIncome / i.totalRevenue * 100) : 0
-        }));
-
-    return (
-        <div className="rounded-2xl p-4" style={{ background: 'rgba(255,255,255,0.03)' }}>
-            <div className="flex items-baseline justify-between mb-8">
-                <span className="text-xs font-semibold text-white/90 uppercase tracking-wide">Profitability Trend</span>
-                <span className="text-xs text-white/20 lowercase">billions USD</span>
-            </div>
-
-            <div style={{ height: 160 }}>
-                <ResponsiveContainer width="100%" height="100%">
-                    <ComposedChart data={chartData} margin={{ top: 0, right: 0, left: -24, bottom: 0 }}>
-                        <XAxis dataKey="year" tick={{ fill: '#52525b', fontSize: 10 }} axisLine={false} tickLine={false} />
-                        <YAxis yAxisId="left" tick={{ fill: '#52525b', fontSize: 10 }} axisLine={false} tickLine={false} tickFormatter={(v) => `$${v}B`} />
-                        <YAxis yAxisId="right" orientation="right" hide domain={[0, 'auto']} />
-                        <Tooltip content={<CustomTooltip prefix="$" suffix="B" />} cursor={false} />
-                        <Bar yAxisId="left" dataKey="revenue" name="Revenue" fill="#3b82f6" opacity={0.1} radius={[2, 2, 0, 0]} barSize={25} />
-                        <Bar yAxisId="left" dataKey="income" name="Net Income" fill="#22c55e" radius={[2, 2, 0, 0]} barSize={25} />
-                        <Line yAxisId="right" type="monotone" dataKey="margin" name="Net Margin" stroke="#eab308" strokeWidth={2} dot={false} strokeDasharray="4 4" />
-                    </ComposedChart>
-                </ResponsiveContainer>
-            </div>
-        </div>
+            <KeyValueList
+                twoColumn
+                rows={[
+                    {
+                        label: `Revenue ${yearOf(latest)}`,
+                        value: formatCompactMoney(latest.totalRevenue, currency),
+                        sub: `${formatPercent(growth, { decimals: 1 })} vs ${yearOf(previous)}`,
+                        subTone: changeTone(growth)
+                    },
+                    Number.isFinite(latest.netIncome) && {
+                        label: `Net income ${yearOf(latest)}`,
+                        value: formatCompactMoney(latest.netIncome, currency),
+                        sub: margin !== null ? `${formatPercent(margin, { signed: false, decimals: 1 })} margin` : null
+                    }
+                ]}
+            />
+        </section>
     );
 }
 
-// Financial Health - Clean professional design
-function FinancialHealth({ data }) {
-    const fd = data.financialData;
-    const cash = fd.totalCash || 0;
-    const debt = fd.totalDebt || 0;
-    const ratio = fd.currentRatio || 0;
-    const total = cash + debt;
-
-    // If no data, don't render
-    if (total === 0) return null;
-
-    const cashPct = (cash / total) * 100;
-
-    return (
-        <div className="rounded-2xl p-4" style={{ background: 'rgba(255,255,255,0.03)' }}>
-            <div className="flex items-baseline justify-between mb-6">
-                <span className="text-xs font-semibold text-white/90 uppercase tracking-wide">Balance Sheet</span>
-                <span className="text-xs text-white/20 lowercase">billions USD</span>
-            </div>
-
-            {/* Progress bar style comparison */}
-            <div className="mb-6">
-                <div className="flex h-8 rounded-lg overflow-hidden" style={{ background: '#27272a' }}>
-                    <div
-                        style={{ width: `${Math.max(cashPct, 1)}%`, background: '#22c55e' }}
-                        className="flex items-center justify-center transition-all"
-                    >
-                        {cashPct > 20 && <span className="text-sm text-white">{formatNum(cash)}</span>}
-                    </div>
-                    <div
-                        style={{ width: `${Math.max(100 - cashPct, 1)}%`, background: '#dc2626' }}
-                        className="flex items-center justify-center transition-all"
-                    >
-                        {(100 - cashPct) > 20 && <span className="text-sm text-white">{formatNum(debt)}</span>}
-                    </div>
-                </div>
-                <div className="flex justify-between mt-2 px-1">
-                    <span className="text-sm text-success font-medium">Cash {cashPct.toFixed(0)}%</span>
-                    <span className="text-sm text-danger font-medium">Debt {(100 - cashPct).toFixed(0)}%</span>
-                </div>
-            </div>
-
-            {/* Clean stats row */}
-            <div className="flex items-center justify-between py-3 px-4 rounded-xl bg-white/[0.02]">
-                <div className="text-center">
-                    <div className="text-[10px] text-white/40 mb-1">Cash</div>
-                    <div className="text-sm font-semibold text-white">{formatNum(cash)}</div>
-                </div>
-                <div className="w-px h-8 bg-white/10" />
-                <div className="text-center">
-                    <div className="text-[10px] text-white/40 mb-1">Debt</div>
-                    <div className="text-sm font-semibold text-white">{formatNum(debt)}</div>
-                </div>
-                <div className="w-px h-8 bg-white/10" />
-                <div className="text-center">
-                    <div className="text-[10px] text-white/40 mb-1">Ratio</div>
-                    <div className={`text-sm font-semibold ${ratio > 2 ? 'text-success' : ratio < 1 ? 'text-danger' : 'text-white'}`}>
-                        {ratio.toFixed(2)}
-                    </div>
-                </div>
-            </div>
-        </div>
-    );
-}
-
-// Earnings Chart
-function EarningsChart({ data }) {
-    const earnings = data.earningsHistory.slice().reverse();
-    if (earnings.length === 0) return null;
-
-    // Calculate domain with 10% headroom
-    const allValues = earnings.flatMap(e => [e.epsEstimate, e.epsActual]).filter(v => v != null);
-    const minVal = Math.min(0, ...allValues);
-    const maxVal = Math.max(...allValues);
-    const padding = (maxVal - minVal) * 0.1;
-
-    return (
-        <div className="rounded-2xl p-4" style={{ background: 'rgba(255,255,255,0.03)' }}>
-            <div className="flex items-baseline justify-between mb-8">
-                <span className="text-xs font-semibold text-white/90 uppercase tracking-wide">Quarterly EPS</span>
-            </div>
-
-            <div style={{ height: 140 }}>
-                <ResponsiveContainer width="100%" height="100%">
-                    <BarChart data={earnings} margin={{ top: 10, right: 0, left: -24, bottom: 0 }} barGap={2}>
-                        <XAxis dataKey="date" tick={{ fill: '#52525b', fontSize: 10 }} tickFormatter={(v) => `Q${Math.floor(new Date(v).getMonth() / 3) + 1}`} axisLine={false} tickLine={false} />
-                        <YAxis domain={[minVal, maxVal + padding]} tick={{ fill: '#52525b', fontSize: 10 }} axisLine={false} tickLine={false} tickFormatter={(v) => `$${v.toFixed(1)}`} />
-                        <Tooltip content={<EpsTooltip />} cursor={false} />
-                        <Bar dataKey="epsEstimate" fill="#444446" radius={[2, 2, 2, 2]} barSize={5} />
-                        <Bar dataKey="epsActual" radius={[4, 4, 4, 4]} barSize={12}>
-                            {earnings.map((e, i) => (
-                                <Cell key={i} fill={e.epsActual >= e.epsEstimate ? '#22c55e' : '#ef4444'} />
-                            ))}
-                        </Bar>
-                    </BarChart>
-                </ResponsiveContainer>
-            </div>
-        </div>
-    );
-}
-
-// Stats Section - clean list style
-function StatsSection({ data }) {
+function Valuation({ data, currency }) {
     const sd = data.summaryDetail || {};
     const ks = data.keyStats || {};
-    const fd = data.financialData || {};
-
-    const stats = [
-        { label: 'Market Cap', value: formatNum(sd.marketCap) },
-        { label: 'P/E Ratio', value: (sd.trailingPE && sd.trailingPE > 0) ? sd.trailingPE.toFixed(1) : null },
-        { label: 'Forward P/E', value: (ks.forwardPE && ks.forwardPE > 0) ? ks.forwardPE.toFixed(1) : null },
-        { label: 'PEG Ratio', value: (ks.pegRatio && ks.pegRatio > 0) ? ks.pegRatio.toFixed(2) : null },
-        { label: 'Dividend Yield', value: formatPct(sd.dividendYield) },
-        { label: 'Beta', value: (ks.beta && ks.beta !== 0) ? ks.beta.toFixed(2) : null },
-        {
-            label: '52W Range', value: sd.fiftyTwoWeekLow && sd.fiftyTwoWeekHigh ?
-                `$${sd.fiftyTwoWeekLow.toFixed(0)} - $${sd.fiftyTwoWeekHigh.toFixed(0)}` : null
-        },
-        { label: 'Gross Margin', value: formatPct(fd.grossMargins) },
-        { label: 'Operating Margin', value: formatPct(fd.operatingMargins) },
-        { label: 'Profit Margin', value: formatPct(fd.profitMargins) },
-        { label: 'Return on Equity', value: formatPct(fd.returnOnEquity) },
-        { label: 'Revenue Growth', value: formatPct(fd.revenueGrowth) },
-        { label: 'Total Cash', value: formatNum(fd.totalCash) },
-        { label: 'Total Debt', value: formatNum(fd.totalDebt) },
-        { label: 'Debt to Equity', value: (fd.debtToEquity && fd.debtToEquity > 0) ? fd.debtToEquity.toFixed(0) : null },
-        { label: 'Free Cash Flow', value: formatNum(fd.freeCashflow) },
-    ].filter(s => s.value !== null && s.value !== '0.0' && s.value !== '0.00');
-
-    if (stats.length === 0) return null;
+    const rows = [
+        Number.isFinite(sd.marketCap) && sd.marketCap > 0 && { label: 'Market cap', value: formatCompactMoney(sd.marketCap, currency) },
+        ratio(sd.trailingPE) && { label: 'P/E', value: ratio(sd.trailingPE) },
+        ratio(ks.forwardPE) && { label: 'Forward P/E', value: ratio(ks.forwardPE) },
+        ratio(ks.pegRatio, 2) && { label: 'PEG', value: ratio(ks.pegRatio, 2) },
+        share(sd.dividendYield, { decimals: 2 }) && { label: 'Dividend yield', value: share(sd.dividendYield, { decimals: 2 }) },
+        Number.isFinite(ks.beta) && ks.beta !== 0 && { label: 'Beta', value: formatQuantity(ks.beta, { maxDecimals: 2 }) },
+        Number.isFinite(sd.fiftyTwoWeekLow) && Number.isFinite(sd.fiftyTwoWeekHigh) && {
+            label: '52-week range',
+            value: `${formatMoney(sd.fiftyTwoWeekLow, currency)} – ${formatMoney(sd.fiftyTwoWeekHigh, currency)}`
+        }
+    ].filter(Boolean);
+    if (rows.length === 0) return null;
 
     return (
-        <div className="rounded-2xl overflow-hidden" style={{ background: 'rgba(255,255,255,0.03)' }}>
-            <div className="px-4 py-3 border-b" style={{ borderColor: 'rgba(255,255,255,0.05)' }}>
-                <span className="text-xs font-semibold text-white/50 uppercase tracking-wider">Key Statistics</span>
-            </div>
-            {stats.map((stat, i) => (
-                <div
-                    key={i}
-                    className="flex items-center justify-between px-4 py-3"
-                    style={{ borderBottom: i < stats.length - 1 ? '1px solid rgba(255,255,255,0.03)' : 'none' }}
-                >
-                    <span className="text-sm text-white/50">{stat.label}</span>
-                    <span className={`text-sm font-medium ${typeof stat.value === 'string' && stat.value.includes('%') && !stat.value.includes('-')
-                        ? (parseFloat(stat.value) > 20 ? 'text-success' : 'text-white')
-                        : 'text-white'
-                        }`}>
-                        {stat.value}
-                    </span>
-                </div>
-            ))}
-        </div>
+        <section aria-label="Valuation">
+            <h3 className="section-title">Valuation</h3>
+            <KeyValueList twoColumn rows={rows} />
+        </section>
     );
 }
 
-// Revenue Trend
-function RevenueTrend({ data }) {
-    const chartData = data.incomeStatement
-        .filter(i => i.totalRevenue)
-        .slice()
-        .reverse()
-        .map(i => ({
-            year: `'${new Date(i.date).getFullYear().toString().slice(2)}`,
-            revenue: i.totalRevenue / 1e9,
-            income: i.netIncome ? i.netIncome / 1e9 : 0
-        }));
-
-    if (chartData.length < 2) return null;
+function Margins({ data }) {
+    const fd = data.financialData || {};
+    const rows = [
+        share(fd.grossMargins) && { label: 'Gross margin', value: share(fd.grossMargins) },
+        share(fd.operatingMargins) && { label: 'Operating margin', value: share(fd.operatingMargins) },
+        share(fd.profitMargins) && { label: 'Net margin', value: share(fd.profitMargins) },
+        share(fd.returnOnEquity) && { label: 'Return on equity', value: share(fd.returnOnEquity) },
+        Number.isFinite(fd.revenueGrowth) && fd.revenueGrowth !== 0 && {
+            label: 'Revenue growth',
+            value: formatPercent(fd.revenueGrowth * 100, { decimals: 1 }),
+            tone: changeTone(fd.revenueGrowth),
+            sub: 'last quarter, year on year'
+        }
+    ].filter(Boolean);
+    if (rows.length === 0) return null;
 
     return (
-        <div className="rounded-2xl p-4" style={{ background: 'rgba(255,255,255,0.03)' }}>
-            <div className="flex items-baseline justify-between mb-8">
-                <span className="text-xs font-semibold text-white/90 uppercase tracking-wide">Historical Revenue</span>
-                <span className="text-xs text-white/20 lowercase">billions USD</span>
-            </div>
+        <section aria-label="Margins">
+            <h3 className="section-title">Margins</h3>
+            <KeyValueList twoColumn rows={rows} />
+        </section>
+    );
+}
 
-            <div style={{ height: 120 }}>
-                <ResponsiveContainer width="100%" height="100%">
-                    <AreaChart data={chartData} margin={{ top: 0, right: 0, left: -24, bottom: 0 }}>
-                        <defs>
-                            <linearGradient id="revGradFin" x1="0" y1="0" x2="0" y2="1">
-                                <stop offset="0%" stopColor="#3b82f6" stopOpacity={0.15} />
-                                <stop offset="100%" stopColor="#3b82f6" stopOpacity={0} />
-                            </linearGradient>
-                        </defs>
-                        <XAxis dataKey="year" tick={{ fill: '#52525b', fontSize: 10 }} axisLine={false} tickLine={false} />
-                        <YAxis domain={['auto', 'auto']} tick={{ fill: '#52525b', fontSize: 10 }} tickFormatter={(v) => `$${v.toFixed(0)}B`} axisLine={false} tickLine={false} />
-                        <Tooltip content={<CustomTooltip prefix="$" suffix="B" />} cursor={false} />
-                        <Area type="monotone" dataKey="revenue" stroke="#3b82f6" fill="url(#revGradFin)" strokeWidth={2} name="Revenue" />
-                    </AreaChart>
-                </ResponsiveContainer>
-            </div>
-        </div>
+// Newest quarter first; the surprise is coloured like any other gain or loss.
+function QuarterlyEps({ history, currency }) {
+    const quarters = history
+        .filter(item => Number.isFinite(item.epsActual) && Number.isFinite(item.epsEstimate))
+        .slice()
+        .sort((a, b) => Date.parse(b.date) - Date.parse(a.date));
+    if (quarters.length === 0) return null;
+
+    return (
+        <section aria-label="Quarterly earnings per share">
+            <h3 className="section-title">Earnings per share</h3>
+            <KeyValueList
+                twoColumn
+                rows={quarters.map(item => {
+                    const surprise = item.epsEstimate !== 0 ? ((item.epsActual - item.epsEstimate) / Math.abs(item.epsEstimate)) * 100 : null;
+                    return {
+                        label: quarterLabel(item.date),
+                        value: formatMoney(item.epsActual, currency),
+                        sub: surprise !== null
+                            ? `${formatPercent(surprise, { decimals: 1 })} vs ${formatMoney(item.epsEstimate, currency)}`
+                            : `${formatMoney(item.epsEstimate, currency)} expected`,
+                        subTone: surprise !== null ? changeTone(surprise) : undefined
+                    };
+                })}
+            />
+        </section>
+    );
+}
+
+function BalanceSheet({ data, currency }) {
+    const fd = data.financialData || {};
+    const money = value => (Number.isFinite(value) && value !== 0 ? formatCompactMoney(value, currency) : null);
+    const rows = [
+        money(fd.totalCash) && { label: 'Cash', value: money(fd.totalCash) },
+        money(fd.totalDebt) && { label: 'Debt', value: money(fd.totalDebt) },
+        Number.isFinite(fd.debtToEquity) && fd.debtToEquity > 0 && {
+            label: 'Debt to equity',
+            value: formatPercent(fd.debtToEquity, { signed: false, decimals: 0 })
+        },
+        ratio(fd.currentRatio, 2) && { label: 'Current ratio', value: ratio(fd.currentRatio, 2) },
+        money(fd.freeCashflow) && { label: 'Free cash flow', value: money(fd.freeCashflow) }
+    ].filter(Boolean);
+    if (rows.length === 0) return null;
+
+    return (
+        <section aria-label="Balance sheet">
+            <h3 className="section-title">Balance sheet</h3>
+            <KeyValueList twoColumn rows={rows} />
+        </section>
     );
 }
 
 function LoadingSkeleton() {
     return (
-        <div className="flex flex-col gap-4 animate-pulse">
-            <div className="rounded-2xl" style={{ background: 'rgba(255,255,255,0.03)' }}>
-                <div className="p-4">
-                    <div className="h-3 w-20 rounded" style={{ background: 'rgba(255,255,255,0.05)' }} />
+        <div className="flex flex-col" aria-busy="true" style={{ gap: 'var(--space-6)' }}>
+            {[4, 5].map((count, section) => (
+                <div key={section}>
+                    <div className="skeleton" style={{ width: 120, height: 18, marginBottom: 12 }} />
+                    {Array.from({ length: count }, (_, i) => (
+                        <div key={i} className="flex justify-between" style={{ padding: '14px 0' }}>
+                            <div className="skeleton" style={{ width: '32%', height: 14 }} />
+                            <div className="skeleton" style={{ width: '20%', height: 14 }} />
+                        </div>
+                    ))}
                 </div>
-                {[1, 2, 3, 4, 5].map(i => (
-                    <div key={i} className="px-4 py-3 flex justify-between">
-                        <div className="h-4 w-24 rounded" style={{ background: 'rgba(255,255,255,0.03)' }} />
-                        <div className="h-4 w-16 rounded" style={{ background: 'rgba(255,255,255,0.03)' }} />
-                    </div>
-                ))}
-            </div>
+            ))}
         </div>
     );
 }

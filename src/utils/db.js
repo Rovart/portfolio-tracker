@@ -91,6 +91,53 @@ db.version(6).stores({
     });
 });
 
+// Version 7: Private loans. Their disbursements,
+// repayments and interest payments are regular transactions on the loan symbol.
+db.version(7).stores({
+    transactions: '++id, date, type, baseCurrency, quoteCurrency, portfolioId',
+    settings: 'key',
+    portfolios: '++id, name, createdAt, isWatchlist, position',
+    watchlistAssets: '++id, portfolioId, symbol, addedAt, position',
+    wallets: '++id, portfolioId, chain, address',
+    loans: '++id, &symbol, portfolioId'
+});
+
+// Loan helpers
+export async function getLoans(portfolioId = 'all') {
+    const loans = portfolioId === 'all'
+        ? await db.loans.toArray()
+        : await db.loans.where('portfolioId').equals(portfolioId).toArray();
+    return loans.sort((a, b) => new Date(a.createdAt || 0) - new Date(b.createdAt || 0));
+}
+
+// The loan and its first disbursement are stored together or not at all.
+export async function addLoan(loan, disbursement) {
+    return await db.transaction('rw', db.loans, db.transactions, async () => {
+        const createdAt = new Date().toISOString();
+        const loanId = await db.loans.add({ ...loan, createdAt });
+        const transactionId = await db.transactions.add({
+            ...disbursement,
+            portfolioId: loan.portfolioId,
+            date: new Date(disbursement.date).toISOString(),
+            createdAt
+        });
+        return { loanId, transactionId };
+    });
+}
+
+export async function updateLoan(id, updates) {
+    await db.loans.update(id, { ...updates, updatedAt: new Date().toISOString() });
+}
+
+export async function deleteLoan(id) {
+    await db.transaction('rw', db.loans, db.transactions, async () => {
+        const loan = await db.loans.get(id);
+        if (!loan) return;
+        await db.transactions.where('baseCurrency').equals(loan.symbol).delete();
+        await db.loans.delete(id);
+    });
+}
+
 // Watch-only wallet helpers
 export async function getWalletsForPortfolio(portfolioId = 'all') {
     const wallets = portfolioId === 'all'
@@ -167,6 +214,8 @@ export async function deletePortfolio(id) {
     await db.watchlistAssets.where('portfolioId').equals(id).delete();
     // Delete all watch-only wallets in this portfolio
     await db.wallets.where('portfolioId').equals(id).delete();
+    // Delete all private loans in this portfolio (their transactions are above)
+    await db.loans.where('portfolioId').equals(id).delete();
     // Delete the portfolio
     await db.portfolios.delete(id);
 }

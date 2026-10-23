@@ -11,6 +11,7 @@ import EarningsEvent from './EarningsEvent';
 import ConfirmModal from './ConfirmModal';
 import WalletTracker from './WalletTracker';
 import BottomSheet, { closeTopSheet } from './BottomSheet';
+import { LoanActions, LoanDetails, LoanForm, LoanTransactionForm, LoanValue, LOAN_TRANSACTION_LABELS, loanRateLabel } from './LoanPanel';
 
 // Heavy, chart-driven views are code-split so opening the modal doesn't have to
 // parse/execute recharts up front, and lazily mounted after the open animation.
@@ -25,7 +26,9 @@ const FinancialInfo = dynamic(() => import('./FinancialInfo'), {
     ssr: false,
     loading: () => <div className="w-full rounded-2xl bg-white-5 animate-pulse" style={{ height: '200px' }} />
 });
-import { Trash2, Edit2, X, Plus, ChevronLeft, ArrowLeft, Moon, Sun, Eye, EyeOff } from 'lucide-react';
+import { Plus, ArrowLeft, Moon, Sun, Eye, EyeOff, ChevronsUpDown } from 'lucide-react';
+import { AmountField, Delta, FormRow, Money, Segmented, StatStrip, SwitchRow } from './ui';
+import { changeTone, formatDate, formatMoney, formatPercent, formatPrice, formatQuantity, MASK } from '@/utils/format';
 import {
     normalizeAsset,
     isFiatAsset,
@@ -41,9 +44,21 @@ import {
 import { addWatchlistAsset, removeWatchlistAsset, isSymbolInWatchlist } from '@/utils/db';
 import { COMMODITY_NAMES } from '@/utils/commodities';
 import { getTransactionExecutionPrice } from '@/utils/chart-data';
+import { buildLoanHistory, getLoanQuote, isLoanSymbol } from '@/utils/loans';
+
+const LOAN_CHART_RANGES = ['1M', '3M', '1Y', 'ALL'];
+const REVERSE_LABELS = { BUY: 'Purchased', SELL: 'Sold', INCOME: 'Income from' };
+const TRANSACTION_LABELS = { BUY: 'Buy', SELL: 'Sell', DEPOSIT: 'Deposit', WITHDRAW: 'Withdrawal', INCOME: 'Income' };
+const RANGE_CAPTIONS = { '1D': 'Today', '1W': 'Past week', '1M': 'Past month', '3M': 'Past 3 months', '1Y': 'Past year', 'ALL': 'All time' };
 
 // Header display logic: Title = Name, Subtitle = Symbol
-const ASSET_SUMMARY_METRICS = ['value', 'total', 'realized', 'unrealized'];
+
+// Prices shown in an input: cents above 1, significant digits below.
+function roundPrice(value) {
+    if (!Number.isFinite(value)) return '';
+    const digits = Math.abs(value) >= 1 ? 2 : Math.min(10, 4 - Math.floor(Math.log10(Math.abs(value) || 1)));
+    return Number(value.toFixed(digits));
+}
 
 function toFiniteNumber(value) {
     const parsed = parseFloat(value);
@@ -82,7 +97,11 @@ export default function TransactionModal({
     isWatchlist = false,
     watchlistAssets = [],
     onWatchlistUpdate,
-    onWalletsChange
+    onWalletsChange,
+    loans = [],
+    onCreateLoan,
+    onUpdateLoan,
+    onDeleteLoan
 }) {
     const { active: marketActive, revision: marketRevision } = useMarketActivity();
     const modalRef = useRef(null);
@@ -106,13 +125,21 @@ export default function TransactionModal({
     } : null);
     const [editingTx, setEditingTx] = useState(null);
     const [deleteConfirm, setDeleteConfirm] = useState(null); // { id, type, date }
+    const [isEditingLoanTerms, setIsEditingLoanTerms] = useState(false);
+    const [loanDeleteConfirm, setLoanDeleteConfirm] = useState(false);
     const [assetTab, setAssetTab] = useState('overview'); // 'overview' | 'financials'
+    const [returnMetric, setReturnMetric] = useState('total'); // 'total' | 'unrealized' | 'realized'
     // Defer heavy chart mounting until after the modal has painted/animated in
     const [heavyReady, setHeavyReady] = useState(false);
     const [isInWatchlist, setIsInWatchlist] = useState(false);
-    const [rangePerformance, setRangePerformance] = useState(null); // { range, change, changePercent }
-    const [assetSummaryMetric, setAssetSummaryMetric] = useState('value'); // 'value' | 'total' | 'realized' | 'unrealized'
-    const [purchaseInfoMetric, setPurchaseInfoMetric] = useState('average'); // 'average' | 'held'
+    const [rangePerformance, setRangePerformance] = useState(null); // { range, change, changePercent, startPrice }
+    // Chart interaction mirrored in the price block: a scrubbed point or a selected range.
+    const [chartScrub, setChartScrub] = useState(null);
+    const [chartSelection, setChartSelection] = useState(null);
+    const resetChartInteraction = useCallback(() => {
+        setChartScrub(null);
+        setChartSelection(null);
+    }, []);
 
     // Sync selectedAsset when holding prop changes (e.g. if name is loaded late in Dashboard)
     // Use primitive dependencies to minimize re-runs
@@ -170,11 +197,11 @@ export default function TransactionModal({
     const selectedAssetCurrency = selectedAsset?.currency;
     const selectedAssetOriginalType = selectedAsset?.originalType;
     const selectedAssetIsBareCurrencyOrigin = selectedAsset?.isBareCurrencyOrigin;
-
-    useEffect(() => {
-        setAssetSummaryMetric('value');
-        setPurchaseInfoMetric('average');
-    }, [selectedAssetSymbol]);
+    const loansBySymbol = useMemo(() => (
+        new Map(loans.map(loan => [String(loan.symbol).toUpperCase(), loan]))
+    ), [loans]);
+    const selectedLoan = isLoanSymbol(selectedAssetSymbol) ? loansBySymbol.get(selectedAssetSymbol.toUpperCase()) || null : null;
+    const getAssetDisplayName = symbol => isLoanSymbol(symbol) ? loansBySymbol.get(symbol.toUpperCase())?.name || 'loan' : symbol;
 
     useEffect(() => {
         priceDataPriceRef.current = priceData.price;
@@ -203,6 +230,8 @@ export default function TransactionModal({
                     if (currentView === 'FORM') {
                         setCurrentView('LIST');
                         setEditingTx(null);
+                    } else if (currentView === 'LOAN_FORM') {
+                        setCurrentView('SEARCH');
                     } else {
                         onClose();
                     }
@@ -282,14 +311,18 @@ export default function TransactionModal({
             }
 
             const isUsdCash = isCurrencyType && fetchSym.toUpperCase() === 'USD';
-            let symbolsToFetch = isUsdCash ? [] : [fetchSym];
+            // Loans have no market quote: their accrued price is computed locally.
+            const isLoanAsset = isLoanSymbol(fetchSym);
+            let symbolsToFetch = isUsdCash || isLoanAsset ? [] : [fetchSym];
             // For USD-to-base conversion, always fetch {base}USD=X (e.g., EURUSD=X), not the other way around
             if (baseCurrency !== 'USD') {
                 symbolsToFetch.push(`${baseCurrency}USD=X`);
             }
 
             try {
-                const json = { data: await getCachedQuotes(symbolsToFetch) };
+                const marketQuotes = await getCachedQuotes(symbolsToFetch);
+                const loanQuote = isLoanAsset && selectedLoan ? getLoanQuote(selectedLoan, transactions) : null;
+                const json = { data: loanQuote ? [...marketQuotes, { ...loanQuote, symbol: fetchSym }] : marketQuotes };
                 if (isCancelled) return;
 
                 let fetchedPrice = isUsdCash ? 1 : null;
@@ -435,6 +468,7 @@ export default function TransactionModal({
         selectedAssetCurrency,
         selectedAssetOriginalType,
         selectedAssetIsBareCurrencyOrigin,
+        selectedLoan,
         baseCurrency,
         transactions
     ]);
@@ -588,58 +622,48 @@ export default function TransactionModal({
         return baseCurrency;
     };
 
-    const toggleAssetSummaryMetric = () => {
-        setAssetSummaryMetric(prev => {
-            const index = ASSET_SUMMARY_METRICS.indexOf(prev);
-            return ASSET_SUMMARY_METRICS[(index + 1) % ASSET_SUMMARY_METRICS.length];
-        });
-    };
-
-    const togglePurchaseInfoMetric = () => {
-        setPurchaseInfoMetric(prev => prev === 'average' ? 'held' : 'average');
-    };
-
+    // The position in one compact band, so History stays close to the chart.
+    // The return figure cycles through total, unrealized and realized on tap.
     const heldAmount = Math.abs(combinedCurrentBalance) < 0.005 ? 0 : combinedCurrentBalance;
     const heldTicker = normalizeAsset(selectedSymbol) || selectedSymbol || '';
     const canShowAveragePurchase = averagePurchasePrice > 0;
-    const purchaseInfoMode = canShowAveragePurchase ? purchaseInfoMetric : 'held';
-    const purchaseInfoLabel = purchaseInfoMode === 'held' ? 'Held Amount' : 'Avg Purchase';
-    const nextPurchaseInfoLabel = purchaseInfoMode === 'held' ? 'Avg Purchase' : 'Held Amount';
-    const purchaseInfoValue = purchaseInfoMode === 'held'
-        ? `${hideBalances ? '••••' : heldAmount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ${heldTicker}`
-        : `${averagePurchasePrice.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ${baseCurrency === 'USD' ? '$' : baseCurrency}`;
-
-    const isAssetProfitMetric = assetSummaryMetric !== 'value';
-    const isAssetRealizedMetric = assetSummaryMetric === 'realized';
-    const isAssetUnrealizedMetric = assetSummaryMetric === 'unrealized';
-    const assetSummaryValue = isAssetRealizedMetric
-        ? (missingCostFx ? null : realizedProfitBase)
-        : isAssetUnrealizedMetric
-            ? unrealizedProfitBase
-            : assetSummaryMetric === 'total'
-                ? totalProfitBase
-                : currentValueBase;
-    const assetSummaryLabel = isAssetRealizedMetric
-        ? 'Realized P/L'
-        : isAssetUnrealizedMetric
-            ? 'Unrealized P/L'
-            : assetSummaryMetric === 'total'
-                ? 'Total P/L'
-                : 'Total Value';
-    const nextAssetSummaryLabel = assetSummaryMetric === 'value'
-        ? 'Total P/L'
-        : assetSummaryMetric === 'total'
-            ? 'Realized P/L'
-            : assetSummaryMetric === 'realized'
-                ? 'Unrealized P/L'
-                : 'Total Value';
-    const assetSummarySign = isAssetProfitMetric || isAssetRealizedMetric
-        ? (assetSummaryValue >= 0 ? '+' : '-')
-        : (assetSummaryValue < 0 ? '-' : '');
-    const assetSummaryClass = isAssetProfitMetric
-        ? (assetSummaryValue >= 0 ? 'text-success' : 'text-danger')
-        : 'text-success';
-    const canShowAssetSummary = !loadingPrice && Number.isFinite(assetSummaryValue);
+    const hideMoney = value => hideBalances ? MASK : value;
+    const priceKnown = !loadingPrice && !valuationUnavailable;
+    const hasRealized = !missingCostFx && Math.abs(realizedProfitBase) >= 0.005;
+    const returnMetrics = hasRealized ? ['total', 'unrealized', 'realized'] : ['total'];
+    const shownReturnMetric = returnMetrics.includes(returnMetric) ? returnMetric : 'total';
+    const returnFigure = {
+        total: { label: 'Total return', value: totalProfitBase, basis: currentCostBasisBase },
+        unrealized: { label: 'Unrealized', value: unrealizedProfitBase, basis: currentCostBasisBase },
+        realized: { label: 'Realized', value: missingCostFx ? null : realizedProfitBase, basis: null }
+    }[shownReturnMetric];
+    const returnPercent = returnFigure.basis > 0 && Number.isFinite(returnFigure.value)
+        ? (returnFigure.value / returnFigure.basis) * 100 : null;
+    const heldText = `${hideBalances ? '••••' : formatQuantity(heldAmount, { maxDecimals: 6 })} ${heldTicker}`;
+    const positionItems = [
+        {
+            label: 'Value',
+            value: priceKnown ? hideMoney(formatMoney(currentValueBase, baseCurrency)) : heldText,
+            sub: priceKnown
+                ? `${heldText}${walletBalance > 0 && !hideBalances ? ` · ${formatQuantity(walletBalance, { maxDecimals: 6 })} in wallets` : ''}`
+                : null
+        },
+        !isSelectedFiat && canShowAveragePurchase && { label: 'Avg cost', value: formatPrice(averagePurchasePrice, baseCurrency) },
+        !isSelectedFiat && priceKnown && {
+            id: 'return',
+            label: returnMetrics.length > 1 ? <>{returnFigure.label}<ChevronsUpDown size={11} aria-hidden="true" /></> : returnFigure.label,
+            value: !Number.isFinite(returnFigure.value) ? '—'
+                : hideBalances ? (returnPercent === null ? MASK : formatPercent(returnPercent))
+                    : formatMoney(returnFigure.value, baseCurrency, { signed: true }),
+            tone: changeTone(returnFigure.value),
+            sub: !hideBalances && returnPercent !== null ? formatPercent(returnPercent) : null,
+            subTone: changeTone(returnFigure.value),
+            onClick: returnMetrics.length > 1
+                ? () => setReturnMetric(returnMetrics[(returnMetrics.indexOf(shownReturnMetric) + 1) % returnMetrics.length])
+                : undefined,
+            ariaLabel: returnMetrics.length > 1 ? `${returnFigure.label}, tap to switch` : undefined
+        }
+    ];
 
     const handleAssetSelect = (asset) => {
         const balance = calculateAssetAccounting(transactions, asset.symbol, baseCurrency).currentBalance;
@@ -657,7 +681,9 @@ export default function TransactionModal({
         });
         setCurrentView('LIST');
         setAssetTab('overview');
+        setReturnMetric('total');
         setEditingTx(null);
+        resetChartInteraction();
     };
 
     // Watchlist handlers
@@ -690,6 +716,8 @@ export default function TransactionModal({
         if (currentView === 'FORM') {
             setCurrentView('LIST');
             setEditingTx(null);
+        } else if (currentView === 'LOAN_FORM') {
+            setCurrentView('SEARCH');
         } else {
             // Close modal from SEARCH or LIST views
             onClose();
@@ -724,295 +752,245 @@ export default function TransactionModal({
         } : prev);
     }, []);
 
+    const handleLoanCreate = async (terms, disbursement) => {
+        if (!onCreateLoan) return;
+        const loan = await onCreateLoan(terms, disbursement);
+        setSelectedAsset({
+            symbol: loan.symbol,
+            name: loan.name,
+            amount: disbursement.baseAmount,
+            walletAmount: 0,
+            hasWalletPosition: false,
+            originalType: 'LOAN',
+            currency: loan.currency,
+            isBareCurrencyOrigin: false
+        });
+        setAssetTab('overview');
+        setEditingTx(null);
+        setCurrentView('LIST');
+    };
+
+    const handleLoanTermsSave = async (terms) => {
+        if (!selectedLoan) return;
+        await onUpdateLoan?.(selectedLoan.id, terms);
+        setSelectedAsset(prev => prev ? { ...prev, name: terms.name } : prev);
+        setIsEditingLoanTerms(false);
+    };
+
+    // Accrued loan value over time; orphan loan entries (no terms) get no market lookup.
+    const loanHistory = useMemo(() => {
+        if (!isLoanSymbol(selectedAssetSymbol)) return null;
+        if (!selectedLoan) return [];
+        return buildLoanHistory(selectedLoan, transactions).map(point => ({ date: point.date, price: point.value }));
+    }, [selectedAssetSymbol, selectedLoan, transactions]);
+
     // The add/edit FORM is a bottom sheet layered on top of the asset view,
     // which stays mounted underneath so dismissing the sheet lands back on it.
     const isFormOpen = currentView === 'FORM' && !!selectedAsset;
     const showAssetView = (currentView === 'LIST' || isFormOpen) && !!selectedAsset;
+    const isOrphanLoan = isLoanSymbol(selectedAsset?.symbol) && !selectedLoan;
+
+    const headerTitle = (() => {
+        if (currentView === 'SEARCH') return 'Add asset';
+        if (currentView === 'LOAN_FORM') return 'New loan';
+        if (selectedLoan) return selectedLoan.name || 'Loan';
+        const baseSymbol = selectedAsset?.symbol?.split(/[-/]/)[0];
+        const commodityName = COMMODITY_NAMES[baseSymbol];
+        if (commodityName) {
+            const quoteCurr = editingTx?.quoteCurrency?.toUpperCase() || selectedAsset?.currency || 'USD';
+            return `${commodityName} ${quoteCurr}`;
+        }
+        if (editingTx?.quoteCurrency && selectedAsset?.name) {
+            return selectedAsset.name.replace(/\s+[A-Z]{3}$/, ` ${editingTx.quoteCurrency.toUpperCase()}`);
+        }
+        return selectedAsset?.name || selectedAsset?.symbol || 'Details';
+    })();
+    const headerSubtitle = !showAssetView || !selectedAsset?.symbol ? null
+        : isLoanSymbol(selectedAsset.symbol) ? [selectedLoan?.project || 'Private loan', selectedLoan && loanRateLabel(selectedLoan, { withMode: true })].filter(Boolean).join(' · ')
+            : editingTx?.quoteCurrency ? `${selectedAsset.symbol.split(/[-/]/)[0]}-${editingTx.quoteCurrency.toUpperCase()}`
+                : selectedAsset.symbol;
+
+    // The price block follows the chart: a selected range, a scrubbed point, or now.
+    const rangeStartPrice = rangePerformance?.startPrice;
+    let priceFigure = null;
+    if (!loadingPrice && !valuationUnavailable) {
+        if (chartSelection?.start && chartSelection?.end) {
+            const from = chartSelection.start.value;
+            const to = chartSelection.end.value;
+            priceFigure = {
+                label: `${formatDate(chartSelection.start.date)} – ${formatDate(chartSelection.end.date)}`,
+                value: to,
+                change: to - from,
+                percent: from ? ((to - from) / from) * 100 : 0,
+                caption: null
+            };
+        } else if (chartScrub?.point) {
+            const value = chartScrub.point.value;
+            const change = Number.isFinite(rangeStartPrice) ? value - rangeStartPrice : null;
+            priceFigure = {
+                label: formatDate(chartScrub.point.date, { withTime: ['1D', '1W', '1M'].includes(rangePerformance?.range) }),
+                value,
+                change,
+                percent: change !== null && rangeStartPrice ? (change / rangeStartPrice) * 100 : null,
+                caption: RANGE_CAPTIONS[rangePerformance?.range] ? `vs. start of ${RANGE_CAPTIONS[rangePerformance.range].toLowerCase()}` : null
+            };
+        } else if (rangePerformance && rangePerformance.range !== '1D') {
+            priceFigure = {
+                label: 'Price',
+                value: livePriceSnapshot.priceBase,
+                change: rangePerformance.change,
+                percent: rangePerformance.changePercent,
+                caption: RANGE_CAPTIONS[rangePerformance.range]
+            };
+        } else {
+            priceFigure = {
+                label: 'Price',
+                value: livePriceSnapshot.priceBase,
+                change: livePriceSnapshot.absChangeBase,
+                percent: livePriceSnapshot.changePercent,
+                caption: 'Today'
+            };
+        }
+    }
+
+    const describeTransaction = (tx) => {
+        const isLoanTx = isLoanSymbol(tx.baseCurrency);
+        const dateStr = tx.date.split('T')[0];
+        const title = tx.isReverse
+            ? (tx.type === 'BUY' ? 'Spent' : 'Received')
+            : isLoanTx ? (LOAN_TRANSACTION_LABELS[tx.type] || tx.type) : (TRANSACTION_LABELS[tx.type] || tx.type);
+        const subtitle = `${tx.isReverse ? `${REVERSE_LABELS[tx.type] || 'Sold'} ${getAssetDisplayName(tx.baseCurrency)} · ` : ''}${formatDate(tx.date)}`;
+
+        if (tx.isReverse) {
+            return { title, subtitle, amount: formatMoney(tx.quoteAmount, tx.quoteCurrency) };
+        }
+        if (isLoanTx || tx.type === 'INCOME') {
+            const currency = tx.quoteCurrency || selectedLoan?.currency || baseCurrency;
+            const isPrincipal = ['BUY', 'DEPOSIT', 'WITHDRAW'].includes(tx.type);
+            const cashUnchanged = (tx.affectsQuoteBalance ?? tx.affectsFiatBalance) === false;
+            const parts = [];
+            if (tx.type === 'SELL') parts.push(`${formatMoney(tx.baseAmount, currency)} principal · ${formatMoney(Math.max(0, tx.quoteAmount - tx.baseAmount), currency)} interest`);
+            if (cashUnchanged) parts.push('cash unchanged');
+            return { title, subtitle, amount: formatMoney(isPrincipal ? tx.baseAmount : tx.quoteAmount, currency), detail: parts.join(' · ') || null };
+        }
+
+        const amount = `${formatQuantity(tx.baseAmount)} ${String(tx.baseCurrency).split(/[-/]/)[0]}`;
+        if (!(tx.quoteAmount > 0)) return { title, subtitle, amount };
+        const costFx = getHistoricalConversionRate(transactionFx, getDisplayQuoteCurrency(tx), baseCurrency, dateStr) || 0;
+        const costBase = tx.quoteAmount * costFx;
+        if (!(costBase > 0)) return { title, subtitle, amount };
+        const unitPrice = formatPrice(costBase / tx.baseAmount, baseCurrency);
+        let profit = null;
+        if (tx.type === 'BUY' && !loadingPrice && !valuationUnavailable) {
+            const pnl = tx.baseAmount * liveAssetPrice * fxRate - costBase;
+            profit = { value: pnl, percent: (pnl / costBase) * 100 };
+        }
+        return { title, subtitle, amount, detail: `at ${unitPrice}`, profit };
+    };
 
     return (
-        <div
-            className="animate-modal"
-            style={{
-                position: 'fixed',
-                inset: 0,
-                zIndex: 9999,
-                backgroundColor: '#000',
-                color: 'white',
-                display: 'flex',
-                flexDirection: 'column',
-                paddingTop: 'env(safe-area-inset-top, 0px)',
-                paddingBottom: 'env(safe-area-inset-bottom, 0px)'
-            }}
-        >
-            {/* Header Area */}
-            <div
-                className="flex items-center justify-between p-4 sm:p-6 sm:px-8"
-                style={{ borderBottom: '1px solid #262626', flexShrink: 0 }}
-            >
-                <div className="flex items-center gap-4">
-                    <button
-                        onClick={handleBack}
-                        className="p-2 -ml-2 rounded-full hover-bg-surface transition-all text-muted hover:text-white"
-                        style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: 'inherit' }}
-                    >
-                        <ArrowLeft size={24} />
-                    </button>
-                    <div className="flex flex-col min-w-0">
-                        <h2 className="text-xl sm:text-2xl font-bold tracking-tight truncate" style={{ margin: 0 }}>
-                            {currentView === 'SEARCH' ? 'Add Asset' : (() => {
-                                // Get base symbol without currency suffix
-                                const baseSymbol = selectedAsset?.symbol?.split(/[-/]/)[0];
-                                
-                                // Check if it's a commodity
-                                const commodityName = COMMODITY_NAMES[baseSymbol];
-                                if (commodityName) {
-                                    const quoteCurr = editingTx?.quoteCurrency?.toUpperCase() || selectedAsset?.currency || 'USD';
-                                    return `${commodityName} ${quoteCurr}`;
-                                }
-                                
-                                // Regular asset - reconstruct name with correct currency
-                                if (editingTx?.quoteCurrency && selectedAsset?.name) {
-                                    return selectedAsset.name.replace(/\s+[A-Z]{3}$/, ` ${editingTx.quoteCurrency.toUpperCase()}`);
-                                }
-                                
-                                return selectedAsset?.name || selectedAsset?.symbol || 'Details';
-                            })()}
-                        </h2>
-                        {showAssetView && selectedAsset?.symbol && (
-                            <span className="text-[10px] sm:text-xs text-muted font-bold truncate uppercase tracking-widest opacity-80">
-                                {editingTx?.quoteCurrency
-                                    ? `${selectedAsset.symbol.split(/[-/]/)[0]}-${editingTx.quoteCurrency.toUpperCase()}`
-                                    : selectedAsset.symbol}
-                            </span>
-                        )}
-                    </div>
+        <div className="asset-modal animate-modal">
+            <div className="modal-header">
+                <button type="button" onClick={handleBack} className="icon-button" aria-label="Back" style={{ marginLeft: '-8px' }}>
+                    <ArrowLeft size={22} />
+                </button>
+                <div className="flex flex-col min-w-0 flex-1" style={{ gap: '1px' }}>
+                    <h2 className="modal-title truncate">{headerTitle}</h2>
+                    {headerSubtitle && <span className="label truncate">{headerSubtitle}</span>}
                 </div>
-                {showAssetView && (
-                    isWatchlist ? (
-                        // Watchlist mode - show add/remove button
-                        isInWatchlist ? (
-                            <button
-                                onClick={handleRemoveFromWatchlist}
-                                className="btn flex items-center gap-2"
-                                style={{
-                                    padding: '10px 20px',
-                                    background: '#ef4444',
-                                    color: 'white',
-                                    border: 'none',
-                                    fontWeight: '700'
-                                }}
-                            >
-                                <EyeOff size={18} />
-                                <span className="hidden sm:inline">Remove</span>
-                            </button>
-                        ) : (
-                            <button
-                                onClick={handleAddToWatchlist}
-                                className="btn flex items-center gap-2"
-                                style={{
-                                    padding: '10px 20px',
-                                    background: 'white',
-                                    color: 'black',
-                                    border: 'none',
-                                    fontWeight: '700'
-                                }}
-                            >
-                                <Eye size={18} />
-                                <span className="hidden sm:inline">Add to Watchlist</span>
-                            </button>
-                        )
-                    ) : (
-                        // Regular portfolio mode - show add transaction button
-                        <button
-                            onClick={() => { setEditingTx(null); setCurrentView('FORM'); }}
-                            className="btn flex items-center gap-2"
-                            style={{ padding: '10px 20px' }}
-                        >
-                            <Plus size={18} />
-                            <span className="hidden sm:inline">Add Transaction</span>
-                        </button>
-                    )
-                )}
             </div>
 
-            <div
-                ref={modalRef}
-                className="flex-1 overflow-y-auto p-6"
-                style={{
-                    minHeight: 0,
-                    paddingBottom: '40px',
-                    WebkitOverflowScrolling: 'touch',
-                    overscrollBehavior: 'contain'
-                }}
-            >
-                <div style={{ maxWidth: '800px', margin: '0 auto', width: '100%' }}>
+            <div ref={modalRef} className="modal-body">
+                <div className="modal-content">
 
                     {currentView === 'SEARCH' && (
-                        <AssetSearch onSelect={handleAssetSelect} onCancel={onClose} />
+                        <AssetSearch
+                            onSelect={handleAssetSelect}
+                            onCancel={onClose}
+                            onCreateLoan={!isWatchlist && onCreateLoan ? () => setCurrentView('LOAN_FORM') : undefined}
+                        />
+                    )}
+
+                    {currentView === 'LOAN_FORM' && (
+                        <div className="animate-enter" style={{ maxWidth: '600px', margin: '0 auto' }}>
+                            <LoanForm
+                                baseCurrency={baseCurrency}
+                                transactions={transactions}
+                                portfolios={portfolios}
+                                currentPortfolioId={currentPortfolioId}
+                                onSubmit={handleLoanCreate}
+                                onCancel={() => setCurrentView('SEARCH')}
+                            />
+                        </div>
                     )}
 
                     {showAssetView && (
-                        <div className="flex flex-col gap-4">
-                            {/* Tab Navigation - only show for individual stocks (EQUITY) AND NOT WATCHLIST */}
+                        <div className="flex flex-col" style={{ gap: 'var(--space-5)' }}>
                             {selectedAsset.originalType === 'EQUITY' && !isWatchlist && (
-                                <div className="flex gap-2 p-1 rounded-full" style={{ background: '#171717' }}>
-                                    <button
-                                        onClick={() => setAssetTab('overview')}
-                                        className="flex-1 text-xs font-bold rounded-full transition-all"
-                                        style={{
-                                            background: assetTab === 'overview' ? 'white' : 'transparent',
-                                            color: assetTab === 'overview' ? 'black' : '#a1a1aa',
-                                            border: 'none',
-                                            cursor: 'pointer',
-                                            padding: '12px 16px',
-                                            boxShadow: assetTab === 'overview' ? '0 4px 6px -1px rgba(0, 0, 0, 0.1)' : 'none'
-                                        }}
-                                    >
-                                        OVERVIEW
-                                    </button>
-                                    <button
-                                        onClick={() => setAssetTab('financials')}
-                                        className="flex-1 text-xs font-bold rounded-full transition-all"
-                                        style={{
-                                            background: assetTab === 'financials' ? 'white' : 'transparent',
-                                            color: assetTab === 'financials' ? 'black' : '#a1a1aa',
-                                            border: 'none',
-                                            cursor: 'pointer',
-                                            padding: '12px 16px',
-                                            boxShadow: assetTab === 'financials' ? '0 4px 6px -1px rgba(0, 0, 0, 0.1)' : 'none'
-                                        }}
-                                    >
-                                        FINANCIALS
-                                    </button>
-                                </div>
+                                <Segmented
+                                    variant="tabs"
+                                    ariaLabel="Asset view"
+                                    options={[{ id: 'overview', label: 'Overview' }, { id: 'financials', label: 'Financials' }]}
+                                    value={assetTab}
+                                    onChange={(tab) => { resetChartInteraction(); setAssetTab(tab); }}
+                                />
                             )}
 
-                            {/* Overview Tab */}
                             {assetTab === 'overview' && (
-                                <div className="flex flex-col gap-2">
-                                    <div className="flex justify-between items-start mb-4 gap-4">
-                                        <div className="flex flex-col flex-1 items-start">
-                                            <span className="text-xs sm:text-sm text-muted uppercase tracking-wider flex items-center gap-1.5">
-                                                Current Price
-                                                {currentMarketState && currentMarketState !== 'REGULAR' && currentMarketState !== 'CLOSED' && (
-                                                    <span className="inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded-full" style={{ background: 'rgba(255,255,255,0.1)', marginLeft: '5px' }}>
-                                                        {currentMarketState.includes('PRE') ? (
-                                                            <Sun size={10} className="text-amber-400" />
-                                                        ) : (
-                                                            <Moon size={10} className="text-blue-400" />
-                                                        )}
-                                                        <span style={{ display: 'none' }} className="opacity-80">{currentMarketState.includes('PRE') ? 'Pre' : 'After'}</span>
-                                                    </span>
-                                                )}
-                                            </span>
-                                            {loadingPrice ? (
-                                                <div className="h-7 w-24 bg-white-10 rounded animate-pulse mt-1" />
-                                            ) : valuationUnavailable ? <p className="text-muted text-sm">Price unavailable</p> : (() => {
-                                                const displayChange = livePriceSnapshot.changePercent;
-                                                const displayAbsChange = livePriceSnapshot.absChange;
-                                                return (
-                                                    <div className="flex flex-col">
-                                                        <div className="flex items-baseline gap-2">
-                                                            <span className={`text sm:text-2xl font-bold`}>
-                                                                {livePriceSnapshot.priceBase.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} {baseCurrency === 'USD' ? '$' : baseCurrency}
-                                                            </span>
-                                                            {/* 1D change on the right when viewing different timeframe - ONLY FOR WATCHLIST */}
-                                                            {rangePerformance && rangePerformance.range !== '1D' && isWatchlist && (
-                                                                <span className={`text-xs font-medium ${displayChange >= 0 ? 'text-success' : 'text-danger'}`}>
-                                                                    {displayAbsChange >= 0 ? '+' : ''}{livePriceSnapshot.absChangeBase.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ({displayChange >= 0 ? '+' : ''}{displayChange.toFixed(2)}%)
-                                                                </span>
-                                                            )}
-                                                        </div>
-                                                        {/* Show 1D change below when viewing 1D, or selected timeframe when not 1D */}
-                                                        {(!rangePerformance || rangePerformance.range === '1D') ? (
-                                                            <span className={`text-xs font-medium ${displayChange >= 0 ? 'text-success' : 'text-danger'}`}>
-                                                                {displayAbsChange >= 0 ? '+' : ''}{livePriceSnapshot.absChangeBase.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ({displayChange >= 0 ? '+' : ''}{displayChange.toFixed(2)}%)
-                                                            </span>
-                                                        ) : (
-                                                            <span className={`text-xs font-medium ${rangePerformance.changePercent >= 0 ? 'text-success' : 'text-danger'}`}>
-                                                                {rangePerformance.change >= 0 ? '+' : ''}{(rangePerformance.change * fxRate).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ({rangePerformance.changePercent >= 0 ? '+' : ''}{rangePerformance.changePercent.toFixed(2)}%)
-                                                            </span>
-                                                        )}
-                                                    </div>
-                                                );
-                                            })()}
-                                        </div>
-                                        {/* Hide Avg Purchase and Total Value for Watchlists */}
-                                        {!isWatchlist && (
-                                            <>
-                                                {(canShowAveragePurchase || walletBalance > 0) && (
-                                                    <button
-                                                        type="button"
-                                                        onClick={canShowAveragePurchase ? togglePurchaseInfoMetric : undefined}
-                                                        className="flex flex-col flex-1 items-center active-scale"
-                                                        style={{
-                                                            background: 'transparent',
-                                                            border: 'none',
-                                                            padding: 0,
-                                                            cursor: canShowAveragePurchase ? 'pointer' : 'default',
-                                                            touchAction: 'manipulation',
-                                                            minHeight: '48px'
-                                                        }}
-                                                        title={canShowAveragePurchase ? `Show ${nextPurchaseInfoLabel}` : undefined}
-                                                        aria-label={`${purchaseInfoLabel}: ${purchaseInfoValue}`}
-                                                    >
-                                                        <span className="text-xs sm:text-sm text-muted uppercase tracking-wider text-center">{purchaseInfoLabel}</span>
-                                                        {loadingPrice && purchaseInfoMode === 'average' ? (
-                                                            <div className="h-7 w-24 bg-white-10 rounded animate-pulse mt-1" />
-                                                        ) : (
-                                                            <span className="text sm:text-2xl text-center">
-                                                                {purchaseInfoValue}
-                                                            </span>
-                                                        )}
-                                                    </button>
-                                                )}
-                                                <button
-                                                    type="button"
-                                                    onClick={toggleAssetSummaryMetric}
-                                                    className="flex flex-col flex-1 items-end text-right active-scale"
-                                                    style={{
-                                                        background: 'transparent',
-                                                        border: 'none',
-                                                        padding: 0,
-                                                        cursor: 'pointer',
-                                                        touchAction: 'manipulation',
-                                                        minHeight: '48px'
-                                                    }}
-                                                    title={`Show ${nextAssetSummaryLabel}`}
-                                                    aria-label={`${assetSummaryLabel}: ${hideBalances ? 'hidden' : !canShowAssetSummary ? 'unavailable' : `${assetSummarySign}${Math.abs(assetSummaryValue).toLocaleString(undefined, { maximumFractionDigits: 2 })} ${baseCurrency === 'USD' ? '$' : baseCurrency}`}`}
-                                                >
-                                                    <span className="text-xs sm:text-sm text-muted uppercase tracking-wider text-right">{assetSummaryLabel}</span>
-                                                    {!canShowAssetSummary ? (
-                                                        loadingPrice ? <div className="h-7 w-32 bg-white-10 rounded animate-pulse mt-1" /> : <span className="text-muted text-sm">Unavailable</span>
-                                                    ) : (
-                                                        <span className={`text sm:text-2xl text-right ${assetSummaryClass}`}>
-                                                            {hideBalances ? '••••••' : `${assetSummarySign}${Math.abs(assetSummaryValue).toLocaleString(undefined, { maximumFractionDigits: 2 })} ${baseCurrency === 'USD' ? '$' : baseCurrency}`}
+                                <>
+                                    {selectedLoan ? (
+                                        <LoanValue
+                                            loan={selectedLoan}
+                                            transactions={assetTransactions}
+                                            baseCurrency={baseCurrency}
+                                            fxRate={fxRate}
+                                            hideBalances={hideBalances}
+                                            scrub={chartScrub?.point || null}
+                                        />
+                                    ) : isOrphanLoan ? (
+                                        <p className="label" style={{ margin: 0 }}>This loan has no terms on this device. Restore a complete backup to value it.</p>
+                                    ) : (
+                                        <div className="flex flex-col" style={{ gap: '4px' }}>
+                                                <span className="label flex items-center" style={{ gap: '6px' }}>
+                                                    {priceFigure?.label || 'Price'}
+                                                    {!chartScrub && currentMarketState?.includes('PRE') && <span className="flex items-center" style={{ gap: '3px' }}><Sun size={12} /> Pre-market</span>}
+                                                    {!chartScrub && currentMarketState?.includes('POST') && <span className="flex items-center" style={{ gap: '3px' }}><Moon size={12} /> After hours</span>}
+                                                </span>
+                                                {loadingPrice ? (
+                                                    <>
+                                                        <div className="skeleton" style={{ width: 160, height: 30 }} />
+                                                        <div className="skeleton" style={{ width: 120, height: 14, marginTop: 4 }} />
+                                                    </>
+                                                ) : !priceFigure ? (
+                                                    <span className="stat-value text-muted">Price unavailable</span>
+                                                ) : (
+                                                    <>
+                                                        <span className="hero-value" style={{ fontSize: '34px' }}>
+                                                            <Money value={priceFigure.value} currency={baseCurrency} />
                                                         </span>
-                                                    )}
-                                                </button>
-                                            </>
-                                        )}
-                                    </div>
-                                    <div className="w-full">
-                                        {!heavyReady ? <ChartSkeleton /> : (
+                                                        {Number.isFinite(priceFigure.change) && (
+                                                            <span className="flex items-center flex-wrap" style={{ gap: '2px 8px', fontSize: 'var(--fs-sm)' }}>
+                                                                <Delta value={priceFigure.change} percent={priceFigure.percent} currency={baseCurrency} className="font-medium" />
+                                                                {priceFigure.caption && <span className="label">{priceFigure.caption}</span>}
+                                                            </span>
+                                                        )}
+                                                    </>
+                                                )}
+                                        </div>
+                                    )}
+
+                                    {!heavyReady ? <ChartSkeleton /> : (
                                         <AssetChart
                                             symbol={selectedAsset.symbol}
                                             baseCurrency={baseCurrency}
                                             fxRate={fxRate}
                                             parentLoading={loadingPrice}
                                             assetCurrency={selectedAsset.currency || priceData.currency}
-                                            // If it's a currency not equal to base, pass the constructed pair (e.g. AUDUSD=X)
-                                            // otherwise pass null to let AssetChart decide or use default logic
-                                            // Improved logic: Anchored to USD
+                                            // Bare currencies chart against USD (AUD -> AUDUSD=X).
                                             chartSymbol={(() => {
                                                 const s = selectedAsset.symbol;
-                                                // Only treat as currency if explicitly marked - don't assume based on length
-                                                const isBare = selectedAsset.isBareCurrencyOrigin ||
-                                                    selectedAsset.originalType === 'CURRENCY';
-
+                                                const isBare = selectedAsset.isBareCurrencyOrigin || selectedAsset.originalType === 'CURRENCY';
                                                 if (isBare && !s.includes('=X') && !s.includes('-')) {
-                                                    // Always use USD pair (AUD -> AUDUSD=X)
-                                                    // If the asset is 'USD', it's special (handled by AssetChart or no chart)
                                                     if (s === 'USD') return s;
                                                     return `${s}USD=X`;
                                                 }
@@ -1020,18 +998,82 @@ export default function TransactionModal({
                                             })()}
                                             onRangePerformance={setRangePerformance}
                                             transactions={chartTransactions}
+                                            localHistory={loanHistory}
+                                            ranges={loanHistory ? LOAN_CHART_RANGES : undefined}
+                                            matchMarkerPrices={!loanHistory}
+                                            markerLabels={loanHistory ? LOAN_TRANSACTION_LABELS : null}
+                                            onScrub={setChartScrub}
+                                            onRangeSelect={setChartSelection}
                                         />
-                                        )}
-                                    </div>
-
-                                    {/* Earnings Event - for both watchlist and portfolio equities */}
-                                    {selectedAsset.originalType === 'EQUITY' && (
-                                        <div className="mt-4">
-                                            <EarningsEvent symbol={selectedAsset.symbol} />
-                                        </div>
                                     )}
 
-                                    {/* Watch-only wallet tracking for on-chain assets */}
+                                    {selectedLoan && (
+                                        <LoanDetails
+                                            loan={selectedLoan}
+                                            transactions={assetTransactions}
+                                            baseCurrency={baseCurrency}
+                                            hideBalances={hideBalances}
+                                            realizedProfitBase={missingCostFx ? null : realizedProfitBase}
+                                        />
+                                    )}
+
+                                    {!isWatchlist && !selectedLoan && !isOrphanLoan && (heldAmount !== 0 || assetTransactions.length > 0) && (
+                                        <StatStrip items={positionItems} />
+                                    )}
+
+                                    {selectedAsset.originalType === 'EQUITY' && (
+                                        <EarningsEvent symbol={selectedAsset.symbol} />
+                                    )}
+
+                                    {!isWatchlist && (
+                                        <section aria-label="History">
+                                            <h3 className="section-title" style={{ marginBottom: '4px' }}>History</h3>
+                                            {assetTransactions.length === 0 ? (
+                                                <p className="label" style={{ padding: 'var(--space-5) 0', textAlign: 'center', margin: 0 }}>
+                                                    {selectedLoan ? 'No entries yet.' : 'No transactions yet.'}
+                                                </p>
+                                            ) : (
+                                                <div className="list-group is-plain">
+                                                    {assetTransactions.map(tx => {
+                                                        const row = describeTransaction(tx);
+                                                        // Mirrored cash legs belong to another asset's entry, so they are not editable here.
+                                                        const RowTag = tx.isReverse ? 'div' : 'button';
+                                                        return (
+                                                            <RowTag
+                                                                key={tx.id}
+                                                                {...(tx.isReverse
+                                                                    ? { className: 'list-row is-static' }
+                                                                    : { type: 'button', className: 'list-row', onClick: () => handleEdit(tx), 'aria-label': `Edit ${row.title.toLowerCase()} from ${row.subtitle}` })}
+                                                            >
+                                                                <div className="flex flex-col" style={{ gap: '2px', flex: '0 1 auto', minWidth: '84px' }}>
+                                                                    <span className="list-row-title">{row.title}</span>
+                                                                    <span className="list-row-subtitle">{row.subtitle}</span>
+                                                                    {tx.notes && <span className="hint" style={{ whiteSpace: 'pre-wrap' }}>{tx.notes}</span>}
+                                                                </div>
+                                                                <div className="flex flex-col items-end flex-1 min-w-0" style={{ gap: '2px', textAlign: 'right' }}>
+                                                                    <span className="list-row-title">{hideBalances ? '••••' : row.amount}</span>
+                                                                    {(row.detail || row.profit) && !hideBalances && (
+                                                                        <span className="list-row-subtitle">
+                                                                            {row.detail}
+                                                                            {row.profit && (
+                                                                                <span className={changeTone(row.profit.value)}>
+                                                                                    {row.detail ? ' · ' : ''}{formatMoney(row.profit.value, baseCurrency, { signed: true })} ({formatPercent(row.profit.percent)})
+                                                                                </span>
+                                                                            )}
+                                                                        </span>
+                                                                    )}
+                                                                    {row.profit && hideBalances && (
+                                                                        <span className={`list-row-subtitle ${changeTone(row.profit.value)}`}>{formatPercent(row.profit.percent)}</span>
+                                                                    )}
+                                                                </div>
+                                                            </RowTag>
+                                                        );
+                                                    })}
+                                                </div>
+                                            )}
+                                        </section>
+                                    )}
+
                                     {['BTC', 'ETH'].includes(normalizeAsset(selectedAsset.symbol)) && (
                                         <WalletTracker
                                             chain={normalizeAsset(selectedAsset.symbol)}
@@ -1045,166 +1087,126 @@ export default function TransactionModal({
                                         />
                                     )}
 
-                                    {/* Transactions List - hidden for watchlists */}
-                                    {!isWatchlist ? (
-                                        <div>
-                                            <h3 className="text-xl text-muted" style={{ marginBottom: '1rem' }}>History</h3>
-                                            <div className="flex flex-col gap-2">
-                                                {assetTransactions.length === 0 ? (
-                                                    <p className="text-muted py-10 text-center">No transactions recorded.</p>
-                                                ) : (
-                                                    assetTransactions.map(tx => (
-                                                        <div key={tx.id} className="flex justify-between items-center p-4 rounded-2xl hover-bg-surface transition-all" style={{ border: '1px solid transparent' }}>
-                                                            <div className="flex items-center gap-4">
-                                                                <div style={{ width: 8, height: 8, borderRadius: '50%', backgroundColor: tx.isReverse ? (tx.type === 'BUY' ? '#ef4444' : '#22c55e') : (['BUY', 'DEPOSIT'].includes(tx.type) ? '#22c55e' : '#ef4444') }} />
-                                                                <div className="flex flex-col">
-                                                                    <span className="font-bold" style={{ fontSize: '1rem' }}>
-                                                                        {tx.isReverse ? (tx.type === 'BUY' ? 'SPENT' : 'RECEIVED') : tx.type}
-                                                                    </span>
-                                                                    <span className="text-sm text-muted">
-                                                                        {tx.isReverse ? `${tx.type === 'BUY' ? 'Purchased' : 'Sold'} ${tx.baseCurrency} | ` : ''}
-                                                                        {new Date(tx.date).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' })}
-                                                                    </span>
-                                                                    {tx.notes && (
-                                                                        <span className="text-xs text-muted" style={{ fontStyle: 'italic', marginTop: '2px', opacity: 0.7 }}>
-                                                                            {tx.notes}
-                                                                        </span>
-                                                                    )}
-                                                                </div>
-                                                            </div>
-
-                                                            <div className="flex-1 flex flex-col items-end">
-                                                                {tx.type === 'BUY' && !tx.isReverse && (
-                                                                    <>
-                                                                        {loadingPrice || valuationUnavailable ? (
-                                                                            <div className="h-5 w-20 bg-white-10 rounded animate-pulse ml-auto" style={{ marginRight: '10px' }} />
-                                                                        ) : (
-                                                                            (() => {
-                                                                                const dateStr = tx.date.split('T')[0];
-                                                                                const txQuoteCurrency = getDisplayQuoteCurrency(tx);
-                                                                                const costFx = getHistoricalConversionRate(transactionFx, txQuoteCurrency, baseCurrency, dateStr) || 0;
-                                                                                const costBase = tx.quoteAmount * costFx;
-                                                                                const currentValBase = tx.baseAmount * liveAssetPrice * fxRate;
-                                                                                const pnlBase = currentValBase - costBase;
-                                                                                const pnlPercent = costBase > 0 ? (pnlBase / costBase) * 100 : 0;
-                                                                                if (costBase <= 0) {
-                                                                                    return null;
-                                                                                }
-                                                                                return (
-                                                                                    <span style={{ textAlign: 'right', marginRight: '10px' }} className={`text-sm font-bold ${pnlBase >= 0 ? 'text-success' : 'text-danger'}`}>
-                                                                                        {hideBalances ? '' : `${pnlBase >= 0 ? '+' : '-'}${Math.abs(pnlBase).toLocaleString(undefined, { maximumFractionDigits: 2 })} ${baseCurrency === 'USD' ? '$' : baseCurrency} `}
-                                                                                        ({pnlPercent >= 0 ? '+' : ''}{pnlPercent.toFixed(2)}%)
-                                                                                    </span>
-                                                                                );
-                                                                            })()
-                                                                        )}
-                                                                    </>
-                                                                )}
-                                                            </div>
-
-                                                            <div className="flex items-center gap-4">
-                                                                <div className="flex flex-col items-end">
-                                                                    <span className="font-mono font-medium" style={{ fontSize: '1rem' }}>
-                                                                        {hideBalances ? '••••' : (tx.isReverse ? tx.quoteAmount : tx.baseAmount).toLocaleString()} {tx.isReverse ? tx.quoteCurrency : tx.baseCurrency}
-                                                                    </span>
-                                                                    {(tx.quoteAmount > 0 && !tx.isReverse) && (
-                                                                        <div className="flex items-center gap-1">
-                                                                            {loadingPrice ? (
-                                                                                <div className="h-3 w-12 bg-white-10 rounded animate-pulse ml-auto" />
-                                                                            ) : (
-                                                                                <span className="text-xs text-muted">
-                                                                                    {(() => {
-                                                                                        const dateStr = tx.date.split('T')[0];
-                                                                                        const txQuoteCurrency = getDisplayQuoteCurrency(tx);
-                                                                                        const costFx = getHistoricalConversionRate(transactionFx, txQuoteCurrency, baseCurrency, dateStr) || 0;
-                                                                                        return `${((tx.quoteAmount / tx.baseAmount) * costFx).toLocaleString(undefined, { maximumFractionDigits: 2 })} ${baseCurrency === 'USD' ? '$' : baseCurrency}`;
-                                                                                    })()}
-                                                                                </span>
-                                                                            )}
-                                                                            {tx.type === 'BUY' && (
-                                                                                loadingPrice || valuationUnavailable ? (
-                                                                                    <div className="h-3 w-8 bg-white-10 rounded animate-pulse ml-auto" style={{ marginLeft: '5px' }} />
-                                                                                ) : (
-                                                                                    <span className={`text-xs text-[10px] ${(tx.affectsQuoteBalance ?? tx.affectsFiatBalance) === false ? 'text-muted/50 decoration-line-through' : 'text-muted'}`} title={(tx.affectsQuoteBalance ?? tx.affectsFiatBalance) === false ? "Did not affect balance" : "Affected balance"}>
-                                                                                        | {hideBalances ? '••••••' : (() => {
-                                                                                            const dateStr = tx.date.split('T')[0];
-                                                                                            const txQuoteCurrency = getDisplayQuoteCurrency(tx);
-                                                                                            const hFx = getHistoricalConversionRate(transactionFx, txQuoteCurrency, baseCurrency, dateStr) || 0;
-                                                                                            return `${(tx.quoteAmount * hFx).toLocaleString(undefined, { maximumFractionDigits: 2 })} ${baseCurrency === 'USD' ? '$' : baseCurrency}`;
-                                                                                        })()}
-                                                                                    </span>
-                                                                                )
-                                                                            )}
-                                                                        </div>
-                                                                    )}
-                                                                </div>
-
-                                                                <div className="flex flex-col">
-                                                                    {!tx.isReverse && (
-                                                                        <>
-                                                                            <button onClick={() => handleEdit(tx)} className="p-1 text-muted hover:text-white hover-bg-surface rounded-full transition-all" style={{ background: 'transparent', border: 'none', cursor: 'pointer' }}>
-                                                                                <Edit2 size={16} />
-                                                                            </button>
-                                                                            <button onClick={() => setDeleteConfirm({ id: tx.id, type: tx.type, date: tx.date })} className="p-1 text-danger hover-bg-surface rounded-full transition-all" style={{ background: 'transparent', border: 'none', cursor: 'pointer' }}>
-                                                                                <Trash2 size={16} />
-                                                                            </button>
-                                                                        </>
-                                                                    )}
-                                                                </div>
-                                                            </div>
-                                                        </div>
-                                                    ))
-                                                )}
-                                            </div>
-                                        </div>
-                                    ) : (
-                                        selectedAsset.originalType === 'EQUITY' && (
-                                            <div className="mt-8">
-                                                <FinancialInfo
-                                                    symbol={selectedAsset.symbol}
-                                                    baseCurrency={baseCurrency}
-                                                />
-                                            </div>
-                                        )
+                                    {isWatchlist && selectedAsset.originalType === 'EQUITY' && (
+                                        <FinancialInfo symbol={selectedAsset.symbol} currency={selectedAsset.currency || priceData.currency} />
                                     )}
-                                </div>
+
+                                    {selectedLoan && (
+                                        <LoanActions
+                                            onEdit={() => setIsEditingLoanTerms(true)}
+                                            onDelete={() => setLoanDeleteConfirm(true)}
+                                        />
+                                    )}
+                                </>
                             )}
 
-                            {/* Financials Tab */}
                             {assetTab === 'financials' && (
-                                <FinancialInfo
-                                    symbol={selectedAsset.symbol}
-                                    baseCurrency={baseCurrency}
-                                />
+                                <FinancialInfo symbol={selectedAsset.symbol} currency={selectedAsset.currency || priceData.currency} />
                             )}
                         </div>
                     )}
-
                 </div>
             </div>
+
+            {showAssetView && !isOrphanLoan && (
+                <div className="action-bar">
+                    <div>
+                        {isWatchlist ? (
+                            isInWatchlist ? (
+                                <button type="button" onClick={handleRemoveFromWatchlist} className="btn btn-secondary btn-block">
+                                    <EyeOff size={17} /> Remove from watchlist
+                                </button>
+                            ) : (
+                                <button type="button" onClick={handleAddToWatchlist} className="btn btn-block">
+                                    <Eye size={17} /> Add to watchlist
+                                </button>
+                            )
+                        ) : (
+                            <button type="button" onClick={() => { setEditingTx(null); setCurrentView('FORM'); }} className="btn btn-block">
+                                {selectedLoan ? 'Add entry' : 'Add transaction'}
+                            </button>
+                        )}
+                    </div>
+                </div>
+            )}
 
             {/* Add/Edit Transaction — bottom sheet over the asset view */}
             {isFormOpen && (
                 <BottomSheet
-                    title={editingTx ? 'Edit Transaction' : 'New Transaction'}
+                    title={selectedLoan ? (editingTx ? 'Edit entry' : 'New entry') : (editingTx ? 'Edit transaction' : 'New transaction')}
                     subtitle={selectedAsset?.name || selectedAsset?.symbol}
                     onClose={closeForm}
                 >
                     <div style={{ maxWidth: '600px', margin: '0 auto' }}>
-                        <TransactionForm
-                            holding={selectedAsset}
-                            existingTx={editingTx}
+                        {selectedLoan ? (
+                            <LoanTransactionForm
+                                loan={selectedLoan}
+                                existingTx={editingTx}
+                                transactions={transactions}
+                                onSave={(tx) => { onSave(tx); closeForm(); }}
+                                onCancel={closeForm}
+                            />
+                        ) : (
+                            <TransactionForm
+                                holding={selectedAsset}
+                                existingTx={editingTx}
+                                transactions={transactions}
+                                fetchedCurrency={selectedAsset.currency}
+                                portfolios={portfolios}
+                                currentPortfolioId={currentPortfolioId}
+                                baseCurrency={baseCurrency}
+                                onSave={(tx) => { onSave(tx); closeForm(); }}
+                                onCancel={closeForm}
+                            />
+                        )}
+                        {editingTx && (
+                            <div className="flex justify-center" style={{ marginTop: 'var(--space-3)' }}>
+                                <button
+                                    type="button"
+                                    className="btn-text is-danger"
+                                    onClick={() => setDeleteConfirm({
+                                        id: editingTx.id,
+                                        type: describeTransaction(editingTx).title,
+                                        date: editingTx.date
+                                    })}
+                                >
+                                    {selectedLoan ? 'Delete entry' : 'Delete transaction'}
+                                </button>
+                            </div>
+                        )}
+                    </div>
+                </BottomSheet>
+            )}
+
+            {isEditingLoanTerms && selectedLoan && (
+                <BottomSheet title="Loan terms" subtitle={selectedLoan.name} onClose={() => setIsEditingLoanTerms(false)}>
+                    <div style={{ maxWidth: '600px', margin: '0 auto' }}>
+                        <LoanForm
+                            loan={selectedLoan}
                             transactions={transactions}
-                            fetchedCurrency={selectedAsset.currency}
-                            portfolios={portfolios}
-                            currentPortfolioId={currentPortfolioId}
                             baseCurrency={baseCurrency}
-                            onSave={(tx) => { onSave(tx); closeForm(); }}
-                            onCancel={closeForm}
+                            onSubmit={handleLoanTermsSave}
+                            onCancel={() => setIsEditingLoanTerms(false)}
                         />
                     </div>
                 </BottomSheet>
             )}
+
+            <ConfirmModal
+                isOpen={loanDeleteConfirm && !!selectedLoan}
+                onClose={() => setLoanDeleteConfirm(false)}
+                onConfirm={async () => {
+                    const loan = selectedLoan;
+                    if (!loan) return;
+                    await onDeleteLoan?.(loan);
+                    onClose();
+                }}
+                title="Delete loan"
+                message={`Delete "${selectedLoan?.name || 'this loan'}" and its ${assetTransactions.length} ${assetTransactions.length === 1 ? 'entry' : 'entries'}? This cannot be undone.`}
+                confirmText="Delete"
+                cancelText="Cancel"
+                confirmStyle="danger"
+            />
 
             {/* Delete Confirmation Modal — sibling of the sheet so the sheet's
                 transform/overflow doesn't clip or offset this fixed overlay */}
@@ -1212,15 +1214,17 @@ export default function TransactionModal({
                 isOpen={deleteConfirm !== null}
                 onClose={() => setDeleteConfirm(null)}
                 onConfirm={() => {
-                    if (deleteConfirm) onDelete(deleteConfirm.id);
+                    if (!deleteConfirm) return;
+                    onDelete(deleteConfirm.id);
+                    if (editingTx?.id === deleteConfirm.id) closeForm();
                 }}
-                title="Delete Transaction"
-                message={`Delete this ${deleteConfirm?.type || 'transaction'} from ${deleteConfirm?.date ? new Date(deleteConfirm.date).toLocaleDateString() : 'this date'}? This cannot be undone.`}
+                title="Delete entry"
+                message={`Delete this ${deleteConfirm?.type?.toLowerCase() || 'entry'} from ${deleteConfirm?.date ? formatDate(deleteConfirm.date) : 'this date'}? This cannot be undone.`}
                 confirmText="Delete"
                 cancelText="Cancel"
                 confirmStyle="danger"
             />
-        </div >
+        </div>
     );
 }
 
@@ -1310,10 +1314,11 @@ function TransactionForm({ holding, existingTx, transactions, onSave, onCancel, 
     });
     const usesPrice = type === 'BUY' || type === 'SELL' || (type === 'DEPOSIT' && !isBareCurrency);
     const affectsQuoteBalance = type === 'BUY' || type === 'SELL';
-    const priceLabel = type === 'DEPOSIT' ? 'Cost basis per unit' : 'Price per unit';
+    const priceLabel = type === 'DEPOSIT' ? 'Cost per unit' : 'Price per unit';
     const totalLabel = type === 'DEPOSIT' ? 'Cost basis' : 'Total';
     const [amount, setAmount] = useState(existingTx?.baseAmount || '');
-    const [price, setPrice] = useState(existingTx ? (existingTx.quoteAmount / (existingTx.baseAmount || 1)) : '');
+    // An edited entry keeps its exact price (only float noise trimmed), so saving it unchanged keeps its total.
+    const [price, setPrice] = useState(existingTx ? Number((existingTx.quoteAmount / (existingTx.baseAmount || 1)).toFixed(8)) : '');
     const [date, setDate] = useState(existingTx?.date ? new Date(existingTx.date).toISOString().split('T')[0] : new Date().toISOString().split('T')[0]);
     const [notes, setNotes] = useState(existingTx?.notes || '');
     const [fee, setFee] = useState(existingTx?.fee || '');
@@ -1414,14 +1419,14 @@ function TransactionForm({ holding, existingTx, transactions, onSave, onCancel, 
                             if (!rate) throw new Error('Exchange rate unavailable. Enter the execution price manually.');
                             unitPrice = quote.price * rate;
                         }
-                        setPrice(unitPrice);
+                        setPrice(roundPrice(unitPrice));
                     }
                 } catch (e) { console.error(e); }
                 finally { setFetchingPrice(false); }
             }
             fetchPrice();
         } else if (existingTx && existingTx.quoteAmount && existingTx.baseAmount) {
-            setPrice(existingTx.quoteAmount / existingTx.baseAmount);
+            setPrice(Number((existingTx.quoteAmount / existingTx.baseAmount).toFixed(8)));
         }
     }, [sym, existingTx, isBareCurrency, isManualPrice, holding.originalType, quoteCurrency]);
 
@@ -1454,7 +1459,7 @@ function TransactionForm({ holding, existingTx, transactions, onSave, onCancel, 
                             if (!rate) throw new Error('Exchange rate unavailable. Enter the execution price manually.');
                             unitPrice = dayPrice.price * rate;
                         }
-                        setPrice(unitPrice);
+                        setPrice(roundPrice(unitPrice));
                     }
                 }
             } catch (e) { console.error(e); }
@@ -1520,158 +1525,64 @@ function TransactionForm({ holding, existingTx, transactions, onSave, onCancel, 
         onSave(tx);
     };
 
-    const labelStyle = { fontSize: '0.75rem', fontWeight: 'bold', color: '#a1a1aa', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '0.5rem', display: 'block' };
-    const compactSelectStyle = {
-        background: `#171717 url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='rgba(255,255,255,0.55)' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E") no-repeat right 10px center`,
-        border: '1px solid rgba(255, 255, 255, 0.1)',
-        borderRadius: '12px',
-        color: 'white',
-        cursor: 'pointer',
-        fontSize: '0.75rem',
-        fontWeight: 700,
-        minWidth: '92px',
-        outline: 'none',
-        padding: '8px 30px 8px 12px',
-        appearance: 'none',
-        WebkitAppearance: 'none',
-        MozAppearance: 'none'
-    };
+    const sizeLabel = sym.split(/[-/]/)[0];
+    const canUseMax = (type === 'SELL' || type === 'WITHDRAW') && holding.amount > 0;
+    const total = parseFloat(amount) * parseFloat(price);
 
     return (
-        <form onSubmit={handleSubmit} className="flex flex-col gap-4">
+        <form onSubmit={handleSubmit} className="form-stack">
+            <Segmented
+                variant="tabs"
+                ariaLabel="Transaction type"
+                options={availableTypes.map(t => ({ id: t, label: TRANSACTION_LABELS[t] || t }))}
+                value={type}
+                onChange={setType}
+            />
 
-            {/* Portfolio Selector - only show when in 'All' view with multiple portfolios */}
-            {showPortfolioSelector && (
-                <div>
-                    <label style={labelStyle}>Add to Portfolio</label>
-                    <select
-                        value={selectedPortfolioId}
-                        onChange={(e) => setSelectedPortfolioId(parseInt(e.target.value))}
-                        style={{
-                            width: '100%',
-                            background: `#171717 url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='18' height='18' viewBox='0 0 24 24' fill='none' stroke='rgba(255,255,255,0.5)' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E") no-repeat right 14px center`,
-                            border: '1px solid rgba(255, 255, 255, 0.1)',
-                            borderRadius: '12px',
-                            padding: '14px 44px 14px 14px',
-                            color: 'white',
-                            fontSize: '14px',
-                            fontWeight: '500',
-                            cursor: 'pointer',
-                            outline: 'none',
-                            appearance: 'none',
-                            WebkitAppearance: 'none',
-                            MozAppearance: 'none'
-                        }}
-                    >
-                        {portfolios.filter(p => !p.isWatchlist).map(p => (
-                            <option key={p.id} value={p.id} style={{ background: '#121212', color: 'white' }}>{p.name}</option>
-                        ))}
-                    </select>
-                </div>
-            )}
+            <AmountField
+                id="transaction-amount"
+                label="Amount"
+                value={amount}
+                onChange={setAmount}
+                unit={sizeLabel}
+                autoFocus
+                meta={(
+                    <>
+                        {usesPrice && Number.isFinite(total) && <span>{totalLabel} {formatMoney(total, quoteCurrency)}</span>}
+                        {canUseMax && (
+                            <button type="button" className="btn-text" style={{ minHeight: 0, fontSize: 'var(--fs-sm)' }} onClick={handleMax}>
+                                Max {formatQuantity(parseFloat(holding.amount) || 0)}
+                            </button>
+                        )}
+                    </>
+                )}
+            />
 
-            {/* Type Selector */}
-            <div className="flex gap-2 p-1 rounded-full" style={{ background: '#171717' }}>
-                {availableTypes.map(t => {
-                    const isActive = type === t;
-                    return (
-                        <button
-                            key={t}
-                            type="button"
-                            className={`flex-1 text-xs font-bold rounded-full transition-all`}
-                            style={{
-                                background: isActive ? 'white' : 'transparent',
-                                color: isActive ? 'black' : '#a1a1aa',
-                                border: 'none',
-                                cursor: 'pointer',
-                                padding: '12px 16px',
-                                boxShadow: isActive ? '0 4px 6px -1px rgba(0, 0, 0, 0.1)' : 'none'
-                            }}
-                            onClick={() => setType(t)}
+            <div className="form-list">
+                {showPortfolioSelector && (
+                    <FormRow label="Portfolio" htmlFor="transaction-portfolio">
+                        <select
+                            id="transaction-portfolio"
+                            className="form-input"
+                            value={selectedPortfolioId}
+                            onChange={(e) => setSelectedPortfolioId(parseInt(e.target.value))}
                         >
-                            {t}
-                        </button>
-                    )
-                })}
-            </div>
+                            {portfolios.filter(p => !p.isWatchlist).map(p => (
+                                <option key={p.id} value={p.id}>{p.name}</option>
+                            ))}
+                        </select>
+                    </FormRow>
+                )}
 
-            <div className="relative">
-                <label style={labelStyle}>Amount ({sym.split(/[-/]/)[0]})</label>
-                <div className="relative">
-                    <input
-                        type="number"
-                        step="any"
-                        required
-                        autoFocus
-                        className="input-reset"
-                        value={amount}
-                        onChange={e => setAmount(e.target.value)}
-                        placeholder="0.00"
-                        style={{ fontSize: '2rem', paddingLeft: '1rem', paddingRight: (type === 'SELL' || type === 'WITHDRAW') ? '5rem' : '1rem' }}
-                    />
-                    {(type === 'SELL' || type === 'WITHDRAW') && holding.amount > 0 && (
-                        <button
-                            type="button"
-                            onClick={handleMax}
-                            style={{
-                                position: 'absolute',
-                                right: '12px',
-                                top: '50%',
-                                transform: 'translateY(-50%)',
-                                backgroundColor: 'rgba(255, 255, 255, 0.1)',
-                                border: '1px solid rgba(255, 255, 255, 0.1)',
-                                color: 'white',
-                                fontSize: '10px',
-                                fontWeight: 'bold',
-                                padding: '6px 12px',
-                                borderRadius: '8px',
-                                cursor: 'pointer',
-                                transition: 'all 0.2s',
-                                backdropFilter: 'blur(4px)'
-                            }}
-                            className="hover:bg-white/20 active:scale-95"
-                        >
-                            MAX
-                        </button>
-                    )}
-                </div>
-            </div>
-
-            {usesPrice && (
-                <>
-                    <div>
-                        <div className="flex items-center justify-between gap-3" style={{ marginBottom: '0.5rem' }}>
-                            <label
-                                htmlFor="transaction-price"
-                                style={{ ...labelStyle, marginBottom: 0 }}
-                            >
-                                {priceLabel}
-                            </label>
-                            <div className="flex items-center gap-2">
-                                {fetchingPrice && <span className="animate-pulse text-xs font-bold uppercase tracking-wider" style={{ color: '#3b82f6' }}>Fetching...</span>}
-                                <select
-                                    aria-label="Price currency"
-                                    value={quoteCurrency}
-                                    onChange={e => {
-                                        setQuoteCurrency(e.target.value);
-                                        setUserModifiedQuoteCurrency(true);
-                                    }}
-                                    style={compactSelectStyle}
-                                >
-                                    {quoteCurrencyOptions.map(currency => (
-                                        <option key={currency} value={currency} style={{ background: '#121212', color: 'white' }}>
-                                            {currency}
-                                        </option>
-                                    ))}
-                                </select>
-                            </div>
-                        </div>
+                {usesPrice && (
+                    <FormRow label={priceLabel} hint={fetchingPrice ? 'Updating…' : null} htmlFor="transaction-price">
                         <input
                             id="transaction-price"
                             type="number"
                             step="any"
+                            inputMode="decimal"
                             required={type === 'BUY' || type === 'SELL'}
-                            className="input-reset"
+                            className="form-input"
                             value={price}
                             onChange={e => {
                                 setPrice(e.target.value);
@@ -1679,133 +1590,84 @@ function TransactionForm({ holding, existingTx, transactions, onSave, onCancel, 
                             }}
                             placeholder="0.00"
                         />
-                        {amount && price && !isNaN(parseFloat(amount)) && !isNaN(parseFloat(price)) && (
-                            <div className="mt-2 ml-1 flex gap-1 items-center">
-                                <span className="text-xs text-muted font-medium uppercase tracking-wider">{totalLabel}:</span>
-                                <span className="text-xs font-bold text-white">
-                                    {(parseFloat(amount) * parseFloat(price)).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} {quoteCurrency}
-                                </span>
-                            </div>
-                        )}
-                    </div>
-
-                    {affectsQuoteBalance && (
-                        <div
-                            className="flex items-center justify-between p-4 rounded-2xl hover-bg-surface transition-all"
-                            style={{ border: '1px solid #262626', background: '#171717', cursor: 'pointer' }}
-                            onClick={() => {
-                                setUseFiat(!useFiat);
-                                setUserModifiedUseFiat(true);
+                        <select
+                            aria-label="Price currency"
+                            className="form-input"
+                            style={{ flex: 'none' }}
+                            value={quoteCurrency}
+                            onChange={e => {
+                                setQuoteCurrency(e.target.value);
+                                setUserModifiedQuoteCurrency(true);
                             }}
                         >
-                            <span className="text-sm font-medium text-white select-none">
-                                {type === 'BUY' ? `Deduct from ${quoteCurrency} balance` : `Add to ${quoteCurrency} balance`}
-                            </span>
-                            <div style={{
-                                width: '48px', height: '24px', borderRadius: '999px', padding: '2px',
-                                backgroundColor: useFiat ? '#3b82f6' : '#262626',
-                                transition: 'background-color 0.2s'
-                            }}>
-                                <div style={{
-                                    width: '20px', height: '20px', borderRadius: '50%', background: 'white',
-                                    transform: useFiat ? 'translateX(24px)' : 'translateX(0)',
-                                    transition: 'transform 0.2s',
-                                    boxShadow: '0 1px 2px 0 rgba(0, 0, 0, 0.05)'
-                                }} />
-                            </div>
-                        </div>
-                    )}
-                </>
-            )}
+                            {quoteCurrencyOptions.map(currency => (
+                                <option key={currency} value={currency}>{currency}</option>
+                            ))}
+                        </select>
+                    </FormRow>
+                )}
 
-            <div
-                className="grid grid-cols-[1fr_120px] gap-3"
-                style={{
-                    display: 'grid',
-                    gap: '12px',
-                    gridTemplateColumns: 'minmax(0, 1fr) 120px',
-                    marginBottom: '0.5rem'
-                }}
-            >
-                <div>
-                    <label style={labelStyle}>Fee</label>
+                {usesPrice && affectsQuoteBalance && (
+                    <SwitchRow
+                        checked={useFiat}
+                        onChange={(next) => {
+                            setUseFiat(next);
+                            setUserModifiedUseFiat(true);
+                        }}
+                        label={type === 'BUY' ? `Pay from ${quoteCurrency} cash` : `Add to ${quoteCurrency} cash`}
+                    />
+                )}
+
+                <FormRow label="Fee" htmlFor="transaction-fee">
                     <input
+                        id="transaction-fee"
                         type="number"
                         step="any"
-                        className="input-reset"
+                        inputMode="decimal"
+                        className="form-input"
                         value={fee}
                         onChange={e => setFee(e.target.value)}
-                        placeholder="0.00"
+                        placeholder="0"
                     />
-                </div>
-                <div>
-                    <label style={labelStyle}>Fee currency</label>
                     <select
+                        aria-label="Fee currency"
+                        className="form-input"
+                        style={{ flex: 'none' }}
                         value={feeCurrency}
                         onChange={e => setFeeCurrency(e.target.value)}
-                        style={{ ...compactSelectStyle, width: '100%', minHeight: '47px', minWidth: 0, paddingTop: '13px', paddingBottom: '13px' }}
                     >
                         {feeCurrencyOptions.map(currency => (
-                            <option key={currency} value={currency} style={{ background: '#121212', color: 'white' }}>
-                                {currency}
-                            </option>
+                            <option key={currency} value={currency}>{currency}</option>
                         ))}
                     </select>
+                </FormRow>
+
+                <FormRow label="Date" htmlFor="transaction-date">
+                    <input
+                        id="transaction-date"
+                        type="date"
+                        required
+                        className="form-input"
+                        value={date}
+                        onChange={e => setDate(e.target.value)}
+                    />
+                </FormRow>
+
+                <div className="form-row">
+                    <textarea
+                        aria-label="Note"
+                        className="form-input"
+                        placeholder="Add a note"
+                        value={notes}
+                        onChange={e => setNotes(e.target.value)}
+                        rows={notes.includes('\n') ? 3 : 1}
+                    />
                 </div>
             </div>
 
-            <div>
-                <label style={labelStyle}>Date</label>
-                <input
-                    type="date"
-                    required
-                    className="input-reset"
-                    value={date}
-                    onChange={e => setDate(e.target.value)}
-                />
-            </div>
+            {formError && <div className="form-error" role="alert">{formError}</div>}
 
-            <div>
-                <label style={labelStyle}>Notes (optional)</label>
-                <textarea
-                    className="input-reset"
-                    placeholder="Add notes about this transaction..."
-                    value={notes}
-                    onChange={e => setNotes(e.target.value)}
-                    rows={2}
-                    style={{ resize: 'vertical', minHeight: '60px' }}
-                />
-            </div>
-
-            {formError && (
-                <div className="text-danger text-sm font-medium">
-                    {formError}
-                </div>
-            )}
-
-            <div className="flex gap-3 mt-8 pt-4 border-t border-white/5">
-                <button
-                    type="button"
-                    onClick={onCancel}
-                    className="flex-1 btn btn-ghost"
-                    style={{
-                        fontSize: '0.95rem',
-                        fontWeight: 600,
-                        padding: '14px',
-                        borderRadius: '14px',
-                        border: '1px solid var(--card-border-strong)'
-                    }}
-                >
-                    Cancel
-                </button>
-                <button
-                    type="submit"
-                    className="flex-[2] btn"
-                    style={{ fontSize: '1rem', fontWeight: 600, padding: '14px', borderRadius: '14px' }}
-                >
-                    Save
-                </button>
-            </div>
+            <button type="submit" className="btn btn-block">Save</button>
         </form>
     );
 }

@@ -50,22 +50,13 @@ export default function ConfirmModal({
 
     if (!isOpen) return null;
 
-    const confirmColors = confirmStyle === 'danger'
-        ? { bg: 'rgba(239, 68, 68, 0.15)', border: 'rgba(239, 68, 68, 0.3)', text: '#ef4444', hoverBg: 'rgba(239, 68, 68, 0.25)' }
-        : { bg: 'rgba(59, 130, 246, 0.15)', border: 'rgba(59, 130, 246, 0.3)', text: '#3b82f6', hoverBg: 'rgba(59, 130, 246, 0.25)' };
-
     return (
         <div
             className="animate-overlay"
             style={{
                 position: 'fixed',
-                top: 0,
-                left: 0,
-                right: 0,
-                bottom: 0,
-                background: 'rgba(0, 0, 0, 0.8)',
-                backdropFilter: 'blur(8px)',
-                WebkitBackdropFilter: 'blur(8px)',
+                inset: 0,
+                background: 'rgba(0, 0, 0, 0.7)',
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
@@ -77,87 +68,25 @@ export default function ConfirmModal({
             }}
         >
             <div
-                className="animate-dialog"
-                style={{
-                    background: 'linear-gradient(145deg, rgba(30, 30, 30, 0.98), rgba(20, 20, 20, 0.98))',
-                    border: '1px solid rgba(255, 255, 255, 0.1)',
-                    borderRadius: '20px',
-                    padding: '28px',
-                    maxWidth: '400px',
-                    width: '100%',
-                    boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.5)'
-                }}
+                role="alertdialog"
+                aria-modal="true"
+                aria-labelledby="confirm-title"
+                aria-describedby="confirm-message"
+                className="alert animate-dialog"
             >
-                {/* Title */}
-                <h3 style={{
-                    fontSize: '1.25rem',
-                    fontWeight: '600',
-                    color: 'white',
-                    marginBottom: '12px',
-                    textAlign: 'center'
-                }}>
-                    {title}
-                </h3>
-
-                {/* Message */}
-                <p style={{
-                    fontSize: '0.95rem',
-                    color: 'rgba(255, 255, 255, 0.7)',
-                    marginBottom: '24px',
-                    textAlign: 'center',
-                    lineHeight: '1.5'
-                }}>
-                    {message}
-                </p>
-
-                {/* Buttons */}
-                <div style={{ display: 'flex', gap: '12px' }}>
+                <div className="alert-body">
+                    <h3 id="confirm-title" className="alert-title">{title}</h3>
+                    <p id="confirm-message" className="alert-message">{message}</p>
+                </div>
+                <div className="alert-actions">
+                    <button type="button" onClick={onClose} className="alert-action">{cancelText}</button>
                     <button
-                        onClick={onClose}
-                        style={{
-                            flex: 1,
-                            padding: '14px 20px',
-                            borderRadius: '12px',
-                            border: '1px solid rgba(255, 255, 255, 0.15)',
-                            background: 'rgba(255, 255, 255, 0.05)',
-                            color: 'rgba(255, 255, 255, 0.8)',
-                            fontSize: '0.9rem',
-                            fontWeight: '600',
-                            cursor: 'pointer',
-                            transition: 'all 0.2s ease'
-                        }}
-                        onMouseOver={(e) => {
-                            e.target.style.background = 'rgba(255, 255, 255, 0.1)';
-                        }}
-                        onMouseOut={(e) => {
-                            e.target.style.background = 'rgba(255, 255, 255, 0.05)';
-                        }}
-                    >
-                        {cancelText}
-                    </button>
-                    <button
+                        type="button"
                         onClick={() => {
                             onConfirm();
                             onClose();
                         }}
-                        style={{
-                            flex: 1,
-                            padding: '14px 20px',
-                            borderRadius: '12px',
-                            border: `1px solid ${confirmColors.border}`,
-                            background: confirmColors.bg,
-                            color: confirmColors.text,
-                            fontSize: '0.9rem',
-                            fontWeight: '600',
-                            cursor: 'pointer',
-                            transition: 'all 0.2s ease'
-                        }}
-                        onMouseOver={(e) => {
-                            e.target.style.background = confirmColors.hoverBg;
-                        }}
-                        onMouseOut={(e) => {
-                            e.target.style.background = confirmColors.bg;
-                        }}
+                        className={`alert-action is-primary${confirmStyle === 'danger' ? ' is-danger' : ''}`}
                     >
                         {confirmText}
                     </button>

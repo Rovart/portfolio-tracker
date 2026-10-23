@@ -20,6 +20,7 @@
     "@capacitor/cli": "^8.0.0",
     "@capacitor/core": "^8.0.0",
     "@capacitor/filesystem": "^8.0.0",
+    "@capacitor/haptics": "^8.0.2",
     "@capacitor/ios": "^8.0.0",
     "@capacitor/local-notifications": "^8.0.0",
     "@capacitor/share": "^8.0.0",
@@ -31,7 +32,6 @@
     "papaparse": "^5.5.3",
     "react": "19.2.1",
     "react-dom": "19.2.1",
-    "recharts": "^3.6.0",
     "yahoo-finance2": "^3.11.2"
   },
   "devDependencies": {

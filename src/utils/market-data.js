@@ -268,7 +268,8 @@ export function normalizeFinancials(quoteSummary) {
             totalDebt: quoteSummary.financialData.totalDebt,
             debtToEquity: quoteSummary.financialData.debtToEquity,
             currentRatio: quoteSummary.financialData.currentRatio,
-            freeCashflow: quoteSummary.financialData.freeCashflow
+            freeCashflow: quoteSummary.financialData.freeCashflow,
+            financialCurrency: quoteSummary.financialData.financialCurrency
         } : null,
 
         // Calendar Events
@@ -354,4 +355,18 @@ export function normalizeFinancials(quoteSummary) {
     };
 
     return data;
+}
+
+// Yahoo lists the last four quarters oldest first, and its surprisePercent is a
+// fraction (0.045), so the latest result and its surprise are derived here.
+export function getLatestEarningsResult(history) {
+    const reported = (Array.isArray(history) ? history : [])
+        .filter(entry => Number.isFinite(entry?.epsActual) && Number.isFinite(entry?.epsEstimate))
+        .sort((a, b) => Date.parse(b.date || 0) - Date.parse(a.date || 0));
+    const latest = reported[0];
+    if (!latest) return null;
+    const surprisePercent = latest.epsEstimate !== 0
+        ? ((latest.epsActual - latest.epsEstimate) / Math.abs(latest.epsEstimate)) * 100
+        : null;
+    return { ...latest, surprisePercent };
 }

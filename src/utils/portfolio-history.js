@@ -4,7 +4,7 @@ import {
     COMMON_FIAT_CURRENCIES,
     COMMON_CRYPTO_ASSETS,
     isFiatAsset
-} from './portfolio-logic';
+} from './portfolio-logic.js';
 
 const EPSILON = 0.00001;
 
@@ -237,6 +237,7 @@ export function calculatePortfolioHistory(transactions, historicalPrices, baseCu
     let unitValue = 1;
     let initialChartValue = 0;
     let initialized = false;
+    let cumulativeFlow = 0;
 
     // Resolve live prices once; null = asset has no live quote right now
     const liveRates = {};
@@ -273,15 +274,21 @@ export function calculatePortfolioHistory(transactions, historicalPrices, baseCu
             if (quote && !currentBalances[quote]) currentBalances[quote] = 0;
             if (feeCurr && !currentBalances[feeCurr]) currentBalances[feeCurr] = 0;
 
+            // A trade paid or received outside the tracked cash moves money across
+            // the portfolio boundary, so it counts as a contribution or withdrawal.
             if (tx.type === 'BUY') {
                 currentBalances[base] += bAmt;
                 if (quote && affectsQuoteBalance) {
                     currentBalances[quote] -= qAmt;
+                } else {
+                    externalFlows.push({ asset: base, amount: bAmt });
                 }
             } else if (tx.type === 'SELL') {
                 currentBalances[base] -= bAmt;
                 if (quote && affectsQuoteBalance) {
                     currentBalances[quote] += qAmt;
+                } else {
+                    externalFlows.push({ asset: base, amount: -bAmt });
                 }
             } else if (tx.type === 'DEPOSIT') {
                 currentBalances[base] += bAmt;
@@ -289,6 +296,13 @@ export function calculatePortfolioHistory(transactions, historicalPrices, baseCu
             } else if (tx.type === 'WITHDRAW') {
                 currentBalances[base] -= bAmt;
                 externalFlows.push({ asset: base, amount: -bAmt });
+            } else if (tx.type === 'INCOME') {
+                // Interest/dividends are returns; paid out of the portfolio they are a withdrawal.
+                if (quote && affectsQuoteBalance) {
+                    currentBalances[quote] += qAmt;
+                } else if (quote) {
+                    externalFlows.push({ asset: quote, amount: -qAmt });
+                }
             }
 
             if (fAmt && feeCurr && shouldAffectFeeBalance(feeCurr, base, quote, affectsQuoteBalance, cashTrackedCurrencies)) {
@@ -343,6 +357,8 @@ export function calculatePortfolioHistory(transactions, historicalPrices, baseCu
 
         let externalFlowValue = 0;
         externalFlows.forEach(flow => {
+            // Assets left out of the valuation (no live quote) must not move the index either.
+            if (getLiveRate(flow.asset) === null) return;
             const value = valueBalance(
                 flow.asset,
                 flow.amount,
@@ -356,6 +372,8 @@ export function calculatePortfolioHistory(transactions, historicalPrices, baseCu
             );
             if (value !== null && Number.isFinite(value)) externalFlowValue += value;
         });
+
+        cumulativeFlow += externalFlowValue;
 
         if (!initialized) {
             initialized = true;
@@ -371,10 +389,13 @@ export function calculatePortfolioHistory(transactions, historicalPrices, baseCu
             }
         }
 
+        // netFlow: contributions minus withdrawals so far, so a range's gain is
+        // Δvalue − ΔnetFlow and its return is the ratio of `value` (time-weighted).
         dailyData.push({
             date: timestamp,
             value: initialChartValue * unitValue,
-            rawValue: totalValue
+            rawValue: totalValue,
+            netFlow: cumulativeFlow
         });
     }
 
@@ -389,4 +410,26 @@ export function calculatePortfolioHistory(transactions, historicalPrices, baseCu
     }
 
     return dailyData;
+}
+
+// Gain between two points of a history (excluding money added or withdrawn) and
+// its Modified Dietz return: gain over the average capital at work, with each
+// flow weighted by the share of the period it was invested. Unlike a
+// time-weighted index, its sign always matches the gain.
+export function getPeriodReturn(points, startIndex = 0, endIndex = points.length - 1) {
+    const start = points[startIndex];
+    const end = points[endIndex];
+    if (!start || !end) return { diff: 0, percent: 0 };
+    const startTime = Date.parse(start.date);
+    const span = Date.parse(end.date) - startTime;
+    let weightedFlow = 0;
+    for (let i = startIndex + 1; i <= endIndex; i++) {
+        const flow = (points[i].netFlow ?? 0) - (points[i - 1].netFlow ?? 0);
+        if (!flow) continue;
+        const weight = span > 0 ? (Date.parse(end.date) - Date.parse(points[i].date)) / span : 0;
+        weightedFlow += flow * Math.max(0, Math.min(1, weight));
+    }
+    const diff = end.value - start.value - ((end.netFlow ?? 0) - (start.netFlow ?? 0));
+    const capital = start.value + weightedFlow;
+    return { diff, percent: capital > EPSILON ? (diff / capital) * 100 : 0 };
 }

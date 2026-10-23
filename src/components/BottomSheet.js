@@ -116,11 +116,11 @@ export default function BottomSheet({ title, subtitle, onClose, children, maxWid
                     backgroundColor: 'var(--background-elevated)',
                     display: 'flex',
                     flexDirection: 'column',
-                    borderTopLeftRadius: '24px',
-                    borderTopRightRadius: '24px',
+                    borderTopLeftRadius: '20px',
+                    borderTopRightRadius: '20px',
                     overflow: 'hidden',
-                    boxShadow: '0 -8px 40px rgba(0, 0, 0, 0.5)',
-                    border: '1px solid var(--card-border)',
+                    boxShadow: 'var(--shadow-overlay)',
+                    border: '1px solid var(--border)',
                     borderBottom: 'none',
                     paddingBottom: 'env(safe-area-inset-bottom, 0px)'
                 }}
@@ -131,35 +131,24 @@ export default function BottomSheet({ title, subtitle, onClose, children, maxWid
                     onPointerMove={handleDragMove}
                     onPointerUp={handleDragEnd}
                     onPointerCancel={handleDragEnd}
-                    style={{ flexShrink: 0, cursor: 'grab', touchAction: 'none', padding: '10px 24px 12px', borderBottom: '1px solid var(--card-border)' }}
+                    style={{ flexShrink: 0, cursor: 'grab', touchAction: 'none', padding: '8px 16px 10px 20px', borderBottom: '1px solid var(--border)' }}
                 >
-                    <div style={{ display: 'flex', justifyContent: 'center', marginBottom: '10px' }}>
-                        <div style={{ width: '40px', height: '5px', borderRadius: '9999px', background: 'rgba(255, 255, 255, 0.18)' }} />
+                    <div style={{ display: 'flex', justifyContent: 'center', marginBottom: '8px' }}>
+                        <div style={{ width: '36px', height: '4px', borderRadius: '9999px', background: 'rgba(255, 255, 255, 0.16)' }} />
                     </div>
-                    <div className="flex items-center justify-between">
+                    <div className="flex items-center justify-between" style={{ gap: 'var(--space-2)' }}>
                         <div className="flex flex-col min-w-0" style={{ gap: '1px' }}>
-                            <span className="font-bold tracking-tight truncate" style={{ fontSize: '1.05rem' }}>
-                                {title}
-                            </span>
-                            {subtitle && (
-                                <span className="text-muted truncate" style={{ fontSize: '0.75rem' }}>
-                                    {subtitle}
-                                </span>
-                            )}
+                            <span className="modal-title truncate">{title}</span>
+                            {subtitle && <span className="label truncate">{subtitle}</span>}
                         </div>
-                        <button
-                            onClick={onClose}
-                            aria-label="Close"
-                            className="p-2 rounded-full hover-bg-surface transition-all"
-                            style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', display: 'flex', flexShrink: 0 }}
-                        >
-                            <X size={20} />
+                        <button type="button" onClick={onClose} aria-label="Close" className="icon-button">
+                            <X size={18} />
                         </button>
                     </div>
                 </div>
                 <div
-                    className="flex-1 overflow-y-auto p-6"
-                    style={{ minHeight: 0, WebkitOverflowScrolling: 'touch', overscrollBehavior: 'contain' }}
+                    className="flex-1 overflow-y-auto"
+                    style={{ minHeight: 0, padding: 'var(--space-5) var(--space-5) var(--space-6)', WebkitOverflowScrolling: 'touch', overscrollBehavior: 'contain' }}
                 >
                     {children}
                 </div>

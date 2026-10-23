@@ -1,11 +1,28 @@
 'use client';
 
 import { useState, useEffect, useRef, useMemo, memo, useCallback } from 'react';
-import { GripVertical, ChevronDown, ChevronRight, Wallet, Sun, Moon, Plus } from 'lucide-react';
+import { GripVertical, ChevronDown, Wallet, Sun, Moon, Plus } from 'lucide-react';
 import { updateWatchlistAssetPositions } from '@/utils/db';
 import { formatSymbol } from '@/utils/commodities';
 import AssetIcon from './AssetIcon';
 import SortMenu from './SortMenu';
+import { Segmented } from './ui';
+import { LoanRateText } from './LoanPanel';
+import { ALLOCATION_COLORS } from './CompositionChart';
+import { changeTone, formatMoney, formatPercent, formatPrice, formatQuantity } from '@/utils/format';
+
+function getHoldingLabel(holding) {
+    if (holding.loan) return holding.loan.name || holding.name;
+    return DISPLAY_NAME ? holding.name : formatSymbol(holding.asset, holding.name);
+}
+
+function formatRowSubtitle(holding, isWatchlist, hideBalances, baseCurrency) {
+    if (holding.loan) return null;
+    if (holding.valuationUnavailable || !Number.isFinite(holding.price)) return 'Price unavailable';
+    const price = formatPrice(holding.price, baseCurrency);
+    if (isWatchlist) return price;
+    return `${hideBalances ? '••••' : formatQuantity(holding.amount, { maxDecimals: 4 })} · ${price}`;
+}
 
 // Extracted memoized component for holding rows to prevent unnecessary re-renders
 const HoldingRow = memo(function HoldingRow({
@@ -24,18 +41,20 @@ const HoldingRow = memo(function HoldingRow({
     handleDragStart,
     handleDragOver,
     handleDragEnd,
-    dragItemRef
+    dragItemRef,
+    indented = false
 }) {
     const isBeingDragged = draggedIndex === index;
     const isDragOver = dragOverIndex === index;
     const showDragHandle = isDraggable && !isFiatItem;
     const unavailable = holding.valuationUnavailable || !Number.isFinite(holding.price);
-    const profitUnavailable = returnMode === 'total' && holding.totalProfit === null;
+    const showTotal = returnMode === 'total' && !isWatchlist;
+    const profitUnavailable = showTotal && holding.totalProfit === null;
     const totalProfit = holding.totalProfit || 0;
     const totalProfitPercent = holding.costBasis > 0 ? (totalProfit / holding.costBasis) * 100 : 0;
-    const displayedChangeValue = returnMode === 'total' && !isWatchlist ? totalProfit : (holding.dailyPnl || 0);
-    const displayedChangePercent = returnMode === 'total' && !isWatchlist ? totalProfitPercent : (holding.change24h || 0);
-    const displayedChangePositive = displayedChangeValue >= 0;
+    const changeValue = showTotal ? totalProfit : (holding.dailyPnl || 0);
+    const changePercent = showTotal ? totalProfitPercent : (holding.change24h || 0);
+    const subtitle = formatRowSubtitle(holding, isWatchlist, hideBalances, baseCurrency);
     const handleKeyDown = (event) => {
         if (event.key !== 'Enter' && event.key !== ' ') return;
         event.preventDefault();
@@ -44,9 +63,8 @@ const HoldingRow = memo(function HoldingRow({
 
     return (
         <div
-            key={holding.asset}
-            className={`card interactive-surface flex justify-between items-center ${isBeingDragged ? 'opacity-50' : ''} ${isDragOver ? 'border-primary' : ''}`}
-            style={{ cursor: 'pointer', transition: 'opacity 150ms var(--ease-out), border-color 150ms var(--ease-out), background-color 150ms var(--ease-out), transform 140ms var(--ease-out)', marginBottom: 0 }}
+            className={`list-row${indented ? ' is-indented' : ''}${isBeingDragged ? ' opacity-60' : ''}`}
+            style={isDragOver ? { boxShadow: 'inset 0 0 0 1px var(--border-strong)' } : undefined}
             onClick={() => onSelect(holding)}
             onKeyDown={handleKeyDown}
             role="button"
@@ -58,83 +76,51 @@ const HoldingRow = memo(function HoldingRow({
             onDrop={(e) => e.preventDefault()}
         >
             {showDragHandle && (
-                <div
-                    className="pr-2 text-muted cursor-grab"
-                    style={{ touchAction: 'none', marginRight: '10px' }}
-                    onClick={(e) => e.stopPropagation()}
-                >
+                <span className="text-muted cursor-grab" style={{ touchAction: 'none', marginRight: '-4px' }} onClick={(e) => e.stopPropagation()}>
                     <GripVertical size={16} />
-                </div>
+                </span>
             )}
 
-            <AssetIcon
-                symbol={holding.asset}
-                type={holding.originalType}
-                isFiat={holding.isFiat}
-                size={40}
-                className="mr-3"
-            />
+            <AssetIcon symbol={holding.asset} type={holding.originalType} isFiat={holding.isFiat} size={36} />
 
-            <div
-                className="flex-1 flex flex-col min-w-0 pr-2"
-            >
-                <span className="text-base sm:text-lg font-bold truncate">
-                    {DISPLAY_NAME ? holding.name : formatSymbol(holding.asset, holding.name)}
-                    {/* Market State Icons */}
-                    {!loading && holding.marketState === 'PRE' && (
-                        <Sun size={12} className="inline" style={{ color: '#facc15', marginLeft: '5px' }} title="Pre-market" />
-                    )}
-                    {!loading && (holding.marketState === 'POST' || holding.marketState === 'POSTPOST') && (
-                        <Moon size={12} className="inline" style={{ color: '#9ca3af', marginLeft: '5px' }} title="After-hours" />
-                    )}
+            <div className="flex-1 flex flex-col min-w-0" style={{ gap: '2px' }}>
+                <span className="list-row-title truncate flex items-center" style={{ gap: '5px' }}>
+                    <span className="truncate">{getHoldingLabel(holding)}</span>
+                    {!loading && holding.marketState === 'PRE' && <Sun size={12} className="shrink-0 text-muted" aria-label="Pre-market" />}
+                    {!loading && (holding.marketState === 'POST' || holding.marketState === 'POSTPOST') && <Moon size={12} className="shrink-0 text-muted" aria-label="After-hours" />}
                 </span>
-                <span className="text-[10px] sm:text-xs text-muted truncate">
-                    {loading ? (
-                        <span className="inline-block w-24 h-3 bg-white-10 rounded animate-pulse" />
-                    ) : (
+                <span className="list-row-subtitle truncate">
+                    {loading ? <span className="skeleton inline-block" style={{ width: 96, height: 11 }} /> : holding.loan ? (
                         <>
-                            {unavailable ? 'Price unavailable' : isWatchlist ? (
-                                // Watchlist: Just show price
-                                `${holding.price.toLocaleString(undefined, { maximumFractionDigits: 2 })} ${baseCurrency === 'USD' ? '$' : baseCurrency}`
-                            ) : (
-                                // Regular: Show Amount | Price
-                                `${hideBalances ? '••••' : holding.amount.toLocaleString(undefined, { maximumFractionDigits: 4 })} | ${holding.price.toLocaleString(undefined, { maximumFractionDigits: 2 })} ${baseCurrency === 'USD' ? '$' : baseCurrency}`
-                            )}
+                            {holding.loan.project ? `${holding.loan.project} · ` : ''}
+                            <LoanRateText loan={holding.loan} />
                         </>
-                    )}
+                    ) : subtitle}
                 </span>
             </div>
 
-            <div className="flex flex-col items-end shrink-0" style={{ textAlign: 'right' }}>
-                <span className="text-base sm:text-lg font-bold">
-                    {loading ? (
-                        <div className="w-24 sm:w-32 h-6 bg-white-10 rounded animate-pulse ml-auto" />
-                    ) : (
-                        // For watchlists, 'value' is just the price (since amount is 1)
-                        ((hideBalances && !isWatchlist) ? '••••••' : unavailable ? '—' : `${holding.value.toLocaleString(undefined, { maximumFractionDigits: 2 })} ${baseCurrency === 'USD' ? '$' : baseCurrency}`)
-                    )}
-                </span>
+            <div className="flex flex-col items-end shrink-0" style={{ gap: '2px', textAlign: 'right' }}>
                 {loading ? (
-                    <div className="w-16 sm:w-20 h-4 bg-white-10 rounded animate-pulse mt-1 ml-auto" />
+                    <>
+                        <span className="skeleton" style={{ width: 80, height: 14 }} />
+                        <span className="skeleton" style={{ width: 52, height: 11 }} />
+                    </>
                 ) : (
-                    !unavailable && !profitUnavailable && holding.asset !== baseCurrency && (
-                        <span
-                            className="text-[10px] sm:text-xs font-semibold"
-                            style={{
-                                marginTop: '3px',
-                                padding: '2px 7px',
-                                borderRadius: '6px',
-                                color: displayedChangePositive ? 'var(--success)' : 'var(--danger)',
-                                background: displayedChangePositive ? 'rgba(48, 209, 88, 0.1)' : 'rgba(255, 69, 58, 0.1)'
-                            }}
-                        >
-                            {/* Nominal change hidden by privacy mode on regular portfolios */}
-                            {(!hideBalances || isWatchlist) && `${displayedChangePositive ? '+' : '-'}${Math.abs(displayedChangeValue).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ${baseCurrency === 'USD' ? '$' : baseCurrency} `}
-                            ({displayedChangePercent >= 0 ? '+' : ''}{displayedChangePercent.toFixed(2)}%)
+                    <>
+                        <span className="list-row-title">
+                            {hideBalances && !isWatchlist ? '••••••' : unavailable ? '—' : formatMoney(holding.value, baseCurrency)}
                         </span>
-                    )
+                        {!unavailable && holding.asset !== baseCurrency && (
+                            profitUnavailable
+                                ? <span className="list-row-subtitle">No cost basis</span>
+                                : (
+                                    <span className={`list-row-subtitle ${changeTone(changeValue || changePercent)}`}>
+                                        {hideBalances && !isWatchlist ? formatPercent(changePercent) : `${formatMoney(changeValue, baseCurrency, { signed: true })} · ${formatPercent(changePercent)}`}
+                                    </span>
+                                )
+                        )}
+                    </>
                 )}
-                {!loading && !unavailable && profitUnavailable && <span className="text-muted text-xs">Cost basis unavailable</span>}
             </div>
         </div>
     );
@@ -143,8 +129,6 @@ const HoldingRow = memo(function HoldingRow({
 // Toggle this to switch between Symbol and Short Name
 const DISPLAY_NAME = false; // true = Name, false = Symbol
 
-// Distinct, muted-professional palette for allocation segments
-const ALLOC_COLORS = ['#4c8dff', '#30d158', '#bf5af2', '#ff9f0a', '#64d2ff', '#ffd60a', '#ff6482', '#ac8e68'];
 
 const TYPE_GROUP_LABELS = {
     CRYPTOCURRENCY: 'Crypto',
@@ -153,7 +137,8 @@ const TYPE_GROUP_LABELS = {
     MUTUALFUND: 'Funds',
     FUTURE: 'Commodities',
     INDEX: 'Indexes',
-    CURRENCY: 'Currencies'
+    CURRENCY: 'Currencies',
+    LOAN: 'Loans'
 };
 
 // Slim stacked allocation bar. Few assets: one segment per asset.
@@ -178,24 +163,24 @@ function AllocationBar({ holdings, cashValue }) {
                 .map(([label, value], i) => ({
                     label,
                     pct: (value / total) * 100,
-                    color: label === 'Other' ? 'rgba(255,255,255,0.28)' : ALLOC_COLORS[i % ALLOC_COLORS.length]
+                    color: label === 'Other' ? 'rgba(255,255,255,0.18)' : ALLOCATION_COLORS[Math.min(i, ALLOCATION_COLORS.length - 1)]
                 }));
         } else {
             const top = assets.slice(0, 4).filter(h => (h.value || 0) / total >= 0.02);
             const rest = assets.slice(top.length).reduce((acc, h) => acc + (h.value || 0), 0);
 
             segs = top.map((h, i) => ({
-                label: h.asset,
+                label: h.loan ? (h.loan.name || 'Loan') : h.asset,
                 pct: (h.value / total) * 100,
-                color: ALLOC_COLORS[i % ALLOC_COLORS.length]
+                color: ALLOCATION_COLORS[Math.min(i, ALLOCATION_COLORS.length - 1)]
             }));
             if (rest / total >= 0.005) {
-                segs.push({ label: 'Other', pct: (rest / total) * 100, color: 'rgba(255,255,255,0.28)' });
+                segs.push({ label: 'Other', pct: (rest / total) * 100, color: 'rgba(255,255,255,0.18)' });
             }
         }
 
         if (cashValue / total >= 0.005) {
-            segs.push({ label: 'Cash', pct: (Math.max(cashValue, 0) / total) * 100, color: 'rgba(255,255,255,0.14)' });
+            segs.push({ label: 'Cash', pct: (Math.max(cashValue, 0) / total) * 100, color: 'rgba(255,255,255,0.1)' });
         }
         return segs;
     }, [holdings, cashValue]);
@@ -203,27 +188,18 @@ function AllocationBar({ holdings, cashValue }) {
     if (segments.length < 2) return null;
 
     return (
-        <div className="no-select" style={{ marginBottom: '10px' }}>
-            <div style={{ display: 'flex', gap: '3px', height: '6px', borderRadius: '9999px', overflow: 'hidden' }}>
+        <div className="no-select" style={{ marginBottom: 'var(--space-3)' }}>
+            <div style={{ display: 'flex', gap: '2px', height: '4px', borderRadius: '9999px', overflow: 'hidden' }}>
                 {segments.map(seg => (
-                    <div
-                        key={seg.label}
-                        style={{
-                            width: `${seg.pct}%`,
-                            minWidth: '4px',
-                            background: seg.color,
-                            borderRadius: '9999px',
-                            transition: 'width 400ms var(--ease-in-out)'
-                        }}
-                    />
+                    <div key={seg.label} style={{ width: `${seg.pct}%`, minWidth: '3px', background: seg.color, transition: 'width var(--dur-base) var(--ease-out)' }} />
                 ))}
             </div>
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px 14px', marginTop: '8px' }}>
                 {segments.map(seg => (
-                    <span key={seg.label} style={{ display: 'inline-flex', alignItems: 'center', gap: '5px', fontSize: '0.7rem', color: 'var(--text-muted)', fontWeight: 500 }}>
-                        <span style={{ width: '7px', height: '7px', borderRadius: '50%', background: seg.color, flexShrink: 0 }} />
-                        {seg.label}
-                        <span style={{ color: 'var(--text-faint)' }}>{seg.pct.toFixed(seg.pct >= 10 ? 0 : 1)}%</span>
+                    <span key={seg.label} className="label" style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', fontSize: 'var(--fs-xs)' }}>
+                        <span style={{ width: '6px', height: '6px', borderRadius: '2px', background: seg.color, flexShrink: 0 }} />
+                        <span className="truncate" style={{ maxWidth: '140px' }}>{seg.label}</span>
+                        <span style={{ color: 'var(--text-faint)' }}>{formatPercent(seg.pct, { signed: false, decimals: seg.pct >= 10 ? 0 : 1 })}</span>
                     </span>
                 ))}
             </div>
@@ -372,9 +348,7 @@ export default function HoldingsList({ holdings, onSelect, onAddAsset, loading, 
                         ? (a.totalProfit || 0) - (b.totalProfit || 0)
                         : a.change24h - b.change24h;
                 case 'alphabetical':
-                    const nameA = DISPLAY_NAME ? a.name : a.asset;
-                    const nameB = DISPLAY_NAME ? b.name : b.asset;
-                    return nameA.localeCompare(nameB);
+                    return getHoldingLabel(a).localeCompare(getHoldingLabel(b));
                 case 'size':
                 default:
                     return b.value - a.value;
@@ -398,40 +372,36 @@ export default function HoldingsList({ holdings, onSelect, onAddAsset, loading, 
     const fiatValueUnavailable = fiatHoldings.some(holding => holding.valuationUnavailable);
     const displayedFiatChange = returnMode === 'total' ? totalFiatProfit : totalFiatDailyPnl;
 
+    const rowProps = {
+        isDraggable,
+        draggedIndex,
+        dragOverIndex,
+        loading,
+        hideBalances,
+        isWatchlist,
+        baseCurrency,
+        returnMode,
+        onSelect,
+        handleDragStart,
+        handleDragOver,
+        handleDragEnd,
+        dragItemRef
+    };
+
     return (
-        <div className="flex flex-col gap-2">
+        <div className="flex flex-col">
             {/* Only show header for regular portfolios - watchlist sort is in the top bar */}
             {!isWatchlist && (
-                <div className="flex items-center justify-between mb-1 gap-2">
-                    <h2 className="text-xl">Holdings</h2>
-                    <div className="flex items-center gap-2 shrink-0">
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '2px', borderRadius: '10px', padding: '3px', background: 'rgba(255,255,255,0.04)', border: '1px solid var(--card-border)' }}>
-                            {[
-                                { id: 'daily', label: 'Daily' },
-                                { id: 'total', label: 'Total' }
-                            ].map(mode => (
-                                <button
-                                    key={mode.id}
-                                    type="button"
-                                    onClick={() => handleReturnModeChange(mode.id)}
-                                    className="transition-all"
-                                    style={{
-                                        background: returnMode === mode.id ? 'var(--foreground)' : 'transparent',
-                                        color: returnMode === mode.id ? 'var(--background)' : 'var(--text-muted)',
-                                        border: 'none',
-                                        borderRadius: '7px',
-                                        padding: '5px 12px',
-                                        fontSize: '0.72rem',
-                                        fontWeight: 600,
-                                        letterSpacing: '-0.01em',
-                                        cursor: 'pointer',
-                                        boxShadow: returnMode === mode.id ? '0 1px 3px rgba(0,0,0,0.35)' : 'none'
-                                    }}
-                                >
-                                    {mode.label}
-                                </button>
-                            ))}
-                        </div>
+                <div className="flex items-center justify-between" style={{ gap: 'var(--space-2)', marginBottom: 'var(--space-2)' }}>
+                    <h2 className="section-title">Holdings</h2>
+                    <div className="flex items-center shrink-0" style={{ gap: 'var(--space-3)' }}>
+                        <Segmented
+                            variant="compact"
+                            ariaLabel="Return shown"
+                            options={[{ id: 'daily', label: 'Today' }, { id: 'total', label: 'Total' }]}
+                            value={returnMode}
+                            onChange={handleReturnModeChange}
+                        />
                         {holdings.length > 1 && (
                             <SortMenu options={activeOptions} value={sortBy} onChange={handleSortChange} />
                         )}
@@ -444,42 +414,15 @@ export default function HoldingsList({ holdings, onSelect, onAddAsset, loading, 
                 <AllocationBar holdings={nonFiatHoldings} cashValue={totalFiatValue} />
             )}
 
-            {/* Non-fiat holdings */}
-            {nonFiatHoldings.map((holding, index) => (
-                <HoldingRow
-                    key={holding.asset}
-                    holding={holding}
-                    index={index}
-                    isFiatItem={false}
-                    isDraggable={isDraggable}
-                    draggedIndex={draggedIndex}
-                    dragOverIndex={dragOverIndex}
-                    loading={loading}
-                    hideBalances={hideBalances}
-                    isWatchlist={isWatchlist}
-                    baseCurrency={baseCurrency}
-                    returnMode={returnMode}
-                    onSelect={onSelect}
-                    handleDragStart={handleDragStart}
-                    handleDragOver={handleDragOver}
-                    handleDragEnd={handleDragEnd}
-                    dragItemRef={dragItemRef}
-                />
-            ))}
+            <div className="list-group">
+                {nonFiatHoldings.map((holding, index) => (
+                    <HoldingRow key={holding.asset} holding={holding} index={index} isFiatItem={false} {...rowProps} />
+                ))}
 
-            {/* Collapsible Fiat Section - only for regular portfolios with fiat holdings */}
-            {!isWatchlist && fiatHoldings.length > 0 && (
-                <div
-                    className="mt-2 rounded-xl transition-all"
-                    style={!fiatCollapsed ? {
-                        background: 'rgba(255,255,255,0.03)',
-                        border: '1px solid rgba(255,255,255,0.05)',
-                        padding: '8px'
-                    } : {}}
-                >
-                    {/* Fiat header - clickable to expand/collapse */}
+                {/* Collapsible cash row - only for regular portfolios with fiat holdings */}
+                {!isWatchlist && fiatHoldings.length > 0 && (
                     <div
-                        className={`interactive-surface flex justify-between items-center cursor-pointer hover:bg-white/5 transition-colors rounded-xl ${fiatCollapsed ? 'card' : ''}`}
+                        className="list-row"
                         onClick={toggleFiatCollapsed}
                         onKeyDown={(event) => {
                             if (event.key !== 'Enter' && event.key !== ' ') return;
@@ -488,116 +431,44 @@ export default function HoldingsList({ holdings, onSelect, onAddAsset, loading, 
                         }}
                         role="button"
                         tabIndex={0}
-                        style={fiatCollapsed ? {
-                            background: 'rgba(255,255,255,0.02)',
-                            borderColor: 'rgba(255,255,255,0.05)'
-                        } : { padding: '8px' }}
+                        aria-expanded={!fiatCollapsed}
                     >
-                        <div className="flex items-center gap-3">
-                            {fiatCollapsed ? (
-                                <ChevronRight size={18} className="text-muted" />
-                            ) : (
-                                <ChevronDown size={18} className="text-muted" />
-                            )}
-                            <div
-                                className="shrink-0 rounded-full flex items-center justify-center"
-                                style={{
-                                    width: 40,
-                                    height: 40,
-                                    background: 'linear-gradient(135deg, hsl(45, 65%, 50%), hsl(45, 75%, 40%))',
-                                    marginRight: '10px'
-                                }}
-                            >
-                                <Wallet size={20} className="text-white" />
-                            </div>
-                            <div className="flex flex-col">
-                                <span className="text-base sm:text-lg font-bold">Currencies</span>
-                                <span className="text-[10px] sm:text-xs text-muted">
-                                    {fiatHoldings.length} {fiatHoldings.length === 1 ? 'currency' : 'currencies'}
-                                </span>
-                            </div>
-                        </div>
-
-                        <div className="flex flex-col items-end">
-                            <span className="text-base sm:text-lg font-bold">
-                                {hideBalances ? '••••••' : fiatValueUnavailable ? 'Partial value' : `${totalFiatValue.toLocaleString(undefined, { maximumFractionDigits: 2 })} ${baseCurrency === 'USD' ? '$' : baseCurrency}`}
+                        <span className="asset-icon" style={{ width: 36, height: 36 }}>
+                            <Wallet size={16} />
+                        </span>
+                        <div className="flex-1 flex flex-col min-w-0" style={{ gap: '2px' }}>
+                            <span className="list-row-title">Cash</span>
+                            <span className="list-row-subtitle">
+                                {fiatHoldings.length} {fiatHoldings.length === 1 ? 'currency' : 'currencies'}
                             </span>
-                            {!fiatValueUnavailable && <span className={`text-[10px] sm:text-sm font-medium ${displayedFiatChange >= 0 ? 'text-success' : 'text-danger'}`}>
-                                {!hideBalances && `${displayedFiatChange >= 0 ? '+' : '-'}${Math.abs(displayedFiatChange).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ${baseCurrency === 'USD' ? '$' : baseCurrency}`}
-                            </span>}
+                        </div>
+                        <div className="flex items-center shrink-0" style={{ gap: 'var(--space-2)' }}>
+                            <div className="flex flex-col items-end" style={{ gap: '2px' }}>
+                                <span className="list-row-title">
+                                    {hideBalances ? '••••••' : fiatValueUnavailable ? 'Partial value' : formatMoney(totalFiatValue, baseCurrency)}
+                                </span>
+                                {!fiatValueUnavailable && !hideBalances && Math.abs(displayedFiatChange) >= 0.005 && (
+                                    <span className={`list-row-subtitle ${changeTone(displayedFiatChange)}`}>
+                                        {formatMoney(displayedFiatChange, baseCurrency, { signed: true })}
+                                    </span>
+                                )}
+                            </div>
+                            <ChevronDown size={16} className="text-muted" style={{ transform: fiatCollapsed ? 'rotate(-90deg)' : 'none', transition: 'transform var(--dur-fast) var(--ease-out)' }} />
                         </div>
                     </div>
+                )}
 
-                    {/* Expanded fiat holdings */}
-                    {!fiatCollapsed && (
-                        <div className="flex flex-col gap-2 mt-2">
-                            {fiatHoldings.map((holding, index) => (
-                                <HoldingRow
-                                    key={holding.asset}
-                                    holding={holding}
-                                    index={index}
-                                    isFiatItem={true}
-                                    isDraggable={isDraggable}
-                                    draggedIndex={draggedIndex}
-                                    dragOverIndex={dragOverIndex}
-                                    loading={loading}
-                                    hideBalances={hideBalances}
-                                    isWatchlist={isWatchlist}
-                                    baseCurrency={baseCurrency}
-                                    returnMode={returnMode}
-                                    onSelect={onSelect}
-                                    handleDragStart={handleDragStart}
-                                    handleDragOver={handleDragOver}
-                                    handleDragEnd={handleDragEnd}
-                                    dragItemRef={dragItemRef}
-                                />
-                            ))}
-                        </div>
-                    )}
-                </div>
-            )}
+                {!isWatchlist && !fiatCollapsed && fiatHoldings.map((holding, index) => (
+                    <HoldingRow key={holding.asset} holding={holding} index={index} isFiatItem={true} indented {...rowProps} />
+                ))}
+            </div>
 
             {holdings.length === 0 && !loading && (
-                <div
-                    className="interactive-surface flex flex-col items-center justify-center animate-enter transition-all"
-                    style={{
-                        cursor: 'pointer',
-                        gap: '14px',
-                        padding: '40px 24px',
-                        borderRadius: '18px',
-                        border: '1px dashed var(--card-border-strong)',
-                        background: 'rgba(255, 255, 255, 0.02)'
-                    }}
-                    onClick={onAddAsset}
-                    onKeyDown={(event) => {
-                        if (event.key !== 'Enter' && event.key !== ' ') return;
-                        event.preventDefault();
-                        onAddAsset();
-                    }}
-                    role="button"
-                    tabIndex={0}
-                >
-                    <div style={{
-                        width: '52px',
-                        height: '52px',
-                        borderRadius: '15px',
-                        background: 'rgba(255, 255, 255, 0.06)',
-                        border: '1px solid var(--card-border)',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center'
-                    }}>
-                        <Plus size={24} style={{ color: 'var(--foreground)' }} strokeWidth={2.25} />
-                    </div>
-                    <div className="flex flex-col items-center" style={{ gap: '3px' }}>
-                        <p style={{ margin: 0, fontWeight: 600, fontSize: '0.98rem' }}>
-                            {isWatchlist ? 'Add to watchlist' : 'Add your first asset'}
-                        </p>
-                        <p className="text-muted" style={{ margin: 0, fontSize: '0.8rem' }}>
-                            Search stocks, crypto, ETFs and more
-                        </p>
-                    </div>
-                </div>
+                <button type="button" className="empty-state" onClick={onAddAsset}>
+                    <span className="empty-state-icon"><Plus size={20} strokeWidth={2.25} /></span>
+                    <span className="list-row-title">{isWatchlist ? 'Add to watchlist' : 'Add your first asset'}</span>
+                    <span className="list-row-subtitle">Stocks, ETFs, crypto, currencies or a private loan</span>
+                </button>
             )}
         </div>
     );

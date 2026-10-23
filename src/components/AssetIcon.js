@@ -2,6 +2,7 @@ import Image from 'next/image';
 import { apiUrl } from '@/utils/api-client';
 import { getIconSources } from '@/utils/icon-data';
 import { useState, useMemo, memo } from 'react';
+import { Landmark } from 'lucide-react';
 
 const COMMON_FIAT = ['USD', 'EUR', 'AUD', 'GBP', 'JPY', 'CAD', 'CHF', 'CNY', 'HKD', 'NZD', 'MXN', 'SGD', 'INR', 'BRL', 'RUB'];
 
@@ -23,17 +24,6 @@ const AssetIcon = memo(function AssetIcon({ symbol, type, isFiat, size = 40, cla
         return isFiat || COMMON_FIAT.includes(cleanSym);
     }, [isFiat, cleanSym]);
 
-    // Generate a consistent gradient based on the clean symbol
-    const gradient = useMemo(() => {
-        let hash = 0;
-        const str = cleanSym || 'A';
-        for (let i = 0; i < str.length; i++) {
-            hash = str.charCodeAt(i) + ((hash << 5) - hash);
-        }
-        const hue = Math.abs(hash % 360);
-        return `linear-gradient(135deg, hsl(${hue}, 65%, 50%), hsl(${hue}, 75%, 40%))`;
-    }, [cleanSym]);
-
     // Determine initials (max 3 chars)
     // Take raw symbol first 3 chars, then remove punctuation like . or =
     const initials = useMemo(() => {
@@ -42,6 +32,15 @@ const AssetIcon = memo(function AssetIcon({ symbol, type, isFiat, size = 40, cla
     }, [symbol]);
 
     const imageIndex = imageError.key === imageKey ? imageError.index : 0;
+
+    if (type === 'LOAN') {
+        return (
+            <div className={`asset-icon ${className}`} style={{ width: size, height: size }} aria-hidden="true">
+                <Landmark size={Math.round(size * 0.46)} />
+            </div>
+        );
+    }
+
     const sources = process.env.NEXT_PUBLIC_BUNDLED_APP === 'true'
         ? getIconSources(symbol, type)
         : [apiUrl(`/api/icon?symbol=${encodeURIComponent(symbol || '')}&type=${encodeURIComponent(type || '')}`)];
@@ -50,10 +49,7 @@ const AssetIcon = memo(function AssetIcon({ symbol, type, isFiat, size = 40, cla
     // Skip logo and show initials if it's a fiat currency or image failed
     if (iconSrc) {
         return (
-            <div
-                className={`relative shrink-0 rounded-full overflow-hidden ${className}`}
-                style={{ width: size, height: size, backgroundColor: '#262626', marginRight: '10px' }}
-            >
+            <div className={`asset-icon has-logo ${className}`} style={{ width: size, height: size }}>
                 <Image
                     src={iconSrc}
                     alt={cleanSym}
@@ -67,18 +63,9 @@ const AssetIcon = memo(function AssetIcon({ symbol, type, isFiat, size = 40, cla
         );
     }
 
+    // Neutral monogram when there is no logo.
     return (
-        <div
-            className={`shrink-0 rounded-full flex items-center justify-center font-bold text-white shadow-lg ${className}`}
-            style={{
-                width: size,
-                height: size,
-                background: gradient,
-                fontSize: size * 0.35,
-                textShadow: '0 1px 2px rgba(0,0,0,0.3)',
-                marginRight: '10px'
-            }}
-        >
+        <div className={`asset-icon ${className}`} style={{ width: size, height: size, fontSize: Math.round(size * 0.3) }} aria-hidden="true">
             {initials}
         </div>
     );

@@ -1,5 +1,7 @@
 import Papa from 'papaparse';
 
+const TRANSACTION_TYPES = ['BUY', 'SELL', 'DEPOSIT', 'WITHDRAW', 'INCOME'];
+
 export function parsePortfolioCsv(text) {
     const parsedCsv = Papa.parse(String(text || ''), { header: true, skipEmptyLines: true });
     if (parsedCsv.errors.length) throw new Error('The CSV contains malformed rows. No transactions were imported.');
@@ -33,8 +35,10 @@ export function parsePortfolioCsv(text) {
         if (tx.csvPortfolioName) csvPortfolioNames.add(tx.csvPortfolioName);
 
         if (tx.date && tx.baseCurrency) {
-            if (!Number.isFinite(Date.parse(tx.date)) || !['BUY', 'SELL', 'DEPOSIT', 'WITHDRAW'].includes(tx.type) ||
-                !Number.isFinite(tx.baseAmount) || tx.baseAmount <= 0 ||
+            // INCOME (interest, dividends) carries its amount in the quote currency only.
+            const minBaseAmount = tx.type === 'INCOME' ? 0 : Number.MIN_VALUE;
+            if (!Number.isFinite(Date.parse(tx.date)) || !TRANSACTION_TYPES.includes(tx.type) ||
+                !Number.isFinite(tx.baseAmount) || tx.baseAmount < minBaseAmount ||
                 (tx.quoteAmount !== null && (!Number.isFinite(tx.quoteAmount) || tx.quoteAmount < 0))) {
                 throw new Error('The CSV contains an invalid date, transaction type or amount. No transactions were imported.');
             }

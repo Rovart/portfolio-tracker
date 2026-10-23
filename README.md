@@ -2,7 +2,7 @@
 
 ![Portfolio Tracker Banner](.github/screenshot.png)
 
-A premium, dark-mode portfolio tracker built with Next.js, Recharts, and Yahoo Finance. Track your investments across stocks, cryptocurrencies, and forex with real-time data, advanced analytics, and a beautiful user interface.
+A dark-mode portfolio tracker built with Next.js and Yahoo Finance. Track stocks, ETFs, cryptocurrencies, currencies and private loans with live prices and performance that excludes the money you add or withdraw.
 
 ## ✨ Features
 
@@ -13,35 +13,39 @@ A premium, dark-mode portfolio tracker built with Next.js, Recharts, and Yahoo F
 - **Transaction Management**: Full buy/sell history with detailed P/L tracking per transaction
 - **Transaction Notes**: Add optional notes to any transaction for better record keeping
 - **Deposits & Withdrawals**: Track fiat currency movements in and out of your portfolios
+- **Private Loans**: Add private loans as an asset with a fixed or estimated annual rate, simple or compound interest and an optional maturity. Their value accrues daily (Actual/365) in holdings, totals, history and allocation without any market data. Record interest payments, repayments and extra principal; interest received counts as realized profit
 - **Privacy Mode**: Toggle to hide sensitive balance information
 - **CSV Import/Export**: Transfers transactions with complete timestamps, deterministic FIFO ordering, cost basis and multiline notes
-- **Complete Backups**: Export and restore portfolios, transactions, watchlists, public wallet addresses and preferences as a versioned JSON file. Restore validates the file and previews its contents before replacing local data.
+- **Complete Backups**: Export and restore portfolios, transactions, loans, watchlists, public wallet addresses and preferences as a versioned JSON file. Restore validates the file and previews its contents before replacing local data. Backups made before loans existed still restore.
 
 ### Visual Analytics
-- **Interactive Performance Charts**: 
-  - Main portfolio chart with customizable timeframes (1D, 1W, 1M, 3M, 1Y, YTD, ALL)
-  - Split-color gradients (green for gains, red for losses)
-  - Asset-specific historical charts with FX-adjusted pricing
-  - Buy/sell markers match execution prices at the latest crossing of the displayed curve; when there is no crossing, they stay on the nearest curve point and retain the actual execution price in their details
+- **Interactive Performance Charts** (lightweight SVG, no chart library on the main screens):
+  - Portfolio chart with timeframes (1D, 1W, 1M, 1Y, YTD, ALL) and asset charts with FX-adjusted prices
+  - Scrub with the mouse or a sideways drag: the headline figure shows that point's value, date and change. Drag with the mouse or use two fingers to select a range. On Android, scrubbing gives haptic ticks
+  - Switching range keeps the current curve (dimmed) until the new data arrives, then fades it in; neighbouring asset ranges are prefetched while idle
+  - One line colour per range (gain or loss) and a dashed line at the starting value
+  - Period gain excludes deposits, withdrawals, purchases paid outside the tracked cash and payouts taken out of the portfolio; the percentage is a Modified Dietz return, so its sign always matches the gain
+  - Buy/sell markers are placed by their date: on that day's segment of the curve at the execution price; only when that day never reaches the price, they move back to the latest earlier crossing (up to 31 days); otherwise they stay on the curve at their date and keep the actual execution price in their details. Markers are located on the full-resolution history, so downsampling never moves them
   - Intelligent resampling for smooth weekly charts
-- **Composition Chart**: Visual breakdown of portfolio allocation by asset
-- **Profit Chart**: Track your gains and losses over time
+- **Allocation**: Allocation bar by asset in the holdings list and a breakdown by asset class on desktop
 - **Per-Transaction P/L**: See profit/loss for each individual buy transaction
 
 ### Performance & Reliability
 - **Smart Caching**: Timeframe-aware caching reduces API calls (15min for intraday, 30min for weekly, 1hr for longer periods)
 - **Shared History Requests**: Asset and FX views reuse pending requests, while chart sampling preserves peaks and troughs within a 300-point rendering budget
+- **Stable Portfolio History**: The portfolio history is rebuilt when the ledger, wallets, loans or timeframe change, not on every 30-second quote refresh; the live point follows the quotes
 - **Robust FX Handling**: USD-pivot FX conversion strategy ensures accurate cross-currency calculations
 - **Original Market Prices**: Historical charts retain valid provider prices, including spikes; no statistical smoothing rewrites prices
 - **Unavailable Prices**: Missing quotes or FX rates show an unavailable price and a partial portfolio value rather than a fabricated loss
 - **Quote Timestamps**: Asset rows and details show the market quote time (or retrieval time when the provider omits it), with a saved-data label during outages
 - **Refresh & App Activity**: Pull-to-refresh invalidates history freshness; returning to the app or reconnecting refreshes immediately. Recurring market queries pause in the background. Per-symbol saved quotes survive changes to portfolio batches.
 
-### Advanced UI/UX
-- **Premium Dark Mode**: Carefully crafted glassmorphic design with smooth animations
-- **Loading Skeletons**: Polished loading states for all components
+### Interface
+- **Design system**: One set of tokens in `globals.css` (type scale, spacing, three radii, neutral surfaces, 150/250 ms motion) and shared components in `src/components/ui.js` (segmented control, switch, money and change figures)
+- **Restrained colour**: Neutral surfaces and monograms; colour is reserved for gains, losses and a single accent
+- **Locale-aware figures**: Amounts always show two decimals and the currency symbol in the device's locale; the headline value animates between updates
+- **Loading states**: Skeletons only on first load; later refreshes update in place
 - **Responsive Design**: Optimized for desktop and mobile devices
-- **Atomic State Updates**: Optimized rendering prevents UI flicker during data updates
 - **Settings Panel**: Centralized settings with data management, portfolio controls, and import/export
 
 ## 🚀 Getting Started
@@ -94,6 +98,14 @@ Open Settings → Export/Import → Create Complete Backup and save the JSON fil
 4. Add optional notes to document the transaction
 5. Save to add to your portfolio
 
+### Adding a Loan
+1. Click "Add Asset" and choose **Loan** under Private assets
+2. Enter a name (and optionally a project), the amount lent and its currency, the annual rate (fixed or estimated), simple or compound interest, the start date and optionally the maturity (6–36 month shortcuts)
+3. Optionally deduct the amount from your cash balance in that currency
+4. From the loan view, use "Add Entry" to record interest received, repayments (principal returned plus the interest included, prefilled with what was outstanding on that date) or additional principal. "Edit terms" changes the rate, maturity or name; the amount and start date are edited from the principal entry in History
+
+CSV exports include loan entries but not loan terms; use a complete backup to move loans to another device.
+
 ### Managing Transactions
 - View all transactions for an asset by clicking on it in the holdings list
 - Edit or delete individual transactions
@@ -113,7 +125,7 @@ Open Settings → Export/Import → Create Complete Backup and save the JSON fil
 
 ## 🗂️ Data Persistence
 
-Transactions, portfolios, watchlists, settings and watch-only wallets are saved in local IndexedDB. Display preferences use `localStorage`. Export portfolios to CSV for backup or transfer between devices.
+Transactions, portfolios, loans, watchlists, settings and watch-only wallets are saved in local IndexedDB. Display preferences use `localStorage`. Export portfolios to CSV for backup or transfer between devices.
 
 ## Android app
 
@@ -156,7 +168,7 @@ Alternatively, provide `MONETRA_KEYSTORE_FILE`, `MONETRA_KEYSTORE_PASSWORD`, `MO
 
 - **Frontend**: Next.js 16, React 19
 - **Android**: Capacitor 8 with bundled UI and local market API
-- **Charts**: Recharts
+- **Charts**: Custom SVG line charts and plain CSS bars, no charting library
 - **Styling**: Vanilla CSS with custom design system
 - **Data Source**: Yahoo Finance API
 - **Icons**: Lucide React

@@ -507,6 +507,17 @@ export function calculatePortfolioAccounting(transactions, baseCurrency = 'USD',
         } else if (type === 'WITHDRAW') {
             balances[base] -= bAmt;
             if (!isFiatAsset(base)) consumeLots(accounts, base, bAmt, 0, false);
+        } else if (type === 'INCOME') {
+            // Interest or dividends paid by the base asset: realized profit, units unchanged.
+            if (!isFiatAsset(base)) {
+                const withheldBase = feeCurr && feeCurr !== base ? feeValueBase : 0;
+                getAccount(accounts, base).realizedPnl += quoteValueBase - withheldBase;
+            }
+
+            if (quote && affectsQuoteBalance) {
+                balances[quote] += qAmt;
+                if (!isFiatAsset(quote)) addLot(accounts, quote, qAmt, Math.max(0, quoteValueBase), tx);
+            }
         }
 
         if (fAmt && feeCurr && affectsFeeBalance) {
@@ -625,7 +636,9 @@ function getAssetPriceSnapshot(asset, amount, priceMap, baseCurrency, preferredS
     const td = upper(quote.typeDisp);
     let category = 'Shares';
 
-    if (isFiat || qt === 'CURRENCY' || td.includes('CURRENCY') || priceSym?.endsWith('=X')) {
+    if (qt === 'LOAN') {
+        category = 'Loans';
+    } else if (isFiat || qt === 'CURRENCY' || td.includes('CURRENCY') || priceSym?.endsWith('=X')) {
         category = 'Currencies';
     } else if (qt === 'ETF' || td.includes('ETF')) {
         category = 'ETFs';

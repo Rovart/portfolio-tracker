@@ -3,9 +3,11 @@
 import { apiFetch } from '@/utils/api-client';
 
 import { useState, useEffect, useCallback, useMemo } from 'react';
-import { Wallet, Plus, Trash2, RefreshCw } from 'lucide-react';
+import { Plus, Trash2, RefreshCw } from 'lucide-react';
 import { getWalletsForChain, addWallet, removeWallet } from '@/utils/db';
 import BottomSheet from './BottomSheet';
+import { FormRow } from './ui';
+import { formatMoney, formatPercent, formatQuantity } from '@/utils/format';
 
 // Client-side mirrors of the server validation in /api/wallet
 const ADDRESS_PATTERNS = {
@@ -30,7 +32,6 @@ export default function WalletTracker({ chain, price, changePercent, baseCurrenc
     const [error, setError] = useState('');
     const [refreshing, setRefreshing] = useState(false);
 
-    const currencyLabel = baseCurrency === 'USD' ? '$' : baseCurrency;
     const unit = chain;
 
     const trimmedAddress = address.trim();
@@ -120,109 +121,72 @@ export default function WalletTracker({ chain, price, changePercent, baseCurrenc
         await onWalletsChange?.();
     };
 
-    const labelStyle = { fontSize: '0.72rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em' };
-    const fieldLabelStyle = { ...labelStyle, marginBottom: '8px', display: 'block' };
-
     return (
-        <div className="mt-8">
-            <div className="flex items-center justify-between" style={{ marginBottom: '10px' }}>
-                <span style={labelStyle} className="flex items-center gap-2">
-                    <Wallet size={13} />
-                    Watched wallets
-                </span>
-                <div className="flex items-center gap-2">
+        <section aria-label="Watched wallets">
+            <div className="flex items-center justify-between" style={{ marginBottom: 'var(--space-3)' }}>
+                <h3 className="section-title">Watched wallets</h3>
+                <div className="flex items-center" style={{ gap: '4px' }}>
                     {wallets.length > 0 && (
-                        <button
-                            type="button"
-                            onClick={() => refreshAll(wallets)}
-                            title="Refresh balances"
-                            style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', padding: '4px', display: 'flex' }}
-                        >
-                            <RefreshCw size={14} className={refreshing ? 'animate-spin' : ''} />
+                        <button type="button" onClick={() => refreshAll(wallets)} title="Refresh balances" aria-label="Refresh balances" className="icon-button">
+                            <RefreshCw size={15} className={refreshing ? 'animate-spin' : ''} />
                         </button>
                     )}
-                    <button
-                        type="button"
-                        onClick={() => setAdding(true)}
-                        className="flex items-center gap-1 transition-all"
-                        style={{
-                            background: 'rgba(255,255,255,0.05)',
-                            border: '1px solid var(--card-border)',
-                            borderRadius: '8px',
-                            padding: '5px 10px',
-                            fontSize: '0.72rem',
-                            fontWeight: 600,
-                            color: 'var(--foreground)',
-                            cursor: 'pointer'
-                        }}
-                    >
-                        <Plus size={13} />
-                        Add address
+                    <button type="button" onClick={() => setAdding(true)} className="btn-text">
+                        <Plus size={16} /> Add address
                     </button>
                 </div>
             </div>
 
             {wallets.length === 0 && (
-                <p style={{ margin: 0, fontSize: '0.8rem', color: 'var(--text-faint)' }}>
+                <p className="label" style={{ margin: 0 }}>
                     Track a {chain} address read-only — balance and value update automatically.
                 </p>
             )}
 
-            <div className="flex flex-col gap-2">
+            {wallets.length > 0 && <div className="list-group">
                 {wallets.map(w => {
                     const state = balances[w.id];
                     const balance = state?.balance;
                     const value = Number.isFinite(balance) ? balance * (price || 0) : null;
                     const positive = (changePercent || 0) >= 0;
                     return (
-                        <div
-                            key={w.id}
-                            className="flex items-center justify-between p-3 rounded-xl"
-                            style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid var(--card-border)', gap: '10px' }}
-                        >
-                            <div className="flex flex-col min-w-0" style={{ gap: '2px' }}>
-                                <span style={{ fontSize: '0.85rem', fontWeight: 600 }} className="truncate">
+                        <div key={w.id} className="list-row is-static" style={{ paddingRight: 'var(--space-2)' }}>
+                            <div className="flex flex-col min-w-0 flex-1" style={{ gap: '2px' }}>
+                                <span className="list-row-title truncate">
                                     {w.label || shortenAddress(w.address)}
                                 </span>
-                                <span style={{ fontSize: '0.72rem', color: 'var(--text-faint)', fontFamily: 'var(--font-geist-mono), monospace' }} className="truncate" title={w.address}>
+                                <span className="list-row-subtitle truncate" style={{ fontFamily: 'var(--font-geist-mono), monospace' }} title={w.address}>
                                     {shortenAddress(w.address)}
                                 </span>
                             </div>
                             <div className="flex items-center shrink-0" style={{ gap: '10px' }}>
                                 <div className="flex flex-col items-end" style={{ gap: '2px' }}>
                                     {state?.error ? (
-                                        <span className="text-danger" style={{ fontSize: '0.75rem' }}>{state.error}</span>
+                                        <span className="list-row-subtitle delta-down">{state.error}</span>
                                     ) : !state ? (
-                                        <span className="inline-block w-16 h-4 bg-white-10 rounded animate-pulse" />
+                                        <span className="skeleton inline-block" style={{ width: 64, height: 14 }} />
                                     ) : (
                                         <>
-                                            <span style={{ fontSize: '0.85rem', fontWeight: 700 }}>
-                                                {hideBalances ? '••••' : `${balance.toLocaleString(undefined, { maximumFractionDigits: 6 })} ${unit}`}
+                                            <span className="list-row-title">
+                                                {hideBalances ? '••••' : `${formatQuantity(balance, { maxDecimals: 6 })} ${unit}`}
                                             </span>
-                                            <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>
-                                                {hideBalances ? '••••' : `${(value ?? 0).toLocaleString(undefined, { maximumFractionDigits: 2 })} ${currencyLabel}`}
+                                            <span className="list-row-subtitle">
+                                                {hideBalances ? '••••' : formatMoney(value ?? 0, baseCurrency)}
                                                 {Number.isFinite(changePercent) && (
-                                                    <span style={{ color: positive ? 'var(--success)' : 'var(--danger)', marginLeft: '6px' }}>
-                                                        {positive ? '+' : ''}{changePercent.toFixed(2)}%
-                                                    </span>
+                                                    <span className={positive ? 'delta-up' : 'delta-down'}> · {formatPercent(changePercent)}</span>
                                                 )}
                                             </span>
                                         </>
                                     )}
                                 </div>
-                                <button
-                                    type="button"
-                                    onClick={() => handleRemove(w.id)}
-                                    title="Stop tracking"
-                                    style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: 'var(--text-faint)', padding: '4px', display: 'flex' }}
-                                >
-                                    <Trash2 size={14} />
+                                <button type="button" onClick={() => handleRemove(w.id)} title="Stop tracking" aria-label="Stop tracking" className="icon-button">
+                                    <Trash2 size={15} />
                                 </button>
                             </div>
                         </div>
                     );
                 })}
-            </div>
+            </div>}
 
             {/* Add address — bottom sheet, Save enabled once the address is valid */}
             {adding && (
@@ -232,66 +196,53 @@ export default function WalletTracker({ chain, price, changePercent, baseCurrenc
                     onClose={closeAddSheet}
                     maxWidth={560}
                 >
-                    <form onSubmit={handleAdd} className="flex flex-col gap-4" style={{ maxWidth: '520px', margin: '0 auto' }}>
-                        <div>
-                            <label style={fieldLabelStyle} htmlFor="wallet-address">Address</label>
-                            <input
-                                id="wallet-address"
-                                className="input-reset"
-                                style={{ fontFamily: 'var(--font-geist-mono), monospace', fontSize: '0.9rem' }}
-                                placeholder={chain === 'BTC' ? 'bc1…  /  1…  /  3…' : '0x…'}
-                                value={address}
-                                onChange={e => { setAddress(e.target.value); setError(''); }}
-                                autoFocus
-                                spellCheck={false}
-                                autoComplete="off"
-                                autoCorrect="off"
-                            />
-                            {trimmedAddress && !isValidAddress && (
-                                <span style={{ display: 'block', marginTop: '6px', fontSize: '0.75rem', color: 'var(--text-faint)' }}>
-                                    Doesn&apos;t look like a valid {chain} address yet
-                                </span>
-                            )}
+                    <form onSubmit={handleAdd} className="form-stack" style={{ maxWidth: '520px', margin: '0 auto' }}>
+                        <div className="form-list">
+                            <div className="form-row">
+                                <input
+                                    id="wallet-address"
+                                    aria-label="Address"
+                                    className="form-input"
+                                    style={{ textAlign: 'left', fontFamily: 'var(--font-geist-mono), monospace' }}
+                                    placeholder={chain === 'BTC' ? 'Address: bc1…, 1… or 3…' : 'Address: 0x…'}
+                                    value={address}
+                                    onChange={e => { setAddress(e.target.value); setError(''); }}
+                                    autoFocus
+                                    spellCheck={false}
+                                    autoComplete="off"
+                                    autoCorrect="off"
+                                />
+                            </div>
+                            <FormRow label="Label" htmlFor="wallet-label">
+                                <input
+                                    id="wallet-label"
+                                    className="form-input"
+                                    placeholder="Optional"
+                                    value={label}
+                                    onChange={e => setLabel(e.target.value)}
+                                />
+                            </FormRow>
                         </div>
-                        <div>
-                            <label style={fieldLabelStyle} htmlFor="wallet-label">Label (optional)</label>
-                            <input
-                                id="wallet-label"
-                                className="input-reset"
-                                placeholder="e.g. Cold storage"
-                                value={label}
-                                onChange={e => setLabel(e.target.value)}
-                            />
-                        </div>
+                        {trimmedAddress && !isValidAddress && (
+                            <span className="hint">Doesn&apos;t look like a valid {chain} address yet</span>
+                        )}
 
-                        {error && <span className="text-danger" style={{ fontSize: '0.8rem' }}>{error}</span>}
+                        {error && <span className="form-error">{error}</span>}
 
                         <button
                             type="submit"
                             disabled={!isValidAddress || busy}
-                            className="transition-all"
-                            style={{
-                                width: '100%',
-                                background: 'var(--foreground)',
-                                border: 'none',
-                                borderRadius: '14px',
-                                padding: '14px',
-                                fontSize: '1rem',
-                                fontWeight: 600,
-                                color: 'var(--background)',
-                                cursor: isValidAddress && !busy ? 'pointer' : 'default',
-                                opacity: isValidAddress && !busy ? 1 : 0.4,
-                                marginTop: '4px'
-                            }}
+                            className="btn btn-block"
+                            style={{ opacity: isValidAddress && !busy ? 1 : 0.4, cursor: isValidAddress && !busy ? 'pointer' : 'default' }}
                         >
                             {busy ? 'Verifying…' : 'Save'}
                         </button>
-                        <p style={{ margin: 0, fontSize: '0.75rem', color: 'var(--text-faint)', textAlign: 'center' }}>
+                        <p className="hint" style={{ margin: 0, textAlign: 'center' }}>
                             Read-only. We never ask for keys — only a public address.
                         </p>
                     </form>
                 </BottomSheet>
             )}
-        </div>
+        </section>
     );
 }

@@ -6,6 +6,7 @@ import { ArrowLeft, Plus, Trash2, Edit2, Check, X, Upload, Download, FolderOpen,
 import ConfirmModal from './ConfirmModal';
 import { parsePortfolioCsv } from '@/utils/csvImport';
 import { createBackup, restoreBackup, validateBackup } from '@/utils/backup';
+import { Segmented } from './ui';
 import { downloadFile } from '@/utils/download-file';
 import { clearFxCache } from '@/utils/fxCache';
 import {
@@ -473,8 +474,8 @@ export default function SettingsModal({ onClose, onPortfolioChange, currentPortf
                 left: 0,
                 right: 0,
                 bottom: 0,
-                backgroundColor: '#000',
-                color: 'white',
+                backgroundColor: 'var(--background)',
+                color: 'var(--foreground)',
                 zIndex: 9999,
                 display: 'flex',
                 flexDirection: 'column',
@@ -485,33 +486,22 @@ export default function SettingsModal({ onClose, onPortfolioChange, currentPortf
             }}
         >
             {/* Header */}
-            <div className="flex items-center justify-between p-4 sm:p-6" style={{ borderBottom: '1px solid #262626' }}>
-                <div className="flex items-center gap-4">
-                    <button
-                        onClick={onClose}
-                        className="p-2 -ml-2 rounded-full hover-bg-surface transition-all text-muted hover:text-white"
-                        style={{ background: 'transparent', border: 'none', cursor: 'pointer' }}
-                    >
-                        <ArrowLeft size={24} />
-                    </button>
-                    <h2 className="text-xl sm:text-2xl font-bold tracking-tight" style={{ margin: 0 }}>
-                        Settings
-                    </h2>
-                </div>
+            <div className="modal-header">
+                <button type="button" onClick={onClose} className="icon-button" aria-label="Back" style={{ marginLeft: '-8px' }}>
+                    <ArrowLeft size={22} />
+                </button>
+                <h2 className="modal-title">Settings</h2>
             </div>
 
             {/* Tab Navigation */}
-            <div className="flex gap-2 p-4 overflow-x-auto" style={{ borderBottom: '1px solid #262626' }}>
-                {tabs.map(tab => (
-                    <button
-                        key={tab.id}
-                        onClick={() => setActiveTab(tab.id)}
-                        className={`pill flex items-center gap-2 ${activeTab === tab.id ? 'active' : ''}`}
-                    >
-                        <tab.icon size={14} />
-                        {tab.label}
-                    </button>
-                ))}
+            <div style={{ padding: '0 16px' }}>
+                <Segmented
+                    variant="tabs"
+                    ariaLabel="Settings section"
+                    value={activeTab}
+                    onChange={setActiveTab}
+                    options={tabs.map(tab => ({ id: tab.id, label: tab.label }))}
+                />
             </div>
 
             {/* Content */}
@@ -524,24 +514,19 @@ export default function SettingsModal({ onClose, onPortfolioChange, currentPortf
                             </p>
 
                             {/* Portfolio List */}
-                            <div className="flex flex-col gap-2">
+                            <div className="list-group is-plain">
                                 {portfolios.map((portfolio, index) => (
                                     <div
                                         key={portfolio.id}
-                                        className={`flex items-center justify-between p-4 rounded-xl ${draggedIndex === index ? 'opacity-50' : ''}`}
-                                        style={{
-                                            background: 'rgba(255,255,255,0.03)',
-                                            border: dragOverIndex === index ? '1px solid rgba(59, 130, 246, 0.5)' : '1px solid rgba(255,255,255,0.08)',
-                                            cursor: 'grab',
-                                            transition: 'border-color 0.15s, opacity 0.15s'
-                                        }}
+                                        className={`list-row is-static ${draggedIndex === index ? 'opacity-60' : ''}`}
+                                        style={{ minHeight: 56, cursor: 'grab', boxShadow: dragOverIndex === index ? 'inset 0 0 0 1px var(--border-strong)' : undefined }}
                                         draggable={editingId !== portfolio.id}
                                         onDragStart={(e) => editingId !== portfolio.id && handlePortfolioDragStart(e, index)}
                                         onDragOver={(e) => handlePortfolioDragOver(e, index)}
                                         onDragEnd={handlePortfolioDragEnd}
                                     >
                                         {/* Drag Handle */}
-                                        <div className="pr-3 text-muted cursor-grab" style={{ touchAction: 'none', marginRight: '10px' }}>
+                                        <div className="text-muted cursor-grab" style={{ touchAction: 'none', display: 'flex' }}>
                                             <GripVertical size={16} />
                                         </div>
                                         {editingId === portfolio.id ? (
@@ -550,78 +535,46 @@ export default function SettingsModal({ onClose, onPortfolioChange, currentPortf
                                                     type="text"
                                                     value={editingName}
                                                     onChange={e => setEditingName(e.target.value)}
-                                                    className="flex-1 text-white text-sm font-medium"
-                                                    style={{
-                                                        background: 'rgba(255, 255, 255, 0.08)',
-                                                        border: '1px solid rgba(255, 255, 255, 0.15)',
-                                                        borderRadius: '12px',
-                                                        padding: '10px 14px',
-                                                        outline: 'none',
-                                                        transition: 'all 0.2s ease'
-                                                    }}
-                                                    onFocus={(e) => e.target.style.borderColor = 'rgba(255, 255, 255, 0.3)'}
-                                                    onBlur={(e) => e.target.style.borderColor = 'rgba(255, 255, 255, 0.15)'}
+                                                    className="form-input flex-1"
+                                                    style={{ textAlign: 'left' }}
+                                                    aria-label="Portfolio name"
                                                     autoFocus
                                                 />
                                                 <div className="flex items-center gap-2">
                                                     <button
                                                         onClick={() => handleUpdatePortfolio(portfolio.id)}
-                                                        className="transition-all"
-                                                        style={{
-                                                            background: 'rgba(34, 197, 94, 0.15)',
-                                                            border: '1px solid rgba(34, 197, 94, 0.25)',
-                                                            color: '#4ade80',
-                                                            borderRadius: '10px',
-                                                            padding: '8px 12px',
-                                                            cursor: 'pointer',
-                                                            display: 'flex',
-                                                            alignItems: 'center',
-                                                            justifyContent: 'center'
-                                                        }}
+                                                        className="icon-button"
+                                                        aria-label="Save name"
+                                                        style={{ color: 'var(--foreground)' }}
                                                     >
-                                                        <Check size={18} strokeWidth={2.5} />
+                                                        <Check size={18} strokeWidth={2.25} />
                                                     </button>
                                                     <button
                                                         onClick={() => { setEditingId(null); setEditingName(''); }}
-                                                        className="transition-all"
-                                                        style={{
-                                                            background: 'rgba(255, 255, 255, 0.06)',
-                                                            border: '1px solid rgba(255, 255, 255, 0.12)',
-                                                            color: 'rgba(255, 255, 255, 0.6)',
-                                                            borderRadius: '10px',
-                                                            padding: '8px 12px',
-                                                            cursor: 'pointer',
-                                                            display: 'flex',
-                                                            alignItems: 'center',
-                                                            justifyContent: 'center'
-                                                        }}
+                                                        className="icon-button"
+                                                        aria-label="Cancel"
                                                     >
-                                                        <X size={18} strokeWidth={2.5} />
+                                                        <X size={18} strokeWidth={2.25} />
                                                     </button>
                                                 </div>
                                             </div>
                                         ) : (
                                             <>
                                                 <div className="flex items-center gap-2 flex-1">
-                                                    <span className="font-medium text-sm">{portfolio.name}</span>
-                                                    {portfolio.isWatchlist && (
-                                                        <span className="pill text-[10px] px-2 py-0.5 rounded-full font-medium tracking-wide">
-                                                            Watchlist
-                                                        </span>
-                                                    )}
+                                                    <span className="list-row-title">{portfolio.name}</span>
+                                                    {portfolio.isWatchlist && <span className="hint">Watchlist</span>}
                                                 </div>
                                                 <div className="flex items-center gap-1">
                                                     {/* Watchlist toggle - only show if empty */}
                                                     {portfolio.isEmpty && (
                                                         <button
                                                             onClick={(e) => { e.stopPropagation(); handleToggleWatchlist(portfolio); }}
-                                                            className="p-2 rounded-full hover:bg-white/10 transition-all"
-                                                            style={{ background: 'transparent', border: 'none', cursor: 'pointer' }}
+                                                            className="icon-button"
                                                             title={portfolio.isWatchlist ? 'Convert to portfolio' : 'Convert to watchlist'}
                                                         >
                                                             <Eye
                                                                 size={16}
-                                                                className={portfolio.isWatchlist ? 'text-white' : 'text-white/40'}
+                                                                style={{ color: portfolio.isWatchlist ? 'var(--foreground)' : 'var(--text-faint)' }}
                                                             />
                                                         </button>
                                                     )}
@@ -629,29 +582,29 @@ export default function SettingsModal({ onClose, onPortfolioChange, currentPortf
                                                     {portfolios.length > 1 && (
                                                         <button
                                                             onClick={() => handleSetDefault(portfolio.id)}
-                                                            className="p-2 rounded-full hover:bg-yellow-500/20 transition-all"
-                                                            style={{ background: 'transparent', border: 'none', cursor: 'pointer' }}
+                                                            className="icon-button"
                                                             title={portfolio.isDefault ? 'Remove as default' : 'Set as default view'}
                                                         >
                                                             <Star
                                                                 size={16}
-                                                                className={portfolio.isDefault ? 'text-yellow-400' : 'text-white/40'}
-                                                                fill={portfolio.isDefault ? '#facc15' : 'none'}
+                                                                style={{ color: portfolio.isDefault ? 'var(--foreground)' : 'var(--text-faint)' }}
+                                                                fill={portfolio.isDefault ? 'currentColor' : 'none'}
                                                             />
                                                         </button>
                                                     )}
                                                     <button
                                                         onClick={() => { setEditingId(portfolio.id); setEditingName(portfolio.name); }}
-                                                        className="p-2 rounded-full hover:bg-white/10 text-white/60"
-                                                        style={{ background: 'transparent', border: 'none', cursor: 'pointer' }}
+                                                        className="icon-button"
+                                                        aria-label="Rename"
                                                     >
                                                         <Edit2 size={16} />
                                                     </button>
                                                     {portfolios.length > 1 && (
                                                         <button
                                                             onClick={() => handleDeletePortfolio(portfolio.id)}
-                                                            className="p-2 rounded-full hover:bg-red-500/20 text-red-400"
-                                                            style={{ background: 'transparent', border: 'none', cursor: 'pointer' }}
+                                                            className="icon-button"
+                                                            aria-label="Delete portfolio"
+                                                            style={{ color: 'var(--danger)' }}
                                                         >
                                                             <Trash2 size={16} />
                                                         </button>
@@ -666,70 +619,38 @@ export default function SettingsModal({ onClose, onPortfolioChange, currentPortf
                             {/* Add New Portfolio */}
                             {
                                 showAddForm ? (
-                                    <div className="flex items-center gap-2 p-3 rounded-xl" style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)' }} >
+                                    <div className="form-row" style={{ borderTop: '1px solid var(--border)' }}>
                                         <input
                                             type="text"
                                             value={newPortfolioName}
                                             onChange={e => setNewPortfolioName(e.target.value)}
-                                            placeholder="Portfolio name..."
-                                            className="flex-1 text-white text-sm font-medium"
-                                            style={{
-                                                background: 'rgba(255, 255, 255, 0.08)',
-                                                border: '1px solid rgba(255, 255, 255, 0.15)',
-                                                borderRadius: '12px',
-                                                padding: '10px 14px',
-                                                outline: 'none',
-                                                transition: 'all 0.2s ease'
-                                            }}
-                                            onFocus={(e) => e.target.style.borderColor = 'rgba(255, 255, 255, 0.3)'}
-                                            onBlur={(e) => e.target.style.borderColor = 'rgba(255, 255, 255, 0.15)'}
+                                            placeholder="Portfolio name"
+                                            aria-label="New portfolio name"
+                                            className="form-input flex-1"
+                                            style={{ textAlign: 'left' }}
                                             autoFocus
                                         />
                                         <div className="flex items-center gap-2">
                                             <button
                                                 onClick={handleAddPortfolio}
-                                                className="transition-all"
-                                                style={{
-                                                    background: 'rgba(34, 197, 94, 0.15)',
-                                                    border: '1px solid rgba(34, 197, 94, 0.25)',
-                                                    color: '#4ade80',
-                                                    borderRadius: '10px',
-                                                    padding: '8px 12px',
-                                                    cursor: 'pointer',
-                                                    display: 'flex',
-                                                    alignItems: 'center',
-                                                    justifyContent: 'center'
-                                                }}
+                                                className="icon-button"
+                                                aria-label="Add portfolio"
+                                                style={{ color: 'var(--foreground)' }}
                                             >
-                                                <Check size={18} strokeWidth={2.5} />
+                                                <Check size={18} strokeWidth={2.25} />
                                             </button>
                                             <button
                                                 onClick={() => { setShowAddForm(false); setNewPortfolioName(''); }}
-                                                className="transition-all"
-                                                style={{
-                                                    background: 'rgba(255, 255, 255, 0.06)',
-                                                    border: '1px solid rgba(255, 255, 255, 0.12)',
-                                                    color: 'rgba(255, 255, 255, 0.6)',
-                                                    borderRadius: '10px',
-                                                    padding: '8px 12px',
-                                                    cursor: 'pointer',
-                                                    display: 'flex',
-                                                    alignItems: 'center',
-                                                    justifyContent: 'center'
-                                                }}
+                                                className="icon-button"
+                                                aria-label="Cancel"
                                             >
-                                                <X size={18} strokeWidth={2.5} />
+                                                <X size={18} strokeWidth={2.25} />
                                             </button>
                                         </div>
                                     </div>
                                 ) : (
-                                    <button
-                                        onClick={() => setShowAddForm(true)}
-                                        className="flex items-center justify-center gap-2 p-4 rounded-xl text-muted hover:text-white transition-all"
-                                        style={{ cursor: 'pointer', background: 'transparent', border: '1px dashed rgba(255,255,255,0.15)' }}
-                                    >
-                                        <Plus size={20} />
-                                        <span>Add Portfolio</span>
+                                    <button type="button" onClick={() => setShowAddForm(true)} className="btn-text" style={{ alignSelf: 'flex-start' }}>
+                                        <Plus size={17} /> Add portfolio
                                     </button>
                                 )}
                         </div>
@@ -737,74 +658,62 @@ export default function SettingsModal({ onClose, onPortfolioChange, currentPortf
 
                     {activeTab === 'export' && (
                         <div className="flex flex-col gap-4" aria-busy={ioBusy}>
-                            <p className="text-muted text-sm">Complete backups include every portfolio, transaction, wallet, watchlist and preference.</p>
-                            <button onClick={handleExportBackup} disabled={ioBusy} className="btn flex items-center gap-3 p-4 rounded-xl" style={{ border: '1px solid rgba(255,255,255,0.1)' }}>
-                                <Download size={20} /> {ioBusy ? 'Working…' : 'Create Complete Backup'}
-                            </button>
-                            <button onClick={() => backupInputRef.current?.click()} disabled={ioBusy} className="btn flex items-center gap-3 p-4 rounded-xl" style={{ border: '1px solid rgba(255,255,255,0.1)' }}>
-                                <Upload size={20} /> Restore Complete Backup
-                            </button>
+                            <p className="text-muted text-sm">Complete backups include every portfolio, transaction, loan, wallet, watchlist and preference.</p>
+                            <div className="list-group is-plain">
+                                <button type="button" onClick={handleExportBackup} disabled={ioBusy} className="list-row">
+                                    <span className="asset-icon" style={{ width: 36, height: 36 }}><Download size={16} /></span>
+                                    <span className="flex flex-col flex-1" style={{ gap: '2px' }}>
+                                        <span className="list-row-title">{ioBusy ? 'Working…' : 'Create backup'}</span>
+                                        <span className="list-row-subtitle">Save everything to a JSON file</span>
+                                    </span>
+                                </button>
+                                <button type="button" onClick={() => backupInputRef.current?.click()} disabled={ioBusy} className="list-row">
+                                    <span className="asset-icon" style={{ width: 36, height: 36 }}><Upload size={16} /></span>
+                                    <span className="flex flex-col flex-1" style={{ gap: '2px' }}>
+                                        <span className="list-row-title">Restore backup</span>
+                                        <span className="list-row-subtitle">Replace the data on this device</span>
+                                    </span>
+                                </button>
+                            </div>
                             <input ref={backupInputRef} type="file" accept=".json,application/json" onChange={handleReadBackup} style={{ display: 'none' }} />
                             {ioStatus && <p role={ioStatus.error ? 'alert' : 'status'} className={ioStatus.error ? 'text-danger text-sm' : 'text-muted text-sm'}>{ioStatus.text}</p>}
                             <p className="text-muted text-xs">CSV below transfers transactions only. Restoring a complete backup replaces the current data.</p>
-                            <div className="flex flex-col gap-2">
-                                <label className="text-muted text-xs font-semibold uppercase tracking-wider">Target Portfolio</label>
-                                <select
-                                    value={ioPortfolioId}
-                                    onChange={(e) => setIoPortfolioId(e.target.value === 'all' ? 'all' : parseInt(e.target.value))}
-                                    style={{
-                                        width: '100%',
-                                        background: `rgba(255, 255, 255, 0.05) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='18' height='18' viewBox='0 0 24 24' fill='none' stroke='rgba(255,255,255,0.5)' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E") no-repeat right 14px center`,
-                                        border: '1px solid rgba(255, 255, 255, 0.1)',
-                                        borderRadius: '12px',
-                                        padding: '12px 44px 12px 14px',
-                                        color: 'white',
-                                        fontSize: '14px',
-                                        fontWeight: '500',
-                                        cursor: 'pointer',
-                                        outline: 'none',
-                                        appearance: 'none',
-                                        WebkitAppearance: 'none',
-                                        MozAppearance: 'none'
-                                    }}
-                                >
-                                    <option value="all" style={{ background: '#121212', color: 'white' }}>All Portfolios (Consolidated)</option>
-                                    {portfolios.map(p => (
-                                        <option key={p.id} value={p.id} style={{ background: '#121212', color: 'white' }}>{p.name}</option>
-                                    ))}
-                                </select>
+                            <div className="form-list">
+                                <div className="form-row">
+                                    <label className="form-row-label flex flex-col" htmlFor="io-portfolio" style={{ gap: '2px' }}>
+                                        <span>CSV portfolio</span>
+                                        <span className="hint">Exported from, or imported into</span>
+                                    </label>
+                                    <div className="form-row-control">
+                                        <select
+                                            id="io-portfolio"
+                                            className="form-input"
+                                            value={ioPortfolioId}
+                                            onChange={(e) => setIoPortfolioId(e.target.value === 'all' ? 'all' : parseInt(e.target.value))}
+                                        >
+                                            <option value="all">All portfolios</option>
+                                            {portfolios.map(p => (
+                                                <option key={p.id} value={p.id}>{p.name}</option>
+                                            ))}
+                                        </select>
+                                    </div>
+                                </div>
                             </div>
 
-                            <p className="text-muted text-sm pb-2">
-                                Select which portfolio to export or where you want to import your data.
-                            </p>
-
-                            <button
-                                onClick={handleExportCsv}
-                                className="flex items-center gap-3 p-4 rounded-xl hover:bg-white/5 transition-all"
-                                style={{ cursor: 'pointer', textAlign: 'left', border: '1px solid rgba(255,255,255,0.08)', background: 'rgba(255,255,255,0.03)' }}
-                            >
-                                <div className="p-3 rounded-full bg-blue-500/20">
-                                    <Download size={20} className="text-blue-400" />
-                                </div>
-                                <div>
-                                    <div className="font-medium">Export CSV</div>
-                                    <div className="text-sm text-muted">Download all transactions as CSV</div>
-                                </div>
+                            <button type="button" onClick={handleExportCsv} className="list-row">
+                                <span className="asset-icon" style={{ width: 36, height: 36 }}><Download size={16} /></span>
+                                <span className="flex flex-col flex-1" style={{ gap: '2px' }}>
+                                    <span className="list-row-title">Export CSV</span>
+                                    <span className="list-row-subtitle">Download all transactions as CSV</span>
+                                </span>
                             </button>
 
-                            <button
-                                onClick={() => fileInputRef.current?.click()}
-                                className="flex items-center gap-3 p-4 rounded-xl hover:bg-white/5 transition-all"
-                                style={{ cursor: 'pointer', textAlign: 'left', border: '1px solid rgba(255,255,255,0.08)', background: 'rgba(255,255,255,0.03)' }}
-                            >
-                                <div className="p-3 rounded-full bg-green-500/20">
-                                    <Upload size={20} className="text-green-400" />
-                                </div>
-                                <div>
-                                    <div className="font-medium">Import CSV</div>
-                                    <div className="text-sm text-muted">Import transactions from CSV file</div>
-                                </div>
+                            <button type="button" onClick={() => fileInputRef.current?.click()} className="list-row">
+                                <span className="asset-icon" style={{ width: 36, height: 36 }}><Upload size={16} /></span>
+                                <span className="flex flex-col flex-1" style={{ gap: '2px' }}>
+                                    <span className="list-row-title">Import CSV</span>
+                                    <span className="list-row-subtitle">Import transactions from CSV file</span>
+                                </span>
                             </button>
 
                             <input
@@ -824,13 +733,13 @@ export default function SettingsModal({ onClose, onPortfolioChange, currentPortf
 
                             <Link
                                 href="/privacy?from=settings"
-                                className="flex items-center justify-between p-4 rounded-xl hover:bg-white/5 transition-all text-white no-underline"
-                                style={{ border: '1px solid rgba(255,255,255,0.08)', background: 'rgba(255,255,255,0.03)' }}
+                                className="list-row"
+                                style={{ justifyContent: 'space-between' }}
                             >
                                 <div className="flex items-center gap-3">
-                                    <div className="p-3 rounded-full bg-blue-500/10">
-                                        <Shield size={20} className="text-blue-400" />
-                                    </div>
+                                    <span className="asset-icon" style={{ width: 40, height: 40 }}>
+                                        <Shield size={18} />
+                                    </span>
                                     <div>
                                         <div className="font-medium">Privacy Policy</div>
                                         <div className="text-xs text-muted">How we handle your data</div>
@@ -841,13 +750,13 @@ export default function SettingsModal({ onClose, onPortfolioChange, currentPortf
 
                             <Link
                                 href="/terms?from=settings"
-                                className="flex items-center justify-between p-4 rounded-xl hover:bg-white/5 transition-all text-white no-underline"
-                                style={{ border: '1px solid rgba(255,255,255,0.08)', background: 'rgba(255,255,255,0.03)' }}
+                                className="list-row"
+                                style={{ justifyContent: 'space-between' }}
                             >
                                 <div className="flex items-center gap-3">
-                                    <div className="p-3 rounded-full bg-purple-500/10">
-                                        <FileText size={20} className="text-purple-400" />
-                                    </div>
+                                    <span className="asset-icon" style={{ width: 40, height: 40 }}>
+                                        <FileText size={18} />
+                                    </span>
                                     <div>
                                         <div className="font-medium">Terms & Conditions</div>
                                         <div className="text-xs text-muted">Legal agreement and disclaimers</div>
@@ -877,12 +786,12 @@ export default function SettingsModal({ onClose, onPortfolioChange, currentPortf
                                 onClick={() => handleNotificationToggle(!notificationsEnabled)}
                             >
                                 <div className="flex flex-col gap-1">
-                                    <span className="text-white font-medium group-hover:text-green-400 transition-colors">Daily Notifications</span>
+                                    <span className="text-white font-medium">Daily notifications</span>
                                     <span className="text-xs text-muted">Get a daily reminder to check your portfolio performance</span>
                                 </div>
                                 <div style={{
                                     width: '48px', height: '24px', borderRadius: '999px', padding: '2px',
-                                    backgroundColor: notificationsEnabled ? '#22c55e' : '#262626',
+                                    backgroundColor: notificationsEnabled ? 'var(--accent)' : 'rgba(255,255,255,0.16)',
                                     transition: 'background-color 0.2s',
                                     flexShrink: 0
                                 }}>
@@ -970,10 +879,8 @@ export default function SettingsModal({ onClose, onPortfolioChange, currentPortf
                             marginBottom: '20px'
                         }}>
                             <div style={{ marginBottom: '16px' }}>
-                                <span style={{ fontSize: '0.75rem', color: '#71717a', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-                                    CSV Portfolio
-                                </span>
-                                <p style={{ margin: '4px 0 0 0', fontSize: '1rem', fontWeight: '600', color: '#fbbf24' }}>
+                                <span className="label">CSV portfolio</span>
+                                <p style={{ margin: '4px 0 0 0', fontSize: '1rem', fontWeight: '600' }}>
                                     {importConflict.csvPortfolioName}
                                 </p>
                             </div>
@@ -991,9 +898,7 @@ export default function SettingsModal({ onClose, onPortfolioChange, currentPortf
                             </div>
 
                             <div>
-                                <span style={{ fontSize: '0.75rem', color: '#71717a', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-                                    Target Portfolio
-                                </span>
+                                <span className="label">Import into</span>
                                 <p style={{ margin: '4px 0 0 0', fontSize: '1rem', fontWeight: '600', color: '#fff' }}>
                                     {importConflict.targetPortfolioName}
                                 </p>
@@ -1070,7 +975,7 @@ export default function SettingsModal({ onClose, onPortfolioChange, currentPortf
                 onClose={() => setPendingBackup(null)}
                 onConfirm={handleRestoreBackup}
                 title="Restore Complete Backup"
-                message={pendingBackup ? `Replace the current data with "${pendingBackup.fileName}"? It contains ${pendingBackup.backup.tables.portfolios.length} portfolios, ${pendingBackup.backup.tables.transactions.length} transactions, ${pendingBackup.backup.tables.wallets.length} wallets and ${pendingBackup.backup.tables.watchlistAssets.length} watchlist assets. Export a backup first if you want to keep the current data.` : ''}
+                message={pendingBackup ? `Replace the current data with "${pendingBackup.fileName}"? It contains ${pendingBackup.backup.tables.portfolios.length} portfolios, ${pendingBackup.backup.tables.transactions.length} transactions, ${pendingBackup.backup.tables.wallets.length} wallets, ${pendingBackup.backup.tables.loans.length} loans and ${pendingBackup.backup.tables.watchlistAssets.length} watchlist assets. Export a backup first if you want to keep the current data.` : ''}
                 confirmText="Replace and Restore"
             />
 
