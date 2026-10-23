@@ -9,7 +9,7 @@
     align-items: center;
     justify-content: space-between;
     padding: 1rem 1.5rem;
-    padding-top: calc(1rem + env(safe-area-inset-top, 0px));
+    padding-top: calc(1rem + var(--inset-top));
     border-bottom: 1px solid #262626;
 }
 
@@ -55,7 +55,7 @@
     max-width: 600px;
     margin: 0 auto;
     padding: 1.5rem 1rem;
-    padding-bottom: calc(2rem + env(safe-area-inset-bottom, 0px));
+    padding-bottom: calc(2rem + var(--inset-bottom));
 }
 
 .lastUpdated {
@@ -310,7 +310,7 @@
 @media (max-width: 480px) {
     .header {
         padding: 1rem;
-        padding-top: calc(1rem + env(safe-area-inset-top, 0px));
+        padding-top: calc(1rem + var(--inset-top));
     }
 
     .headerTitle {
@@ -319,7 +319,7 @@
 
     .content {
         padding: 1rem;
-        padding-bottom: calc(1.5rem + env(safe-area-inset-bottom, 0px));
+        padding-bottom: calc(1.5rem + var(--inset-bottom));
     }
 
     .section {

@@ -122,7 +122,7 @@ export default function BottomSheet({ title, subtitle, onClose, children, maxWid
                     boxShadow: 'var(--shadow-overlay)',
                     border: '1px solid var(--border)',
                     borderBottom: 'none',
-                    paddingBottom: 'env(safe-area-inset-bottom, 0px)'
+                    paddingBottom: 'var(--inset-bottom)'
                 }}
             >
                 {/* Draggable header: grabber + title + close */}

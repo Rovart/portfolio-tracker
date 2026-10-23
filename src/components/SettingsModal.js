@@ -481,8 +481,8 @@ export default function SettingsModal({ onClose, onPortfolioChange, currentPortf
                 flexDirection: 'column',
                 height: '100dvh',
                 width: '100vw',
-                paddingTop: 'env(safe-area-inset-top, 0px)',
-                paddingBottom: 'env(safe-area-inset-bottom, 0px)'
+                paddingTop: 'var(--inset-top)',
+                paddingBottom: 'var(--inset-bottom)'
             }}
         >
             {/* Header */}

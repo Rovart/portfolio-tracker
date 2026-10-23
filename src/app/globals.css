@@ -1,4 +1,10 @@
 :root {
+  /* Safe areas. On Android 15+ Capacitor consumes the system insets and passes
+     them as --safe-area-inset-*, so env() reads 0 there; iOS and browsers use env(). */
+  --inset-top: var(--safe-area-inset-top, env(safe-area-inset-top, 0px));
+  --inset-right: var(--safe-area-inset-right, env(safe-area-inset-right, 0px));
+  --inset-bottom: var(--safe-area-inset-bottom, env(safe-area-inset-bottom, 0px));
+  --inset-left: var(--safe-area-inset-left, env(safe-area-inset-left, 0px));
   /* Surfaces: one neutral ramp, no tints */
   --background: #09090b;
   --background-elevated: #111113;
@@ -139,14 +145,14 @@ a {
   max-width: 600px;
   margin: 0 auto;
   padding: 16px;
-  padding-top: calc(16px + env(safe-area-inset-top, 0px));
+  padding-top: calc(16px + var(--inset-top));
   width: 100%;
 }
 
 @media (max-width: 380px) {
   .container {
     padding: 12px;
-    padding-top: calc(12px + env(safe-area-inset-top, 0px));
+    padding-top: calc(12px + var(--inset-top));
   }
 }
 
@@ -753,8 +759,8 @@ a {
   z-index: 9999;
   display: flex;
   flex-direction: column;
-  padding-top: env(safe-area-inset-top, 0px);
-  padding-bottom: env(safe-area-inset-bottom, 0px);
+  padding-top: var(--inset-top);
+  padding-bottom: var(--inset-bottom);
   background: var(--background);
   color: var(--foreground);
 }
@@ -1623,7 +1629,7 @@ textarea.form-input {
 .fab {
   position: fixed;
   right: 20px;
-  bottom: calc(20px + env(safe-area-inset-bottom, 0px));
+  bottom: calc(20px + var(--inset-bottom));
   z-index: 10;
   display: flex;
   align-items: center;
@@ -1640,7 +1646,7 @@ textarea.form-input {
 
 .toast {
   position: fixed;
-  top: calc(12px + env(safe-area-inset-top, 0px));
+  top: calc(12px + var(--inset-top));
   left: 50%;
   z-index: 60;
   max-width: calc(100vw - 32px);

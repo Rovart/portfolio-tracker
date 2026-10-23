@@ -128,7 +128,7 @@ export default function PullToRefresh({ onRefresh, children, disabled = false })
             <div
                 style={{
                     position: 'fixed',
-                    top: `calc(env(safe-area-inset-top, 0px) + ${pullDistance - 40}px)`,
+                    top: `calc(var(--inset-top) + ${pullDistance - 40}px)`,
                     left: '50%',
                     transform: 'translateX(-50%)',
                     zIndex: 1000,
