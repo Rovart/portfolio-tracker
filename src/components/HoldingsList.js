@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useRef, useMemo, memo, useCallback } from 'react';
-import { GripVertical, ChevronDown, Wallet, Sun, Moon, Plus } from 'lucide-react';
+import { GripVertical, ChevronDown, Wallet, Landmark, Sun, Moon, Plus } from 'lucide-react';
 import { updateWatchlistAssetPositions } from '@/utils/db';
 import { formatSymbol } from '@/utils/commodities';
 import AssetIcon from './AssetIcon';
@@ -126,6 +126,43 @@ const HoldingRow = memo(function HoldingRow({
     );
 });
 
+// A collapsible summary row for a group kept apart from market assets (cash, loans).
+function GroupRow({ icon, title, subtitle, value, change, collapsed, onToggle, hideBalances, baseCurrency }) {
+    return (
+        <div
+            className="list-row"
+            onClick={onToggle}
+            onKeyDown={(event) => {
+                if (event.key !== 'Enter' && event.key !== ' ') return;
+                event.preventDefault();
+                onToggle();
+            }}
+            role="button"
+            tabIndex={0}
+            aria-expanded={!collapsed}
+        >
+            <span className="asset-icon" style={{ width: 36, height: 36 }}>{icon}</span>
+            <div className="flex-1 flex flex-col min-w-0" style={{ gap: '2px' }}>
+                <span className="list-row-title">{title}</span>
+                <span className="list-row-subtitle">{subtitle}</span>
+            </div>
+            <div className="flex items-center shrink-0" style={{ gap: 'var(--space-2)' }}>
+                <div className="flex flex-col items-end" style={{ gap: '2px' }}>
+                    <span className="list-row-title">
+                        {hideBalances ? '••••••' : value === null ? 'Partial value' : formatMoney(value, baseCurrency)}
+                    </span>
+                    {value !== null && !hideBalances && Math.abs(change) >= 0.005 && (
+                        <span className={`list-row-subtitle ${changeTone(change)}`}>
+                            {formatMoney(change, baseCurrency, { signed: true })}
+                        </span>
+                    )}
+                </div>
+                <ChevronDown size={16} className="text-muted" style={{ transform: collapsed ? 'rotate(-90deg)' : 'none', transition: 'transform var(--dur-fast) var(--ease-out)' }} />
+            </div>
+        </div>
+    );
+}
+
 // Toggle this to switch between Symbol and Short Name
 const DISPLAY_NAME = false; // true = Name, false = Symbol
 
@@ -143,10 +180,10 @@ const TYPE_GROUP_LABELS = {
 
 // Slim stacked allocation bar. Few assets: one segment per asset.
 // Many assets: grouped by asset class so the bar stays readable.
-function AllocationBar({ holdings, cashValue }) {
+function AllocationBar({ holdings, loansValue = 0, cashValue }) {
     const segments = useMemo(() => {
         const assets = [...holdings].sort((a, b) => (b.value || 0) - (a.value || 0));
-        const total = assets.reduce((acc, h) => acc + (h.value || 0), 0) + Math.max(cashValue, 0);
+        const total = assets.reduce((acc, h) => acc + (h.value || 0), 0) + Math.max(loansValue, 0) + Math.max(cashValue, 0);
         if (total <= 0) return [];
 
         let segs;
@@ -179,11 +216,14 @@ function AllocationBar({ holdings, cashValue }) {
             }
         }
 
+        if (loansValue / total >= 0.005) {
+            segs.push({ label: 'Loans', pct: (loansValue / total) * 100, color: 'rgba(255,255,255,0.28)' });
+        }
         if (cashValue / total >= 0.005) {
             segs.push({ label: 'Cash', pct: (Math.max(cashValue, 0) / total) * 100, color: 'rgba(255,255,255,0.1)' });
         }
         return segs;
-    }, [holdings, cashValue]);
+    }, [holdings, loansValue, cashValue]);
 
     if (segments.length < 2) return null;
 
@@ -244,6 +284,15 @@ export default function HoldingsList({ holdings, onSelect, onAddAsset, loading, 
         }
         return true; // Default to collapsed
     });
+
+    const [loansCollapsed, setLoansCollapsed] = useState(() => (
+        typeof window !== 'undefined' && localStorage.getItem('loans_collapsed') === 'true'
+    ));
+    const toggleLoansCollapsed = () => {
+        const next = !loansCollapsed;
+        setLoansCollapsed(next);
+        localStorage.setItem('loans_collapsed', String(next));
+    };
 
     // Load saved sort preference OR reset when switching portfolio types
     useEffect(() => {
@@ -317,13 +366,15 @@ export default function HoldingsList({ holdings, onSelect, onAddAsset, loading, 
         dragOverItemRef.current = null;
     }, [holdings, currentPortfolioId, onWatchlistReorder]);
 
-    // Sort holdings and separate fiat from non-fiat
-    const { nonFiatHoldings, fiatHoldings, totalFiatValue, totalFiatDailyPnl, totalFiatProfit } = useMemo(() => {
+    // Market assets are sorted; cash and loans are kept apart in their own groups.
+    const { nonFiatHoldings, fiatHoldings, loanHoldings, totalFiatValue, totalFiatDailyPnl, totalFiatProfit, loanTotals } = useMemo(() => {
         const fiat = [];
+        const loans = [];
         const nonFiat = [];
         let fiatTotal = 0;
         let fiatDailyTotal = 0;
         let fiatProfitTotal = 0;
+        const loanSums = { value: 0, dailyPnl: 0, totalProfit: 0, unavailable: false };
 
         holdings.forEach(h => {
             if (h.isFiat && !isWatchlist) {
@@ -331,6 +382,12 @@ export default function HoldingsList({ holdings, onSelect, onAddAsset, loading, 
                 fiatTotal += h.value || 0;
                 fiatDailyTotal += h.dailyPnl || 0;
                 fiatProfitTotal += h.totalProfit || 0;
+            } else if (h.loan && !isWatchlist) {
+                loans.push(h);
+                loanSums.value += h.value || 0;
+                loanSums.dailyPnl += h.dailyPnl || 0;
+                loanSums.totalProfit += h.totalProfit || 0;
+                if (h.valuationUnavailable) loanSums.unavailable = true;
             } else {
                 nonFiat.push(h);
             }
@@ -361,9 +418,11 @@ export default function HoldingsList({ holdings, onSelect, onAddAsset, loading, 
         return {
             nonFiatHoldings: sortedNonFiat,
             fiatHoldings: sortedFiat,
+            loanHoldings: [...loans].sort((a, b) => (b.value || 0) - (a.value || 0)),
             totalFiatValue: fiatTotal,
             totalFiatDailyPnl: fiatDailyTotal,
-            totalFiatProfit: fiatProfitTotal
+            totalFiatProfit: fiatProfitTotal,
+            loanTotals: loanSums
         };
     }, [holdings, sortBy, isWatchlist, returnMode]);
 
@@ -371,6 +430,7 @@ export default function HoldingsList({ holdings, onSelect, onAddAsset, loading, 
     const isDraggable = isWatchlist && sortBy === 'custom';
     const fiatValueUnavailable = fiatHoldings.some(holding => holding.valuationUnavailable);
     const displayedFiatChange = returnMode === 'total' ? totalFiatProfit : totalFiatDailyPnl;
+    const displayedLoanChange = returnMode === 'total' ? loanTotals.totalProfit : loanTotals.dailyPnl;
 
     const rowProps = {
         isDraggable,
@@ -410,8 +470,8 @@ export default function HoldingsList({ holdings, onSelect, onAddAsset, loading, 
             )}
 
             {/* Portfolio allocation at a glance */}
-            {!isWatchlist && !loading && nonFiatHoldings.length > 1 && (
-                <AllocationBar holdings={nonFiatHoldings} cashValue={totalFiatValue} />
+            {!isWatchlist && !loading && holdings.length > 1 && (
+                <AllocationBar holdings={nonFiatHoldings} loansValue={loanTotals.value} cashValue={totalFiatValue} />
             )}
 
             <div className="list-group">
@@ -419,43 +479,37 @@ export default function HoldingsList({ holdings, onSelect, onAddAsset, loading, 
                     <HoldingRow key={holding.asset} holding={holding} index={index} isFiatItem={false} {...rowProps} />
                 ))}
 
+                {loanHoldings.length > 0 && (
+                    <GroupRow
+                        icon={<Landmark size={16} />}
+                        title="Loans"
+                        subtitle={`${loanHoldings.length} ${loanHoldings.length === 1 ? 'loan' : 'loans'}`}
+                        value={loanTotals.unavailable ? null : loanTotals.value}
+                        change={displayedLoanChange}
+                        collapsed={loansCollapsed}
+                        onToggle={toggleLoansCollapsed}
+                        hideBalances={hideBalances}
+                        baseCurrency={baseCurrency}
+                    />
+                )}
+
+                {!loansCollapsed && loanHoldings.map((holding, index) => (
+                    <HoldingRow key={holding.asset} holding={holding} index={index} isFiatItem={true} indented {...rowProps} />
+                ))}
+
                 {/* Collapsible cash row - only for regular portfolios with fiat holdings */}
                 {!isWatchlist && fiatHoldings.length > 0 && (
-                    <div
-                        className="list-row"
-                        onClick={toggleFiatCollapsed}
-                        onKeyDown={(event) => {
-                            if (event.key !== 'Enter' && event.key !== ' ') return;
-                            event.preventDefault();
-                            toggleFiatCollapsed();
-                        }}
-                        role="button"
-                        tabIndex={0}
-                        aria-expanded={!fiatCollapsed}
-                    >
-                        <span className="asset-icon" style={{ width: 36, height: 36 }}>
-                            <Wallet size={16} />
-                        </span>
-                        <div className="flex-1 flex flex-col min-w-0" style={{ gap: '2px' }}>
-                            <span className="list-row-title">Cash</span>
-                            <span className="list-row-subtitle">
-                                {fiatHoldings.length} {fiatHoldings.length === 1 ? 'currency' : 'currencies'}
-                            </span>
-                        </div>
-                        <div className="flex items-center shrink-0" style={{ gap: 'var(--space-2)' }}>
-                            <div className="flex flex-col items-end" style={{ gap: '2px' }}>
-                                <span className="list-row-title">
-                                    {hideBalances ? '••••••' : fiatValueUnavailable ? 'Partial value' : formatMoney(totalFiatValue, baseCurrency)}
-                                </span>
-                                {!fiatValueUnavailable && !hideBalances && Math.abs(displayedFiatChange) >= 0.005 && (
-                                    <span className={`list-row-subtitle ${changeTone(displayedFiatChange)}`}>
-                                        {formatMoney(displayedFiatChange, baseCurrency, { signed: true })}
-                                    </span>
-                                )}
-                            </div>
-                            <ChevronDown size={16} className="text-muted" style={{ transform: fiatCollapsed ? 'rotate(-90deg)' : 'none', transition: 'transform var(--dur-fast) var(--ease-out)' }} />
-                        </div>
-                    </div>
+                    <GroupRow
+                        icon={<Wallet size={16} />}
+                        title="Cash"
+                        subtitle={`${fiatHoldings.length} ${fiatHoldings.length === 1 ? 'currency' : 'currencies'}`}
+                        value={fiatValueUnavailable ? null : totalFiatValue}
+                        change={displayedFiatChange}
+                        collapsed={fiatCollapsed}
+                        onToggle={toggleFiatCollapsed}
+                        hideBalances={hideBalances}
+                        baseCurrency={baseCurrency}
+                    />
                 )}
 
                 {!isWatchlist && !fiatCollapsed && fiatHoldings.map((holding, index) => (
