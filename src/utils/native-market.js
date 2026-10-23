@@ -1,5 +1,5 @@
 import { CapacitorHttp } from '@capacitor/core';
-import { normalizeCurrency, normalizeFinancials, normalizeSearch, scalePrice, getQuoteMarketTime } from './market-data.js';
+import { historyInterval, normalizeCurrency, normalizeFinancials, normalizeSearch, scalePrice, getQuoteMarketTime } from './market-data.js';
 
 const YAHOO_HOSTS = ['https://query1.finance.yahoo.com', 'https://query2.finance.yahoo.com'];
 const FINANCIAL_MODULES = ['summaryDetail', 'defaultKeyStatistics', 'financialData', 'calendarEvents', 'earnings', 'earningsHistory', 'earningsTrend', 'incomeStatementHistory', 'balanceSheetHistory', 'cashflowStatementHistory'];
@@ -33,8 +33,7 @@ export function nativeHistoryQuery(range, now = new Date()) {
         case 'ALL': start.setTime(0); break;
         default: start.setMonth(start.getMonth() - 1);
     }
-    const hourly = ['1D', '1W', '1M'].includes(range) || (range === 'YTD' && now - start < 60 * 86400000);
-    return { period1: Math.floor(start.getTime() / 86400000) * 86400, period2: Math.floor(now.getTime() / 1000), interval: hourly ? '1h' : '1d' };
+    return { period1: Math.floor(start.getTime() / 86400000) * 86400, period2: Math.floor(now.getTime() / 1000), interval: historyInterval(range, now) };
 }
 
 function chartHistory(result) {

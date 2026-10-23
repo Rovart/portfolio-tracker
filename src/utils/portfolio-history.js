@@ -73,44 +73,55 @@ function shouldAffectFeeBalance(feeCurr, base, quote, affectsQuoteBalance, cashT
     return cashTrackedCurrencies.has(upper(feeCurr));
 }
 
+const DATE_ONLY = /^\d{4}-\d{2}-\d{2}$/;
+
+// When a point in time is known. A bare date ("2026-10-22") is a daily close,
+// so it only becomes true at the end of that day; anything else is an instant.
+export function historyTime(date) {
+    const text = String(date || '');
+    return DATE_ONLY.test(text) ? Date.parse(`${text}T23:59:59.999Z`) : Date.parse(text);
+}
+
+// Per price series: times (ascending) and prices, for as-of lookups.
 function buildHistoryIndexes(historicalPrices) {
     const indexes = {};
 
     Object.entries(historicalPrices || {}).forEach(([key, history]) => {
         if (!Array.isArray(history) || history.length === 0) return;
 
-        const exact = new Map();
-        const daily = new Map();
-        const sorted = [...history].sort((a, b) => String(a.date).localeCompare(String(b.date)));
+        const points = history
+            .map(point => ({ time: historyTime(point?.date), price: toNumber(point?.price) }))
+            .filter(point => Number.isFinite(point.time) && point.price > 0)
+            .sort((a, b) => a.time - b.time);
+        if (points.length === 0) return;
 
-        sorted.forEach(point => {
-            const price = toNumber(point?.price);
-            const date = String(point?.date || '');
-            if (!date || price <= 0) return;
-
-            exact.set(date, price);
-            daily.set(date.split('T')[0], price);
-        });
-
-        indexes[key] = { exact, daily };
+        indexes[key] = { times: points.map(point => point.time), prices: points.map(point => point.price) };
     });
 
     return indexes;
 }
 
-function findPrice(historyIndexes, timestamp, key, lastKnownPrices) {
+// The latest price known at `time` — never a later one. Taking the day's close
+// for an instant within that day made multi-asset curves zigzag whenever two
+// series had candles at different times (stocks at :30, crypto at :00).
+function findPrice(historyIndexes, time, key) {
     const index = historyIndexes?.[key];
     if (!index) return null;
 
-    const dateOnly = timestamp.split('T')[0];
-    const price = index.exact.get(timestamp) || index.daily.get(dateOnly);
-
-    if (price > 0) {
-        lastKnownPrices[key] = price;
-        return price;
+    const { times, prices } = index;
+    let low = 0;
+    let high = times.length - 1;
+    let found = -1;
+    while (low <= high) {
+        const mid = (low + high) >> 1;
+        if (times[mid] <= time) {
+            found = mid;
+            low = mid + 1;
+        } else {
+            high = mid - 1;
+        }
     }
-
-    return lastKnownPrices[key] || null;
+    return found >= 0 ? prices[found] : null;
 }
 
 function getPriceSymbol(asset, metadata, historicalPrices) {
@@ -130,23 +141,23 @@ function getPriceSymbol(asset, metadata, historicalPrices) {
     return priceSym;
 }
 
-function getCurrencyUsdRate(currency, timestamp, historyIndexes, lastKnownPrices) {
+function getCurrencyUsdRate(currency, time, historyIndexes) {
     const curr = upper(currency);
     if (!curr) return null;
     if (curr === 'USD') return 1;
 
     const directSym = `${curr}USD=X`;
-    const direct = findPrice(historyIndexes, timestamp, directSym, lastKnownPrices);
+    const direct = findPrice(historyIndexes, time, directSym);
     if (direct) return direct;
 
     const inverseSym = `USD${curr}=X`;
-    const inverse = findPrice(historyIndexes, timestamp, inverseSym, lastKnownPrices);
+    const inverse = findPrice(historyIndexes, time, inverseSym);
     if (inverse) return 1 / inverse;
 
     return null;
 }
 
-function getFxRate(currency, baseCurrency, timestamp, historyIndexes, lastKnownPrices) {
+function getFxRate(currency, baseCurrency, time, historyIndexes) {
     const from = upper(normalizeAsset(currency));
     const to = upper(normalizeAsset(baseCurrency));
 
@@ -154,21 +165,21 @@ function getFxRate(currency, baseCurrency, timestamp, historyIndexes, lastKnownP
     if (from === to) return 1;
 
     const directSym = `${from}${to}=X`;
-    const direct = findPrice(historyIndexes, timestamp, directSym, lastKnownPrices);
+    const direct = findPrice(historyIndexes, time, directSym);
     if (direct) return direct;
 
     const inverseSym = `${to}${from}=X`;
-    const inverse = findPrice(historyIndexes, timestamp, inverseSym, lastKnownPrices);
+    const inverse = findPrice(historyIndexes, time, inverseSym);
     if (inverse) return 1 / inverse;
 
-    const fromUsd = getCurrencyUsdRate(from, timestamp, historyIndexes, lastKnownPrices);
-    const toUsd = getCurrencyUsdRate(to, timestamp, historyIndexes, lastKnownPrices);
+    const fromUsd = getCurrencyUsdRate(from, time, historyIndexes);
+    const toUsd = getCurrencyUsdRate(to, time, historyIndexes);
     if (!fromUsd || !toUsd) return null;
 
     return fromUsd / toUsd;
 }
 
-function valueBalance(asset, amount, timestamp, historicalPrices, historyIndexes, baseCurrency, metadata, externalQuoteMap, lastKnownPrices) {
+function valueBalance(asset, amount, time, historicalPrices, historyIndexes, baseCurrency, metadata, externalQuoteMap) {
     const normalized = upper(asset);
     if (!normalized || Math.abs(amount) < EPSILON) return null;
 
@@ -177,7 +188,7 @@ function valueBalance(asset, amount, timestamp, historicalPrices, historyIndexes
 
     if (!isFiatAsset(normalized)) {
         const priceSym = getPriceSymbol(normalized, metadata, historicalPrices);
-        localPrice = findPrice(historyIndexes, timestamp, priceSym, lastKnownPrices);
+        localPrice = findPrice(historyIndexes, time, priceSym);
         if (!localPrice) return null;
 
         // The quote currency MUST describe the instrument we priced with, not the
@@ -191,7 +202,7 @@ function valueBalance(asset, amount, timestamp, historicalPrices, historyIndexes
             'USD';
     }
 
-    const fxRate = getFxRate(quoteCurrency, baseCurrency, timestamp, historyIndexes, lastKnownPrices);
+    const fxRate = getFxRate(quoteCurrency, baseCurrency, time, historyIndexes);
     if (!fxRate) return null;
 
     return amount * localPrice * fxRate;
@@ -231,7 +242,6 @@ export function calculatePortfolioHistory(transactions, historicalPrices, baseCu
 
     const currentBalances = {};
     const dailyData = [];
-    const lastKnownPrices = {};
     let txIndex = 0;
     let units = 0;
     let unitValue = 1;
@@ -255,6 +265,7 @@ export function calculatePortfolioHistory(transactions, historicalPrices, baseCu
 
     for (const timestamp of sortedTimestamps) {
         const timestampDate = String(timestamp).split('T')[0];
+        const time = historyTime(timestamp);
         const externalFlows = [];
 
         while (txIndex < sortedTransactions.length) {
@@ -328,13 +339,12 @@ export function calculatePortfolioHistory(transactions, historicalPrices, baseCu
             const value = valueBalance(
                 asset,
                 amount,
-                timestamp,
+                time,
                 historicalPrices,
                 historyIndexes,
                 baseCurrency,
                 metadata,
-                externalQuoteMap,
-                lastKnownPrices
+                externalQuoteMap
             );
 
             if (isFinal && liveRate !== undefined) {
@@ -362,13 +372,12 @@ export function calculatePortfolioHistory(transactions, historicalPrices, baseCu
             const value = valueBalance(
                 flow.asset,
                 flow.amount,
-                timestamp,
+                time,
                 historicalPrices,
                 historyIndexes,
                 baseCurrency,
                 metadata,
-                externalQuoteMap,
-                lastKnownPrices
+                externalQuoteMap
             );
             if (value !== null && Number.isFinite(value)) externalFlowValue += value;
         });

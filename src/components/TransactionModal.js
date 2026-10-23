@@ -11,7 +11,7 @@ import EarningsEvent from './EarningsEvent';
 import ConfirmModal from './ConfirmModal';
 import WalletTracker from './WalletTracker';
 import BottomSheet, { closeTopSheet } from './BottomSheet';
-import { LoanActions, LoanDetails, LoanForm, LoanTransactionForm, LoanValue, LOAN_TRANSACTION_LABELS, loanRateLabel } from './LoanPanel';
+import { LoanDetails, LoanForm, LoanTransactionForm, LoanValue, LOAN_TRANSACTION_LABELS, loanRateLabel } from './LoanPanel';
 
 // Heavy, chart-driven views are code-split so opening the modal doesn't have to
 // parse/execute recharts up front, and lazily mounted after the open animation.
@@ -898,6 +898,11 @@ export default function TransactionModal({
                     <h2 className="modal-title truncate">{headerTitle}</h2>
                     {headerSubtitle && <span className="label truncate">{headerSubtitle}</span>}
                 </div>
+                {showAssetView && selectedLoan && (
+                    <button type="button" className="btn-text shrink-0" onClick={() => setIsEditingLoanTerms(true)}>
+                        Edit
+                    </button>
+                )}
             </div>
 
             <div ref={modalRef} className="modal-body">
@@ -1091,13 +1096,7 @@ export default function TransactionModal({
                                         <FinancialInfo symbol={selectedAsset.symbol} currency={selectedAsset.currency || priceData.currency} />
                                     )}
 
-                                    {selectedLoan && (
-                                        <LoanActions
-                                            onEdit={() => setIsEditingLoanTerms(true)}
-                                            onDelete={() => setLoanDeleteConfirm(true)}
-                                        />
-                                    )}
-                                </>
+                                                </>
                             )}
 
                             {assetTab === 'financials' && (
@@ -1188,6 +1187,11 @@ export default function TransactionModal({
                             onSubmit={handleLoanTermsSave}
                             onCancel={() => setIsEditingLoanTerms(false)}
                         />
+                        <div className="flex justify-center" style={{ marginTop: 'var(--space-3)' }}>
+                            <button type="button" className="btn-text is-danger" onClick={() => setLoanDeleteConfirm(true)}>
+                                Delete loan
+                            </button>
+                        </div>
                     </div>
                 </BottomSheet>
             )}

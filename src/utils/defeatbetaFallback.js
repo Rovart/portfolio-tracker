@@ -106,7 +106,7 @@ export async function fetchAlternativeHistory(symbol, range = '1M') {
             break;
         case '1W':
             period1.setDate(now.getDate() - 7);
-            interval = '1h';
+            interval = '30m';
             break;
         case '1M':
             period1.setMonth(now.getMonth() - 1);

@@ -136,16 +136,6 @@ export function LoanDetails({ loan, transactions, baseCurrency, hideBalances, re
     );
 }
 
-// Rarely used, so they sit at the end of the loan view.
-export function LoanActions({ onEdit, onDelete }) {
-    return (
-        <div className="flex" style={{ gap: 'var(--space-5)' }}>
-            <button type="button" onClick={onEdit} className="btn-text">Edit terms</button>
-            <button type="button" onClick={onDelete} className="btn-text is-danger">Delete loan</button>
-        </div>
-    );
-}
-
 // Creates a loan (terms + first disbursement) or edits the terms of an existing one.
 export function LoanForm({ loan = null, transactions = [], baseCurrency = 'USD', portfolios = [], currentPortfolioId = 'all', onSubmit, onCancel }) {
     const isEdit = !!loan;

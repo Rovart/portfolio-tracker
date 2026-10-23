@@ -27,6 +27,7 @@ import {
 import { calculatePortfolioHistory, getPeriodReturn } from '@/utils/portfolio-history';
 import { formatSymbol } from '@/utils/commodities';
 import { getCachedQuotes, getCachedAssetHistory, setCachedAssetHistory, getCachedFxHistory, invalidateAssetCache, clearFxCache } from '@/utils/fxCache';
+import { historyInterval } from '@/utils/market-data';
 import {
     buildHistoricalConversionMaps,
     getHistoricalConversionRate
@@ -162,23 +163,21 @@ function getWalletPositionSymbol(chain) {
     return chain;
 }
 
+// Chart bucket per range for intraday data: enough points for a smooth path
+// (1D ≈ 144, 1W ≈ 168, 1M ≈ 180) without drawing every candle.
+const HISTORY_BUCKET_MINUTES = { '1D': 10, '1W': 60, '1M': 240, YTD: 720 };
+
+function isIntradayRange(timeframe) {
+    return historyInterval(timeframe) !== '1d';
+}
+
 function getHistoryBucketKey(dateValue, timeframe) {
-    const date = new Date(dateValue);
-    if (Number.isNaN(date.getTime())) return null;
-
-    if (timeframe === '1D') {
-        const mins = Math.floor(date.getMinutes() / 30) * 30;
-        date.setMinutes(mins, 0, 0);
-        return date.toISOString();
-    }
-
-    if (timeframe === '1W') {
-        const hrs = Math.floor(date.getHours() / 2) * 2;
-        date.setHours(hrs, 0, 0, 0);
-        return date.toISOString();
-    }
-
-    return date.toISOString().split('T')[0];
+    const time = Date.parse(dateValue);
+    if (!Number.isFinite(time)) return null;
+    const minutes = HISTORY_BUCKET_MINUTES[timeframe];
+    if (!minutes || !isIntradayRange(timeframe)) return new Date(time).toISOString().split('T')[0];
+    const size = minutes * 60000;
+    return new Date(Math.floor(time / size) * size).toISOString();
 }
 
 function mergeLiveHistoryPoint(points, livePoint, timeframe) {
@@ -1212,25 +1211,16 @@ export default function Dashboard() {
                                 .sort((a, b) => a.date.localeCompare(b.date));
                         }
                     } else {
-                        // Use asset history cache for regular assets
-                        historyData = await getCachedAssetHistory(fetchSym, 'ALL');
+                        // Daily candles are closes: keyed by bare date, they only
+                        // count from the end of that day (see historyTime).
+                        historyData = (await getCachedAssetHistory(fetchSym, 'ALL'))
+                            .map(point => ({ date: String(point.date).slice(0, 10), price: point.price }));
                     }
 
-                    // If short timeframe, augment with granular data (with shorter cache)
-                    if (timeframe === '1D' || timeframe === '1W') {
-                        let granularData = [];
-                        if (isFxSymbol) {
-                            const fxMatch = fetchSym.match(fxRegex);
-                            if (fxMatch) {
-                                const fxCurr = fxMatch[1].toUpperCase();
-                                // Use USD (not baseCurrency) for consistency with pivot logic
-                                const fxMap = await getCachedFxHistory(fxCurr, 'USD', timeframe);
-                                granularData = Object.entries(fxMap).map(([date, price]) => ({ date, price }));
-                            }
-                        } else {
-                            granularData = await getCachedAssetHistory(fetchSym, timeframe);
-                        }
-
+                    // Short ranges add intraday candles with their real times, FX included
+                    // (the FX cache keeps one rate per day, which steps at midnight).
+                    if (isIntradayRange(timeframe)) {
+                        const granularData = await getCachedAssetHistory(fetchSym, timeframe);
                         if (granularData.length > 0) {
                             const merged = [...historyData, ...granularData];
                             const unique = Array.from(new Map(merged.map(item => [item.date, item])).values());
@@ -1358,27 +1348,17 @@ export default function Dashboard() {
         const cutoffStr = cutoff.toISOString();
         let filtered = rawHistory.filter(d => d.date >= cutoffStr);
 
-        // RESAMPLE: Reduce granularity for smoother charts
-        // Daily: 30-min buckets, Weekly: 2-hour buckets
-        if ((timeframe === '1D' || timeframe === '1W') && filtered.length > 0) {
-            const bucketMinutes = timeframe === '1D' ? 30 : 120; // 30 min for daily, 2 hours for weekly
-            const buckets = {};
-            filtered.forEach(point => {
-                const d = new Date(point.date);
-                // Round to bucket
-                const mins = Math.floor(d.getMinutes() / bucketMinutes) * bucketMinutes;
-                d.setMinutes(mins, 0, 0);
-                if (timeframe === '1W') {
-                    // For weekly, also round hours to 2-hour blocks
-                    const hrs = Math.floor(d.getHours() / 2) * 2;
-                    d.setHours(hrs, 0, 0, 0);
-                }
-                const bucketKey = d.toISOString();
+        // Intraday ranges: drop the daily-close points (they belong to the end of
+        // their day, not its start) and resample into even buckets.
+        if (isIntradayRange(timeframe) && filtered.length > 0) {
+            const intraday = filtered.filter(point => String(point.date).includes('T'));
+            const buckets = new Map();
+            (intraday.length > 1 ? intraday : filtered).forEach(point => {
+                const bucketKey = getHistoryBucketKey(point.date, timeframe);
                 // Keep the last full point in each bucket so rawValue survives mode changes.
-                buckets[bucketKey] = { ...point, date: bucketKey };
+                if (bucketKey) buckets.set(bucketKey, { ...point, date: bucketKey });
             });
-            filtered = Object.values(buckets)
-                .sort((a, b) => a.date.localeCompare(b.date));
+            filtered = [...buckets.values()].sort((a, b) => a.date.localeCompare(b.date));
         }
 
         // Append/replace a live point in the same adjusted scale as the history.

@@ -83,3 +83,34 @@ test('a gain never shows a negative return after a large contribution', () => {
     close(result.diff, 300);
     assert.ok(result.percent > 0);
 });
+
+test('intraday points value each asset at its latest known price, never the day close', () => {
+    // AAPL trades in :30 candles and BTC in :00 candles. The daily series also
+    // carries the day's close (AAPL 120). At BTC-only instants AAPL must keep
+    // its last intraday price instead of jumping to that close.
+    const tx = [
+        buy('2026-03-01', 1),
+        { id: 'btc', type: 'BUY', date: '2026-03-01T00:00:00.000Z', baseCurrency: 'BTC-USD', baseAmount: 1, quoteAmount: 50, quoteCurrency: 'USD', affectsQuoteBalance: false }
+    ];
+    const history = calculatePortfolioHistory(tx, {
+        AAPL: [
+            { date: '2026-03-01', price: 100 },
+            { date: '2026-03-02T14:30:00.000Z', price: 101 },
+            { date: '2026-03-02T15:30:00.000Z', price: 102 },
+            { date: '2026-03-02', price: 120 }
+        ],
+        'BTC-USD': [
+            { date: '2026-03-01', price: 50 },
+            { date: '2026-03-02T15:00:00.000Z', price: 50 },
+            { date: '2026-03-02T16:00:00.000Z', price: 50 }
+        ]
+    }, 'USD', { AAPL: 'USD', 'BTC-USD': 'USD' });
+
+    const at = date => history.find(point => point.date === date)?.rawValue;
+    close(at('2026-03-02T14:30:00.000Z'), 151);
+    close(at('2026-03-02T15:00:00.000Z'), 151);
+    close(at('2026-03-02T15:30:00.000Z'), 152);
+    close(at('2026-03-02T16:00:00.000Z'), 152);
+    // The bare date is the close, valued at the end of that day.
+    close(at('2026-03-02'), 170);
+});

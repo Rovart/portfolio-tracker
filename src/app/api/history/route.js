@@ -1,4 +1,4 @@
-import { scalePrice } from '@/utils/market-data';
+import { historyInterval, scalePrice } from '@/utils/market-data';
 import { yahooApiCall, randomDelay } from '@/utils/yahooHelper';
 import { fetchAlternativeHistory, shouldUseFallback } from '@/utils/defeatbetaFallback';
 import { NextResponse } from 'next/server';
@@ -37,17 +37,7 @@ export async function GET(request) {
             period1.setMonth(now.getMonth() - 1);
     }
 
-    let interval = '1d';
-    if (range === '1D') interval = '1h';
-    if (range === '1W') interval = '1h';
-    if (range === '1M') interval = '1h';
-    // For YTD, if we're less than 2 months into the year, use hourly data for more granularity
-    if (range === 'YTD') {
-        const daysSinceYearStart = Math.floor((now - period1) / (1000 * 60 * 60 * 24));
-        if (daysSinceYearStart < 60) {
-            interval = '1h';
-        }
-    }
+    const interval = historyInterval(range, now);
 
     if (!symbol) {
         return NextResponse.json({ error: 'No symbol provided' }, { status: 400 });
@@ -103,7 +93,7 @@ export async function GET(request) {
             while (history.length === 0 && lookbackDays <= 5) {
                 const extendedPeriod = new Date();
                 extendedPeriod.setDate(now.getDate() - lookbackDays);
-                const extendedOptions = { period1: extendedPeriod.toISOString().split('T')[0], interval: '1h' };
+                const extendedOptions = { period1: extendedPeriod.toISOString().split('T')[0], interval };
 
                 // Add small delay between retries
                 await randomDelay();

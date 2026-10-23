@@ -370,3 +370,17 @@ export function getLatestEarningsResult(history) {
         : null;
     return { ...latest, surprisePercent };
 }
+
+// Candle size per chart range. Short ranges need intraday candles to look like
+// a price path rather than a few straight segments; Yahoo serves 5-minute data
+// for 60 days and hourly data for two years.
+export function historyInterval(range, now = new Date()) {
+    if (range === '1D') return '5m';
+    if (range === '1W') return '30m';
+    if (range === '1M') return '1h';
+    if (range === 'YTD') {
+        const yearStart = new Date(now.getFullYear(), 0, 1);
+        return now - yearStart < 60 * 86400000 ? '1h' : '1d';
+    }
+    return '1d';
+}

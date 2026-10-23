@@ -172,7 +172,8 @@ test('invalid requests and local ledger writes cannot send anything to a provide
 });
 
 test('intraday, year-to-date and full history use supported Yahoo time windows', () => {
-    assert.equal(nativeHistoryQuery('1W', clock()).interval, '1h');
+    assert.equal(nativeHistoryQuery('1D', clock()).interval, '5m');
+    assert.equal(nativeHistoryQuery('1W', clock()).interval, '30m');
     assert.equal(nativeHistoryQuery('1M', clock()).interval, '1h');
     assert.equal(nativeHistoryQuery('1Y', clock()).interval, '1d');
     assert.equal(nativeHistoryQuery('YTD', new Date('2026-01-15T12:00:00Z')).interval, '1h');
