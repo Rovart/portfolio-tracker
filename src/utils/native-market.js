@@ -1,5 +1,6 @@
 import { CapacitorHttp } from '@capacitor/core';
 import { historyInterval, normalizeCurrency, normalizeFinancials, normalizeSearch, scalePrice, getQuoteMarketTime } from './market-data.js';
+import { findCryptoMarkets, parseCryptoSymbols } from './crypto-markets.js';
 
 const YAHOO_HOSTS = ['https://query1.finance.yahoo.com', 'https://query2.finance.yahoo.com'];
 const FINANCIAL_MODULES = ['summaryDetail', 'defaultKeyStatistics', 'financialData', 'calendarEvents', 'earnings', 'earningsHistory', 'earningsTrend', 'incomeStatementHistory', 'balanceSheetHistory', 'cashflowStatementHistory'];
@@ -214,6 +215,12 @@ export function createNativeMarketApi(transport = options => CapacitorHttp.reque
                     break;
                 }
                 case '/api/wallet': body = await wallet((params.get('chain') || '').toUpperCase(), (params.get('address') || '').trim()); break;
+                case '/api/crypto-markets': {
+                    const symbols = parseCryptoSymbols(params.get('symbols'));
+                    if (!symbols) throw new MarketError('Invalid symbol list', 400);
+                    body = { markets: await findCryptoMarkets(symbols, cryptoUrl => http(cryptoUrl)), source: 'bitcoinwisdom' };
+                    break;
+                }
                 default: throw new MarketError('Unknown local API endpoint', 404);
             }
             return jsonResponse(body);

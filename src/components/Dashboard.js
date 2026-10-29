@@ -10,6 +10,7 @@ import CompositionChart from './CompositionChart';
 import { AnimatedMoney, Delta, Money, Segmented } from './ui';
 import { changeTone, formatDate, formatPercent } from '@/utils/format';
 import useMarketActivity from './useMarketActivity';
+import useLiveQuotes from './useLiveQuotes';
 import HoldingsList, { WATCHLIST_SORT_OPTIONS } from './HoldingsList';
 import SortMenu from './SortMenu';
 import CurrencyMenu from './CurrencyMenu';
@@ -28,6 +29,7 @@ import { calculatePortfolioHistory, getPeriodReturn } from '@/utils/portfolio-hi
 import { formatSymbol } from '@/utils/commodities';
 import { getCachedQuotes, getCachedAssetHistory, setCachedAssetHistory, getCachedFxHistory, invalidateAssetCache, clearFxCache } from '@/utils/fxCache';
 import { historyInterval } from '@/utils/market-data';
+import { applyLiveTicks, liveQuoteEntries, preferLiveQuotes } from '@/utils/live-quotes';
 import {
     buildHistoricalConversionMaps,
     getHistoricalConversionRate
@@ -379,6 +381,14 @@ export default function Dashboard() {
     useEffect(() => {
         priceMetadataRef.current = priceMetadata;
     }, [priceMetadata]);
+
+    // Streamed trades move the quotes between polls: holdings, totals, the day
+    // change and the chart's live point all derive from `prices`.
+    const liveEntries = useMemo(() => liveQuoteEntries(priceMetadata), [priceMetadata]);
+    const handleLiveTicks = useCallback(ticks => {
+        setPrices(previous => applyLiveTicks(previous, ticks, currency => getCurrentAssetRate(previous, currency, 'USD')));
+    }, []);
+    useLiveQuotes(liveEntries, marketActive && !loading, handleLiveTicks);
 
     const historicalRateResolver = useCallback((from, to, dateStr) => {
         return getHistoricalConversionRate(transactionFx, from, to, dateStr) ??
@@ -955,7 +965,7 @@ export default function Dashboard() {
                     }
                 }
 
-                setPrices(pxMap);
+                setPrices(previous => preferLiveQuotes(pxMap, previous));
                 setPricesLoading(false);
 
                 // Refresh watchlist asset names from Yahoo data

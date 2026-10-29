@@ -4,7 +4,7 @@ import { memo, useEffect, useMemo, useState } from 'react';
 import LineChart, { ChartPlaceholder } from './LineChart';
 import { Segmented } from './ui';
 import { getCachedFxHistory, getCachedAssetHistory } from '@/utils/fxCache';
-import { downsampleChartData, buildTransactionMarkers, getMarkerKeepIndices, mapMarkersToSampled } from '@/utils/chart-data';
+import { downsampleChartData, buildTransactionMarkers, getMarkerKeepIndices, mapMarkersToSampled, withLivePoint } from '@/utils/chart-data';
 import { formatDate, formatPrice } from '@/utils/format';
 
 const DEFAULT_RANGES = ['1D', '1W', '1M', '3M', '1Y', 'ALL'];
@@ -77,7 +77,9 @@ function AssetChart({
     matchMarkerPrices = true,
     markerLabels = null,
     onScrub,
-    onRangeSelect
+    onRangeSelect,
+    livePrice = null,
+    liveTime = null
 }) {
     // The loaded series remembers its range: a new range keeps showing the old
     // curve (dimmed) until its data arrives.
@@ -140,7 +142,7 @@ function AssetChart({
     }, [loaded.fx, needsFxConversion]);
 
     const { chartData, transactionDots, startPrice, rangeChange, rangeChangePercent } = useMemo(() => {
-        const rawData = loaded.raw;
+        const rawData = localHistory ? loaded.raw : withLivePoint(loaded.raw, livePrice, liveTime, range);
         if (!rawData.length) return { chartData: [], transactionDots: [], startPrice: 0, rangeChange: 0, rangeChangePercent: 0 };
         const startDateKey = rawData[0].date.split('T')[0];
         let fxIndex = 0;
@@ -181,7 +183,7 @@ function AssetChart({
             rangeChange: change,
             rangeChangePercent: start !== 0 ? (change / start) * 100 : 0
         };
-    }, [loaded.raw, fxRate, fxLookup, transactions, matchMarkerPrices]);
+    }, [loaded.raw, fxRate, fxLookup, transactions, matchMarkerPrices, localHistory, livePrice, liveTime, range]);
 
     const chartMarkers = useMemo(() => transactionDots.map(dot => ({
         ...dot,

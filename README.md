@@ -8,6 +8,7 @@ A dark-mode portfolio tracker built with Next.js and Yahoo Finance. Track stocks
 
 ### Core Functionality
 - **Live Market Data**: Real-time prices and performance metrics via Yahoo Finance API
+- **Streaming Prices**: Trades pushed over websockets move positions, totals, the day change, returns and the last point of the portfolio and asset charts between quote refreshes (see [Streaming prices](#streaming-prices))
 - **Multi-Portfolio Support**: Create and manage multiple portfolios with independent tracking
 - **Multi-Currency Support**: Track assets in USD, EUR, AUD and other currencies with automatic FX conversion using USD-pivot strategy
 - **Transaction Management**: Full buy/sell history with detailed P/L tracking per transaction
@@ -123,6 +124,17 @@ CSV exports include loan entries but not loan terms; use a complete backup to mo
 - Toggle privacy mode to hide balances
 - Adjust chart timeframes for different perspectives
 
+## Streaming prices
+
+Polled quotes (every 30 seconds) give each symbol its currency, name and previous close; websockets then move the price between polls. The browser and the Capacitor WebView connect to both providers directly: they accept any page origin (checked with the web, `https://localhost` and `capacitor://localhost` origins), so no server relay is needed and Vercel never holds a long-lived connection.
+
+- **Stocks, ETFs, currencies, indices and futures** stream from Yahoo (`wss://streamer.finance.yahoo.com/?version=2`, base64 protobuf `PricingData`), about two seconds behind, with US pre-market and after-hours. One connection serves at most 100 symbols and ignores the rest, so the symbols are split into groups of 100, one connection each; a symbol keeps its connection when others are added or removed. Some exchanges (Hong Kong, most of Xetra and Paris) send nothing and stay on polled quotes; some send delayed trades (Madrid, 15 minutes), which are applied with their real trade time. London listings stream in pence and are converted to pounds.
+- **Crypto** streams from BitcoinWisdom (`wss://ws.bitcoinwisdom.io/index`), priced in dollar stablecoins and converted to the pair's currency with the current FX quote. Its market ids come from `/api/crypto-markets` (the catalogue has no CORS headers; the Android app runs the same lookup with native HTTP). Coins it does not list, and a price more than 20 % away from the polled quote (another coin with the same ticker), fall back to Yahoo's stream or the poll.
+- **Merging**: a trade is applied only when it is newer than the polled quote and the last trade, so a slower poll never moves a price backwards. Pre-market and after-hours trades fill the extended-hours price. Each listener receives at most one update per second.
+- **Lifecycle**: the dashboard (current portfolio, all portfolios or watchlist, plus FX rates) and the open asset sheet share one set of connections. They close when the tab is hidden or the Android app goes to the background, and reopen on return. A dropped connection reconnects after 1, 2, 4 … up to 60 seconds (±20 % jitter), resetting once data flows; a BitcoinWisdom socket silent for 45 seconds is replaced. Polling continues as the fallback for whatever the streams do not cover.
+
+`window.__monetraLiveQuotes()` returns the open connections, subscribed symbols, crypto market ids and the last trade received.
+
 ## 🗂️ Data Persistence
 
 Transactions, portfolios, loans, watchlists, settings and watch-only wallets are saved in local IndexedDB. Display preferences use `localStorage`. Export portfolios to CSV for backup or transfer between devices.
@@ -162,7 +174,7 @@ npm run build:android:release
 
 Alternatively, provide `MONETRA_KEYSTORE_FILE`, `MONETRA_KEYSTORE_PASSWORD`, `MONETRA_KEY_ALIAS` and optionally `MONETRA_KEY_PASSWORD` via the build environment. The release script requires signing configuration; credentials and keys must not be committed. Signed outputs are `android/app/build/outputs/apk/release/app-release.apk` and `android/app/build/outputs/bundle/release/app-release.aab`.
 
-`npm run build:mobile` exports the client in an ignored `.mobile-build/` staging directory, leaving the web app's server routes available to the normal `npm run build` / Vercel deployment. `NEXT_PUBLIC_BUNDLED_APP=true` is injected only into this static build. The native API replaces the server endpoints for quotes, historical prices, search, financial statements and wallet balances; shared normalization keeps currency scaling and search results consistent. The native build does not call `/api/sync-csv`. iOS migration and packaging are outside this Android change.
+`npm run build:mobile` exports the client in an ignored `.mobile-build/` staging directory, leaving the web app's server routes available to the normal `npm run build` / Vercel deployment. `NEXT_PUBLIC_BUNDLED_APP=true` is injected only into this static build. The native API replaces the server endpoints for quotes, historical prices, search, financial statements, crypto market ids and wallet balances; shared normalization keeps currency scaling and search results consistent. The native build does not call `/api/sync-csv`. iOS migration and packaging are outside this Android change.
 
 ## 🛠️ Tech Stack
 

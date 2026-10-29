@@ -28,6 +28,26 @@ export function downsampleChartData(data, maxPoints = 300, keepIndices = []) {
     return [...indices].sort((a, b) => a - b).map(index => data[index]);
 }
 
+// Minutes per candle of the intraday ranges (see historyInterval); longer
+// ranges use one candle per day.
+const CANDLE_MINUTES = { '1D': 5, '1W': 30, '1M': 60 };
+
+// A streamed price moves the end of the curve: it updates the last candle
+// while that candle is still open, and otherwise becomes a new last point.
+export function withLivePoint(raw, livePrice, liveTime, range) {
+    if (!(livePrice > 0) || !Number.isFinite(liveTime) || !raw.length) return raw;
+    const last = raw[raw.length - 1];
+    const lastTime = Date.parse(last.date);
+    if (!Number.isFinite(lastTime) || liveTime < lastTime) return raw;
+    const minutes = CANDLE_MINUTES[range];
+    const sameCandle = minutes
+        ? liveTime - lastTime < minutes * 60000
+        : new Date(liveTime).toISOString().slice(0, 10) === new Date(lastTime).toISOString().slice(0, 10);
+    return sameCandle
+        ? [...raw.slice(0, -1), { date: last.date, rawPrice: livePrice }]
+        : [...raw, { date: new Date(liveTime).toISOString(), rawPrice: livePrice }];
+}
+
 export function getTransactionExecutionPrice(tx, baseCurrency, resolveRate) {
     const units = Math.abs(parseFloat(tx.baseAmount));
     const total = Math.abs(parseFloat(tx.quoteAmount));

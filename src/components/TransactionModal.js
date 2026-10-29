@@ -3,6 +3,8 @@
 import { apiFetch } from '@/utils/api-client';
 import { getCachedQuotes } from '@/utils/fxCache';
 import useMarketActivity from './useMarketActivity';
+import useLiveQuotes from './useLiveQuotes';
+import { applyLiveTick, cryptoBase } from '@/utils/live-quotes';
 
 import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import dynamic from 'next/dynamic';
@@ -81,6 +83,40 @@ async function fetchLiveFxRate(from, to, quotes = []) {
     if (pivot) return pivot;
     const direct = (await getCachedQuotes([`${F}${T}=X`]))[0]?.price;
     return direct || null;
+}
+
+// The asset sheet keeps its own price fields; streamed trades follow the same
+// rules as the dashboard's quotes.
+function applyLiveTickToPriceData(data, tick) {
+    const quote = {
+        price: data.price,
+        change: data.change,
+        changePercent: data.changePercent,
+        currency: data.liveCurrency,
+        marketState: data.marketState,
+        marketTime: data.marketTime,
+        liveTick: data.liveTick,
+        preMarketPrice: data.preMarketPrice,
+        preMarketChangePercent: data.preMarketChange,
+        postMarketPrice: data.postMarketPrice,
+        postMarketChangePercent: data.postMarketChange
+    };
+    const next = applyLiveTick(quote, tick, () => data.usdRate);
+    if (next === quote) return data;
+    return {
+        ...data,
+        price: next.price,
+        change: next.change,
+        changePercent: next.changePercent,
+        marketState: next.marketState,
+        marketTime: next.marketTime,
+        isStale: next.isStale,
+        liveTick: next.liveTick,
+        preMarketPrice: next.preMarketPrice,
+        preMarketChange: next.preMarketChangePercent,
+        postMarketPrice: next.postMarketPrice,
+        postMarketChange: next.postMarketChangePercent
+    };
 }
 
 export default function TransactionModal({
@@ -335,6 +371,9 @@ export default function TransactionModal({
                 let fetchedPreMarketChange = null;
                 let fetchedPostMarketPrice = null;
                 let fetchedPostMarketChange = null;
+                let fetchedQuoteType = null;
+                let liveSymbol = null;
+                let usdRate = null;
 
                 if (json.data) {
                     // Use case-insensitive matching for symbol to be robust
@@ -355,6 +394,8 @@ export default function TransactionModal({
                         fetchedPreMarketChange = assetQuote.preMarketChangePercent;
                         fetchedPostMarketPrice = assetQuote.postMarketPrice;
                         fetchedPostMarketChange = assetQuote.postMarketChangePercent;
+                        fetchedQuoteType = assetQuote.quoteType;
+                        liveSymbol = fetchSym.toUpperCase();
                     }
 
                     // A bare currency is priced through its USD pair; regular
@@ -366,10 +407,14 @@ export default function TransactionModal({
                     if (bareCurrCode === baseCurrency) {
                         fetchedPrice = 1;
                         fetchedFxRate = 1;
+                        liveSymbol = null;
                     } else {
                         fetchedFxRate = await fetchLiveFxRate(bareCurrCode ? 'USD' : fetchedCurrency, baseCurrency, json.data);
                     }
                     var fetchedActualFxRate = bareCurrCode ? (fetchedPrice && fetchedFxRate ? fetchedPrice * fetchedFxRate : null) : fetchedFxRate;
+                    // Streamed crypto prices are in dollars: the USD value of one unit of the quote currency.
+                    const baseUsdRate = baseCurrency === 'USD' ? 1 : json.data.find(q => q.symbol === `${baseCurrency}USD=X`)?.price;
+                    usdRate = fetchedCurrency === 'USD' ? 1 : (fetchedFxRate > 0 && baseUsdRate > 0 ? fetchedFxRate * baseUsdRate : null);
                 }
 
                 // Initializer vars for update
@@ -433,8 +478,9 @@ export default function TransactionModal({
                     return { ...prev, name: isGenericName ? (assetQuote?.name || prev.name) : prev.name };
                 });
 
-                // SINGLE atomic update - guarantees exactly one render
-                setPriceData({
+                // SINGLE atomic update - guarantees exactly one render.
+                // A streamed trade newer than this poll stays on top of it.
+                const nextPriceData = {
                     price: fetchedPrice,
                     change: fetchedAbsChangeValue,
                     changePercent: fetchedChange,
@@ -450,8 +496,15 @@ export default function TransactionModal({
                     preMarketChange: fetchedPreMarketChange,
                     postMarketPrice: fetchedPostMarketPrice,
                     postMarketChange: fetchedPostMarketChange,
+                    liveSymbol,
+                    liveCrypto: fetchedQuoteType === 'CRYPTOCURRENCY' && !!cryptoBase(liveSymbol),
+                    liveCurrency: fetchedCurrency,
+                    usdRate,
                     isLoading: false
-                });
+                };
+                setPriceData(prev => (prev.liveTick && prev.liveSymbol === liveSymbol
+                    ? applyLiveTickToPriceData(nextPriceData, prev.liveTick)
+                    : nextPriceData));
             } catch (e) {
                 console.error(e);
                 if (!isCancelled) setPriceData(prev => ({ ...prev, isLoading: false }));
@@ -472,6 +525,17 @@ export default function TransactionModal({
         baseCurrency,
         transactions
     ]);
+
+    const liveSymbol = priceData.liveSymbol;
+    const liveCrypto = !!priceData.liveCrypto;
+    const liveEntries = useMemo(() => (liveSymbol ? [{ symbol: liveSymbol, crypto: liveCrypto }] : []), [liveSymbol, liveCrypto]);
+    const handleLiveTicks = useCallback(ticks => {
+        setPriceData(prev => {
+            const tick = prev.liveSymbol ? ticks.get(prev.liveSymbol) : null;
+            return tick ? applyLiveTickToPriceData(prev, tick) : prev;
+        });
+    }, []);
+    useLiveQuotes(liveEntries, marketActive, handleLiveTicks);
 
     // Destructure for easy access throughout component
     const {
@@ -990,6 +1054,8 @@ export default function TransactionModal({
                                             baseCurrency={baseCurrency}
                                             fxRate={fxRate}
                                             parentLoading={loadingPrice}
+                                            livePrice={priceData.liveTick ? liveAssetPrice : null}
+                                            liveTime={priceData.liveTick?.time ?? null}
                                             assetCurrency={selectedAsset.currency || priceData.currency}
                                             // Bare currencies chart against USD (AUD -> AUDUSD=X).
                                             chartSymbol={(() => {
