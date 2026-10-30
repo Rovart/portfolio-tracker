@@ -1,4 +1,4 @@
-import { inferTransactionCostCurrency } from './portfolio-logic.js';
+import { compareTransactions, inferTransactionCostCurrency } from './portfolio-logic.js';
 
 // Keep the ends and each bucket's extrema without rendering the full history.
 // keepIndices are always retained so transaction markers stay on real segments.
@@ -122,7 +122,8 @@ function segmentCrossing(points, i, price) {
 // 2. Only when that day never reaches the price, the curve is followed backwards
 //    from the date (up to MARKER_LOOKBACK_DAYS) to the latest crossing.
 // 3. Otherwise the marker stays on the curve at the operation's date.
-export function findTransactionPosition(points, tx, index = buildMarkerIndex(points), { matchPrice = true } = {}) {
+// notBefore keeps a later operation of the same day from landing ahead of an earlier one.
+export function findTransactionPosition(points, tx, index = buildMarkerIndex(points), { matchPrice = true, notBefore = -Infinity } = {}) {
     if (points.length === 0) return null;
     const txTime = toTime(tx.date);
     const txDay = dayKey(tx.date);
@@ -141,7 +142,7 @@ export function findTransactionPosition(points, tx, index = buildMarkerIndex(poi
         let bestDistance = Infinity;
         for (let i = windowStart; i <= windowEnd; i++) {
             const x = i === windowEnd ? (points[i].value === price ? i : null) : segmentCrossing(points, i, price);
-            if (x === null) continue;
+            if (x === null || x < notBefore) continue;
             const distance = Math.abs(timeAt(times, x) - txTime);
             if (distance < bestDistance) {
                 best = x;
@@ -153,7 +154,7 @@ export function findTransactionPosition(points, tx, index = buildMarkerIndex(poi
         const earliest = times[windowStart] - MARKER_LOOKBACK_DAYS * DAY_MS;
         for (let i = windowStart - 1; i >= 0 && times[i + 1] >= earliest; i--) {
             const x = segmentCrossing(points, i, price);
-            if (x !== null && timeAt(times, x) >= earliest) return { x, y: price, match: 'lookback' };
+            if (x !== null && x >= notBefore && timeAt(times, x) >= earliest) return { x, y: price, match: 'lookback' };
         }
     }
 
@@ -169,6 +170,7 @@ export function findTransactionPosition(points, tx, index = buildMarkerIndex(poi
     } else {
         x = windowEnd;
     }
+    x = Math.max(x, notBefore);
     return { x, y: valueAt(points, x), match: 'nearest' };
 }
 
@@ -185,8 +187,12 @@ export function buildTransactionMarkers(points, transactions, { matchPrice = tru
     const firstDate = index.keys[0];
     const lastDate = index.keys[index.keys.length - 1];
     const markers = [];
+    // Last marker per day: manual trades share a midnight timestamp, so a sell would
+    // otherwise match the day's first crossing even when that is before its buy.
+    const lastXByDay = new Map();
 
-    for (const tx of transactions) {
+    // Chronological, so later operations are also drawn on top.
+    for (const tx of [...transactions].sort(compareTransactions)) {
         if (!tx.date || !MARKER_TYPES.includes(tx.type)) continue;
         const txDate = dayKey(tx.date);
         // An older operation must not reappear merely because a visible price matches.
@@ -194,8 +200,12 @@ export function buildTransactionMarkers(points, transactions, { matchPrice = tru
 
         const hasPrice = tx.type !== 'INCOME' && Number.isFinite(tx.executionPrice) && tx.executionPrice > 0;
         if (matchPrice && !hasPrice && ['BUY', 'SELL'].includes(tx.type)) continue;
-        const position = findTransactionPosition(points, tx, index, { matchPrice: matchPrice && hasPrice });
+        const position = findTransactionPosition(points, tx, index, {
+            matchPrice: matchPrice && hasPrice,
+            notBefore: lastXByDay.get(txDate) ?? -Infinity
+        });
         if (!position) continue;
+        lastXByDay.set(txDate, position.x);
 
         markers.push({
             id: tx.id,

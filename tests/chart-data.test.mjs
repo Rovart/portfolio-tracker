@@ -131,6 +131,27 @@ test('intraday price matching picks the crossing closest to the operation time',
     assert.equal(buildTransactionMarkers(intraday, [trade({ date: '2026-10-02T12:10:00Z' })])[0].x, 0.5);
 });
 
+test('a same-day sell is placed after its buy and drawn on top of it', () => {
+    // 1D range after earnings: the 29th, then a gap down at the open and a rebound.
+    const curve = [
+        ['2026-10-29T19:00:00Z', 221], ['2026-10-29T20:00:00Z', 220],
+        ['2026-10-30T13:30:00Z', 203], ['2026-10-30T14:00:00Z', 216], ['2026-10-30T15:00:00Z', 215]
+    ].map(([date, value]) => ({ date, value }));
+    // Manual entries: midnight, newest first as the history lists them.
+    const day = '2026-10-30T00:00:00.000Z';
+    const [buy, sell] = buildTransactionMarkers(curve, [
+        trade({ id: 'sell', date: day, executionPrice: 214.95 }),
+        trade({ id: 'buy', type: 'BUY', date: day, executionPrice: 204 })
+    ]);
+    assert.equal(buy.id, 'buy');
+    assert.equal(sell.id, 'sell');
+    assert.equal(buy.y, 204);
+    assert.equal(sell.y, 214.95);
+    // On the rebound, not on the gap down that precedes the buy.
+    assert.ok(sell.x > 2 && sell.x < 3, `sell at ${sell.x}`);
+    assert.ok(sell.x > buy.x);
+});
+
 test('date-only placement ignores prices, as used for loans', () => {
     const curve = points([1, 1.01, 1.02]);
     const [marker] = buildTransactionMarkers(curve, [trade({ type: 'BUY', executionPrice: 1 })], { matchPrice: false });
