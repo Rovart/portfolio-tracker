@@ -1430,7 +1430,9 @@ export default function Dashboard() {
             // Add portfolioId if not already set
             const txWithPortfolio = {
                 ...tx,
-                portfolioId: tx.portfolioId || (currentPortfolioId === 'all' ? 1 : currentPortfolioId)
+                portfolioId: tx.portfolioId || (currentPortfolioId === 'all' ? 1 : currentPortfolioId),
+                // Kept in memory too: it orders same-day trades before the next reload.
+                createdAt: new Date().toISOString()
             };
             const newId = await addTransaction(txWithPortfolio);
             const newTx = { ...txWithPortfolio, id: newId };

@@ -36,6 +36,7 @@ import {
     isFiatAsset,
     getQuoteCurrencyFromSymbol,
     calculateAssetAccounting,
+    compareTransactions,
     getCurrentFxRate
 } from '@/utils/portfolio-logic';
 import {
@@ -609,7 +610,7 @@ export default function TransactionModal({
                 const isReverse = normalizeAsset(t.quoteCurrency) === normalizedTarget;
                 return { ...t, isReverse };
             })
-            .sort((a, b) => new Date(b.date) - new Date(a.date))
+            .sort((a, b) => compareTransactions(b, a))
     }, [transactions, selectedAssetSymbol]);
 
     const chartTransactions = useMemo(() => assetTransactions

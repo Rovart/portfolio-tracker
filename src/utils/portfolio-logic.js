@@ -411,8 +411,20 @@ function convertTxAmount(amount, assetOrCurrency, baseCurrency, dateStr, convert
     return qty * rate;
 }
 
+// Inflows before outflows, so a same-day sell never runs ahead of the buy that funds it.
+const SAME_TIME_ORDER = { BUY: 0, DEPOSIT: 0, INCOME: 0, SELL: 1, WITHDRAW: 1 };
+
+// Manual entries are stored at midnight with random string ids, so same-day trades need
+// another key: when they were entered, then Dexie's numeric id, then inflows first.
+export function compareTransactions(a, b) {
+    return new Date(a.date) - new Date(b.date)
+        || (Date.parse(a.createdAt) || 0) - (Date.parse(b.createdAt) || 0)
+        || (Number(a.id) || 0) - (Number(b.id) || 0)
+        || (SAME_TIME_ORDER[a.type] ?? 0) - (SAME_TIME_ORDER[b.type] ?? 0);
+}
+
 export function calculatePortfolioAccounting(transactions, baseCurrency = 'USD', convertRateForTx = null) {
-    const sortedTransactions = [...(transactions || [])].sort((a, b) => new Date(a.date) - new Date(b.date) || (Number(a.id) || 0) - (Number(b.id) || 0));
+    const sortedTransactions = [...(transactions || [])].sort(compareTransactions);
     const cashTrackedCurrencies = collectCashTrackedCurrencies(sortedTransactions);
     const balances = {};
     const accounts = {};

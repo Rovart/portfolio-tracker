@@ -3,7 +3,8 @@ import {
     getQuoteCurrencyFromSymbol,
     COMMON_FIAT_CURRENCIES,
     COMMON_CRYPTO_ASSETS,
-    isFiatAsset
+    isFiatAsset,
+    compareTransactions
 } from './portfolio-logic.js';
 
 const EPSILON = 0.00001;
@@ -229,7 +230,7 @@ export function calculatePortfolioHistory(transactions, historicalPrices, baseCu
     timestampSet.add(nowStr);
     const sortedTimestamps = [...timestampSet].sort();
 
-    const sortedTransactions = [...transactions].sort((a, b) => new Date(a.date) - new Date(b.date) || (Number(a.id) || 0) - (Number(b.id) || 0));
+    const sortedTransactions = [...transactions].sort(compareTransactions);
     const cashTrackedCurrencies = collectCashTrackedCurrencies(sortedTransactions);
     const metadata = { priceSymbolMap: {}, quoteMap: {} };
 

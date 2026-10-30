@@ -261,7 +261,7 @@ export async function addTransaction(transaction) {
         ...transaction,
         portfolioId: transaction.portfolioId || 1, // Default portfolio if not specified
         date: new Date(transaction.date).toISOString(),
-        createdAt: new Date().toISOString()
+        createdAt: transaction.createdAt || new Date().toISOString()
     });
     return id;
 }
