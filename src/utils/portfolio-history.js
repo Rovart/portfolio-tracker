@@ -4,7 +4,8 @@ import {
     COMMON_FIAT_CURRENCIES,
     COMMON_CRYPTO_ASSETS,
     isFiatAsset,
-    compareTransactions
+    compareTransactions,
+    inferTransactionCostCurrency
 } from './portfolio-logic.js';
 
 const EPSILON = 0.00001;
@@ -281,6 +282,11 @@ export function calculatePortfolioHistory(transactions, historicalPrices, baseCu
             const qAmt = toNumber(tx.quoteAmount);
             const fAmt = toNumber(tx.fee);
             const affectsQuoteBalance = shouldAffectQuoteBalance(tx, quote, cashTrackedCurrencies);
+            const settlement = {
+                currency: inferTransactionCostCurrency(tx, baseCurrency),
+                fee: feeCurr && !shouldAffectFeeBalance(feeCurr, base, quote, affectsQuoteBalance, cashTrackedCurrencies) ? fAmt : 0,
+                feeCurrency: feeCurr
+            };
 
             if (base && !currentBalances[base]) currentBalances[base] = 0;
             if (quote && !currentBalances[quote]) currentBalances[quote] = 0;
@@ -293,14 +299,14 @@ export function calculatePortfolioHistory(transactions, historicalPrices, baseCu
                 if (quote && affectsQuoteBalance) {
                     currentBalances[quote] -= qAmt;
                 } else {
-                    externalFlows.push({ asset: base, amount: bAmt });
+                    externalFlows.push({ asset: base, amount: bAmt, settled: qAmt, ...settlement });
                 }
             } else if (tx.type === 'SELL') {
                 currentBalances[base] -= bAmt;
                 if (quote && affectsQuoteBalance) {
                     currentBalances[quote] += qAmt;
                 } else {
-                    externalFlows.push({ asset: base, amount: -bAmt });
+                    externalFlows.push({ asset: base, amount: -bAmt, settled: -qAmt, ...settlement });
                 }
             } else if (tx.type === 'DEPOSIT') {
                 currentBalances[base] += bAmt;
@@ -364,48 +370,59 @@ export function calculatePortfolioHistory(transactions, historicalPrices, baseCu
             hasValuedAsset = true;
         }
 
-        if (!hasValuedAsset || !Number.isFinite(totalValue) || totalValue <= 0) continue;
+        const valueFlow = (asset, amount) => valueBalance(
+            asset,
+            amount,
+            time,
+            historicalPrices,
+            historyIndexes,
+            baseCurrency,
+            metadata,
+            externalQuoteMap
+        );
 
         let externalFlowValue = 0;
         externalFlows.forEach(flow => {
             // Assets left out of the valuation (no live quote) must not move the index either.
             if (getLiveRate(flow.asset) === null) return;
-            const value = valueBalance(
-                flow.asset,
-                flow.amount,
-                time,
-                historicalPrices,
-                historyIndexes,
-                baseCurrency,
-                metadata,
-                externalQuoteMap
-            );
-            if (value !== null && Number.isFinite(value)) externalFlowValue += value;
+            const marketValue = valueFlow(flow.asset, flow.amount);
+            if (marketValue === null || !Number.isFinite(marketValue)) return;
+            // A trade moved what was actually paid or received, so the gap to the market
+            // price is a gain. Market value only stands in when no price was recorded.
+            const settledValue = flow.settled ? valueFlow(flow.currency, flow.settled) : null;
+            externalFlowValue += settledValue === null
+                ? marketValue
+                : settledValue + (flow.fee ? valueFlow(flow.feeCurrency, flow.fee) ?? 0 : 0);
         });
 
+        // Counted even when nothing is left to value: selling everything is still a
+        // withdrawal, or the next purchase would read as a loss of the whole amount.
         cumulativeFlow += externalFlowValue;
+        if (initialized && Math.abs(externalFlowValue) > EPSILON && unitValue > EPSILON) {
+            units += externalFlowValue / unitValue;
+        }
+
+        if (!hasValuedAsset || !Number.isFinite(totalValue) || totalValue <= 0) continue;
 
         if (!initialized) {
             initialized = true;
             initialChartValue = totalValue;
             units = totalValue;
             unitValue = 1;
-        } else {
-            if (Math.abs(externalFlowValue) > EPSILON && unitValue > EPSILON) {
-                units += externalFlowValue / unitValue;
-            }
-            if (units > EPSILON) {
-                unitValue = totalValue / units;
-            }
+        } else if (units > EPSILON) {
+            unitValue = totalValue / units;
         }
 
         // netFlow: contributions minus withdrawals so far, so a range's gain is
         // Δvalue − ΔnetFlow and its return is the ratio of `value` (time-weighted).
+        // The first point stands for everything paid in so far at today's value: its gap
+        // to the money paid is a gain, which the next point's netFlow then reveals.
+        const isOpening = dailyData.length === 0 && cumulativeFlow > EPSILON;
         dailyData.push({
             date: timestamp,
             value: initialChartValue * unitValue,
             rawValue: totalValue,
-            netFlow: cumulativeFlow
+            netFlow: isOpening ? totalValue : cumulativeFlow
         });
     }
 

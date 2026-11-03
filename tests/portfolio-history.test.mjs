@@ -29,7 +29,7 @@ test('a purchase paid outside the tracked cash is a contribution, not a gain', (
 test('returns are time-weighted across contributions', () => {
     // +10% before the second purchase, then flat.
     const history = calculatePortfolioHistory(
-        [buy(day(1), 1), buy(day(3), 1)],
+        [buy(day(1), 1), buy(day(3), 1, { quoteAmount: 110 })],
         { AAPL: prices([100, 110, 110, 110]) },
         'USD',
         { AAPL: 'USD' }
@@ -55,6 +55,60 @@ test('a purchase settled from tracked cash is neither a flow nor a gain', () => 
     close(last.rawValue, 500);
     close(last.netFlow - first.netFlow, 0);
     close(last.value / first.value, 1);
+});
+
+test('a trade outside the tracked cash counts what was actually paid and received', () => {
+    const trade = (type, date, price, overrides = {}) => ({
+        id: `${type}-${date}`, type, date: `${date}T00:00:00.000Z`, baseCurrency: 'AAPL',
+        baseAmount: 10, quoteAmount: 10 * price, quoteCurrency: 'USD', affectsQuoteBalance: false, ...overrides
+    });
+    const gain = transactions => {
+        const history = calculatePortfolioHistory(transactions, {
+            AAPL: prices([120, 120, 120, 120]), MSFT: prices([100, 100, 100, 100])
+        }, 'USD', { AAPL: 'USD', MSFT: 'USD' }).map(point => ({ ...point, value: point.rawValue }));
+        return getPeriodReturn(history).diff;
+    };
+    const other = { ...trade('BUY', day(1), 100), id: 'other', baseCurrency: 'MSFT' };
+
+    // Bought below the market, still held.
+    close(gain([other, trade('BUY', day(2), 100)]), 200);
+    // The fee was paid outside the portfolio too.
+    close(gain([other, trade('BUY', day(2), 100, { fee: 5, feeCurrency: 'USD' })]), 195);
+    // Closed on the same day: the whole gain left with the proceeds.
+    close(gain([other, trade('BUY', day(2), 100), trade('SELL', day(2), 110)]), 100);
+    // Without a recorded price there is nothing to compare with the market.
+    close(gain([other, trade('BUY', day(2), 100, { quoteAmount: 0, quoteCurrency: null })]), 0);
+});
+
+test('the whole history counts the gain since the first purchase', () => {
+    // Paid 100, worth 120 by that day's close, 130 at the end.
+    const history = calculatePortfolioHistory(
+        [buy(day(1), 1)],
+        { AAPL: prices([120, 125, 130]) },
+        'USD',
+        { AAPL: 'USD' }
+    ).map(point => ({ ...point, value: point.rawValue }));
+    close(getPeriodReturn(history).diff, 30);
+    close(getPeriodReturn(history).percent, 30);
+    // A position with no price yet at its date has no paid amount to compare with.
+    const unpriced = calculatePortfolioHistory(
+        [buy('2026-02-01', 1)],
+        { AAPL: prices([120, 125, 130]) },
+        'USD',
+        { AAPL: 'USD' }
+    ).map(point => ({ ...point, value: point.rawValue }));
+    close(getPeriodReturn(unpriced).diff, 10);
+});
+
+test('selling everything and buying again is not a loss of the whole amount', () => {
+    const trade = (type, date) => buy(date, 2, { id: `${type}-${date}`, type, quoteAmount: 200 });
+    const history = calculatePortfolioHistory(
+        [trade('BUY', day(1)), trade('SELL', day(2)), trade('BUY', day(3))],
+        { AAPL: prices([100, 100, 100, 95]) },
+        'USD',
+        { AAPL: 'USD' }
+    ).map(point => ({ ...point, value: point.rawValue }));
+    close(getPeriodReturn(history).diff, -10);
 });
 
 test('period return weights contributions by the time they were invested', () => {

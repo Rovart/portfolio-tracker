@@ -60,7 +60,7 @@ import {
 
 const TIMEFRAMES = ['1D', '1W', '1M', '1Y', 'YTD', 'ALL'];
 const TIMEFRAME_LABELS = {
-    '1D': 'Today',
+    '1D': 'Past 24h',
     '1W': 'Past week',
     '1M': 'Past month',
     '1Y': 'Past year',
@@ -1346,16 +1346,10 @@ export default function Dashboard() {
         else if (timeframe === '1M') cutoff.setMonth(now.getMonth() - 1);
         else if (timeframe === '1Y') cutoff.setFullYear(now.getFullYear() - 1);
         else if (timeframe === 'YTD') cutoff = new Date(now.getFullYear(), 0, 1);
-        else if (timeframe === 'ALL') {
-            const firstTxTime = historyPositionTransactions.reduce((min, t) => {
-                const time = Date.parse(t.date);
-                return Number.isFinite(time) && time < min ? time : min;
-            }, Infinity);
-            const firstTxDate = new Date(Number.isFinite(firstTxTime) ? firstTxTime : 0);
-            cutoff = firstTxDate;
-        }
 
-        const cutoffStr = cutoff.toISOString();
+        // ALL keeps every point: the history already starts at the first position, and
+        // that bare date would sort before a cutoff at the same day's first instant.
+        const cutoffStr = timeframe === 'ALL' ? '' : cutoff.toISOString();
         let filtered = rawHistory.filter(d => d.date >= cutoffStr);
 
         // Intraday ranges: drop the daily-close points (they belong to the end of
@@ -1400,7 +1394,7 @@ export default function Dashboard() {
             setHistoryTimeframe(timeframe);
         });
 
-    }, [rawHistory, historyPositionTransactions, timeframe, prices, pricesLoading, holdings, chartMode]);
+    }, [rawHistory, timeframe, prices, pricesLoading, holdings, chartMode]);
 
 
     const syncTransactionsToFile = async (updatedTx) => {
@@ -1618,7 +1612,8 @@ export default function Dashboard() {
         let displayDiff = dayDiff;
         let displayPercent = dayPercent;
 
-        if (timeframe !== '1D' && history.length > 1) {
+        // Same span as the chart; the day change only stands in until it has data.
+        if (history.length > 1) {
             const change = getPeriodReturn(history);
             displayDiff = change.diff;
             displayPercent = change.percent;
@@ -1633,14 +1628,14 @@ export default function Dashboard() {
             safeDiff: displayDiff || 0,
             safePercent: displayPercent || 0
         };
-    }, [holdings, history, timeframe]);
+    }, [holdings, history]);
 
     const unavailableCount = holdings.filter(holding => holding.valuationUnavailable).length;
     const knownValueCount = holdings.length - unavailableCount;
     const showTime = timeframe === '1D' || timeframe === '1W';
 
     // The header follows the chart: a selected range, a scrubbed point, or now.
-    let headerFigure = { value: totalValue, diff: safeDiff, percent: safePercent, caption: TIMEFRAME_LABELS[timeframe] || '', live: true };
+    let headerFigure = { value: totalValue, diff: safeDiff, percent: safePercent, caption: history.length > 1 ? TIMEFRAME_LABELS[timeframe] || '' : 'Today', live: true };
     if (chartSelection?.start && chartSelection?.end) {
         headerFigure = {
             value: chartSelection.end.value,
@@ -1660,7 +1655,7 @@ export default function Dashboard() {
         ? (portfolios.length > 1 ? 'All portfolios' : 'Total value')
         : portfolios.find(p => p.id === currentPortfolioId)?.name || 'Portfolio';
     const showValueSkeleton = pricesLoading && holdings.length === 0;
-    const changeIsStale = headerFigure.live && historyLoading && timeframe !== '1D';
+    const changeIsStale = headerFigure.live && historyLoading;
 
     return (
         <>
@@ -1778,7 +1773,7 @@ export default function Dashboard() {
                                                     <div className={`fade-swap flex items-center flex-wrap${changeIsStale ? ' is-stale' : ''}`} style={{ gap: '2px 8px', fontSize: 'var(--fs-md)' }}>
                                                         <Delta value={headerFigure.diff} percent={headerFigure.percent} currency={baseCurrency} hidden={hideBalances} className="font-medium" />
                                                         <span className="label">{headerFigure.caption}</span>
-                                                        {headerFigure.live && timeframe !== '1D' && (
+                                                        {headerFigure.live && history.length > 1 && (
                                                             <span className="label">
                                                                 · Today <span className={changeTone(displayPercentDay)}>{formatPercent(displayPercentDay)}</span>
                                                             </span>
