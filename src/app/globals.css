@@ -1626,6 +1626,10 @@ textarea.form-input {
   margin: 0 -2px var(--space-3);
 }
 
+.segmented.portfolio-chart-mode {
+  justify-content: flex-end;
+}
+
 .fab {
   position: fixed;
   right: 20px;

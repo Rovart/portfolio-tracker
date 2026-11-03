@@ -326,7 +326,7 @@ export default function Dashboard() {
     const [loans, setLoans] = useState([]);
     const [walletBalances, setWalletBalances] = useState({});
     const [watchlistSort, setWatchlistSort] = useState('custom');
-    const [chartMode] = useState('value'); // Chart always shows portfolio Value
+    const [chartMode, setChartMode] = useState('return'); // Chart line: gain ('return') or total ('value')
     const [monetaxImportStatus, setMonetaxImportStatus] = useState(null);
     // Chart interaction shown in the header: a scrubbed point or a selected range.
     const [chartScrub, setChartScrub] = useState(null);
@@ -572,6 +572,11 @@ export default function Dashboard() {
                     setTimeframe(savedTimeframe);
                 }
 
+                const savedChartMode = localStorage.getItem('portfolio_chart_mode');
+                if (savedChartMode === 'value' || savedChartMode === 'return') {
+                    setChartMode(savedChartMode);
+                }
+
                 // Load saved watchlist sort preference
                 const savedWatchlistSort = localStorage.getItem('watchlist_sort');
                 if (savedWatchlistSort && WATCHLIST_SORT_OPTIONS.find(o => o.id === savedWatchlistSort)) {
@@ -705,6 +710,13 @@ export default function Dashboard() {
         setSelectedTimeframe(tf);
         startTransition(() => setTimeframe(tf));
         localStorage.setItem('portfolio_chart_timeframe', tf);
+    }, []);
+
+    const handleChartModeChange = useCallback((mode) => {
+        setChartScrub(null);
+        setChartSelection(null);
+        setChartMode(mode);
+        localStorage.setItem('portfolio_chart_mode', mode);
     }, []);
 
     const handleWatchlistSortChange = useCallback((newSort) => {
@@ -1382,19 +1394,17 @@ export default function Dashboard() {
             }
         }
 
-        if (chartMode === 'value') {
-            filtered = filtered.map(point => ({
-                ...point,
-                value: Number.isFinite(parseFloat(point.rawValue)) ? point.rawValue : point.value
-            }));
-        }
+        filtered = filtered.map(point => ({
+            ...point,
+            value: Number.isFinite(parseFloat(point.rawValue)) ? point.rawValue : point.value
+        }));
 
         startTransition(() => {
             setHistory(filtered);
             setHistoryTimeframe(timeframe);
         });
 
-    }, [rawHistory, timeframe, prices, pricesLoading, holdings, chartMode]);
+    }, [rawHistory, timeframe, prices, pricesLoading, holdings]);
 
 
     const syncTransactionsToFile = async (updatedTx) => {
@@ -1656,6 +1666,10 @@ export default function Dashboard() {
         : portfolios.find(p => p.id === currentPortfolioId)?.name || 'Portfolio';
     const showValueSkeleton = pricesLoading && holdings.length === 0;
     const changeIsStale = headerFigure.live && historyLoading;
+    // The timeframe accent matches the line: the total can rise while the return is negative.
+    const chartRising = chartMode === 'value' && history.length > 1
+        ? history[history.length - 1].value >= history[0].value
+        : safeDiff >= 0;
 
     return (
         <>
@@ -1789,9 +1803,18 @@ export default function Dashboard() {
                             {/* Charts hidden for watchlists */}
                             {!isWatchlistView && (
                                 <>
+                                    <Segmented
+                                        className="portfolio-chart-mode no-select"
+                                        variant="compact"
+                                        ariaLabel="Chart line"
+                                        options={[{ id: 'return', label: 'Return' }, { id: 'value', label: 'Value' }]}
+                                        value={chartMode}
+                                        onChange={handleChartModeChange}
+                                    />
                                     <div className="portfolio-chart">
                                         <ProfitChart
                                             data={history}
+                                            mode={chartMode}
                                             loading={historyLoading || historyTimeframe !== timeframe}
                                             timeframe={historyTimeframe}
                                             onScrub={setChartScrub}
@@ -1801,7 +1824,7 @@ export default function Dashboard() {
 
                                     <Segmented
                                         className="portfolio-timeframes no-select"
-                                        activeColor={headerFigure.live ? (safeDiff >= 0 ? 'var(--success)' : 'var(--danger)') : undefined}
+                                        activeColor={headerFigure.live ? (chartRising ? 'var(--success)' : 'var(--danger)') : undefined}
                                         ariaLabel="Chart timeframe"
                                         options={TIMEFRAMES.map(tf => ({ id: tf, label: tf }))}
                                         value={selectedTimeframe || timeframe}

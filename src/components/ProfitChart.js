@@ -3,21 +3,30 @@
 import { memo, useCallback, useMemo } from 'react';
 import LineChart, { ChartPlaceholder } from './LineChart';
 import { downsampleChartData } from '@/utils/chart-data';
-import { getPeriodReturn } from '@/utils/portfolio-history';
+import { getPeriodReturn, toReturnSeries } from '@/utils/portfolio-history';
 
 const HEIGHT = 280;
 
-// Portfolio value over the selected timeframe. While a new timeframe loads the
-// previous curve stays visible (dimmed) rather than flashing a skeleton.
-// Scrub and range callbacks carry the gain net of deposits for the span shown.
-function ProfitChart({ data, loading, timeframe, onScrub, onRangeSelect }) {
-    const chartData = useMemo(() => downsampleChartData(data), [data]);
+// The portfolio over the selected timeframe, as its total value or as the gain net of
+// deposits. While a new timeframe loads the previous curve stays visible (dimmed)
+// rather than flashing a skeleton. Scrub and range callbacks always carry the total
+// value and the gain net of deposits for the span shown, whichever line is drawn.
+function ProfitChart({ data, mode = 'value', loading, timeframe, onScrub, onRangeSelect }) {
+    const chartData = useMemo(() => downsampleChartData(mode === 'return' ? toReturnSeries(data) : data), [data, mode]);
+    const totals = useMemo(() => (
+        mode === 'return' ? chartData.map(point => ({ ...point, value: point.total })) : chartData
+    ), [chartData, mode]);
     const handleScrub = useCallback((scrub) => {
-        onScrub?.(scrub && { ...scrub, change: getPeriodReturn(chartData, 0, scrub.index) });
-    }, [chartData, onScrub]);
+        onScrub?.(scrub && { ...scrub, point: totals[scrub.index], change: getPeriodReturn(totals, 0, scrub.index) });
+    }, [totals, onScrub]);
     const handleRangeSelect = useCallback((range) => {
-        onRangeSelect?.(range && { ...range, change: getPeriodReturn(chartData, range.startIndex, range.endIndex) });
-    }, [chartData, onRangeSelect]);
+        onRangeSelect?.(range && {
+            ...range,
+            start: totals[range.startIndex],
+            end: totals[range.endIndex],
+            change: getPeriodReturn(totals, range.startIndex, range.endIndex)
+        });
+    }, [totals, onRangeSelect]);
 
     if (chartData.length === 0) {
         return loading
@@ -26,8 +35,8 @@ function ProfitChart({ data, loading, timeframe, onScrub, onRangeSelect }) {
     }
 
     const first = chartData[0];
-    // Colour follows the gain, not deposits.
-    const trendUp = getPeriodReturn(chartData).diff >= 0;
+    // Colour describes the line drawn: a rising line is never red.
+    const trendUp = chartData[chartData.length - 1].value >= first.value;
 
     return (
         <LineChart
@@ -36,8 +45,8 @@ function ProfitChart({ data, loading, timeframe, onScrub, onRangeSelect }) {
             color={trendUp ? 'var(--success)' : 'var(--danger)'}
             baseline={first.value}
             stale={loading}
-            transitionKey={timeframe}
-            ariaLabel="Portfolio value over time"
+            transitionKey={`${timeframe}-${mode}`}
+            ariaLabel={mode === 'return' ? 'Portfolio return over time' : 'Portfolio value over time'}
             onScrub={handleScrub}
             onRangeSelect={handleRangeSelect}
         />

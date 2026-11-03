@@ -439,6 +439,18 @@ export function calculatePortfolioHistory(transactions, historicalPrices, baseCu
     return dailyData;
 }
 
+// The same history as gain since its first point: money added or withdrawn does not
+// move the line, so it always ends at the range's gain (see getPeriodReturn). `total`
+// keeps each point's portfolio value.
+export function toReturnSeries(points) {
+    const start = points[0];
+    return points.map(point => ({
+        ...point,
+        total: point.value,
+        value: point.value - start.value - ((point.netFlow ?? 0) - (start.netFlow ?? 0))
+    }));
+}
+
 // Gain between two points of a history (excluding money added or withdrawn) and
 // its Modified Dietz return: gain over the average capital at work, with each
 // flow weighted by the share of the period it was invested. Unlike a

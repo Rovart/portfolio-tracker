@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { calculatePortfolioHistory, getPeriodReturn } from '../src/utils/portfolio-history.js';
+import { calculatePortfolioHistory, getPeriodReturn, toReturnSeries } from '../src/utils/portfolio-history.js';
 
 const day = n => `2026-03-${String(n).padStart(2, '0')}`;
 const prices = values => values.map((price, i) => ({ date: `${day(i + 1)}T00:00:00.000Z`, price }));
@@ -109,6 +109,22 @@ test('selling everything and buying again is not a loss of the whole amount', ()
         { AAPL: 'USD' }
     ).map(point => ({ ...point, value: point.rawValue }));
     close(getPeriodReturn(history).diff, -10);
+});
+
+test('the return line ignores deposits and ends at the gain of the range', () => {
+    const points = [
+        { date: '2026-01-01T00:00:00Z', value: 1000, netFlow: 1000 },
+        { date: '2026-01-02T00:00:00Z', value: 980, netFlow: 1000 },
+        // A large deposit lifts the total while the investments keep falling.
+        { date: '2026-01-03T00:00:00Z', value: 5960, netFlow: 6000 },
+        // A withdrawal lowers it while they recover.
+        { date: '2026-01-04T00:00:00Z', value: 3990, netFlow: 4000 }
+    ];
+    const series = toReturnSeries(points);
+    assert.deepEqual(series.map(point => point.value), [0, -20, -40, -10]);
+    assert.deepEqual(series.map(point => point.total), [1000, 980, 5960, 3990]);
+    series.forEach((point, index) => close(point.value, getPeriodReturn(points, 0, index).diff));
+    assert.deepEqual(toReturnSeries([]), []);
 });
 
 test('period return weights contributions by the time they were invested', () => {
