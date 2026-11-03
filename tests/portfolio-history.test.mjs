@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { calculatePortfolioHistory, getPeriodReturn, toReturnSeries } from '../src/utils/portfolio-history.js';
+import { calculatePortfolioHistory, getDayValueChange, getPeriodChange, getPeriodReturn, toReturnSeries } from '../src/utils/portfolio-history.js';
 
 const day = n => `2026-03-${String(n).padStart(2, '0')}`;
 const prices = values => values.map((price, i) => ({ date: `${day(i + 1)}T00:00:00.000Z`, price }));
@@ -152,6 +152,66 @@ test('a gain never shows a negative return after a large contribution', () => {
     const result = getPeriodReturn(points);
     close(result.diff, 300);
     assert.ok(result.percent > 0);
+});
+
+test('Value counts balance growth while Return excludes deposits in every selected span', () => {
+    const points = [
+        { date: '2026-01-01', value: 1000, netFlow: 1000 },
+        { date: '2026-06-01', value: 980, netFlow: 1000 },
+        { date: '2026-11-01', value: 5960, netFlow: 6000 },
+        { date: '2026-11-02', value: 3990, netFlow: 4000 }
+    ];
+    assert.deepEqual(getPeriodChange(points), { diff: 2990, percent: 299 });
+    assert.equal(getPeriodChange(points, 'return').diff, -10);
+    // A scrubbed point measures from the chart's start.
+    assert.deepEqual(getPeriodChange(points, 'value', 0, 2), { diff: 4960, percent: 496 });
+    assert.equal(getPeriodChange(points, 'return', 0, 2).diff, -40);
+    // A selected range includes withdrawals in Value, and removes them in Return.
+    const value = getPeriodChange(points, 'value', 2, 3);
+    close(value.diff, -1970);
+    close(value.percent, -1970 / 5960 * 100);
+    assert.equal(getPeriodChange(points, 'return', 2, 3).diff, 30);
+    assert.deepEqual(getPeriodChange([]), { diff: 0, percent: 0 });
+    assert.deepEqual(getPeriodChange(points, 'value', 1, 1), { diff: 0, percent: 0 });
+    assert.deepEqual(getPeriodChange([{ value: 0 }, { value: 100 }]), { diff: 100, percent: 0 });
+});
+
+test('Today in Value compares the previous close with the live balance, including new money', () => {
+    const raw = [
+        { date: '2026-01-01', value: 1000, rawValue: 1000 },
+        { date: '2026-11-01', value: 980, rawValue: 1980 },
+        { date: '2026-11-02', value: 960, rawValue: 2000 },
+        { date: new Date(2026, 10, 3, 9).toISOString(), value: 950, rawValue: 5950 },
+        { date: '2026-11-03', value: 940, rawValue: 5940 }
+    ];
+    // Today is independent of the chart range and uses raw balances, not its
+    // adjusted performance scale, today's opening candle or today's daily point.
+    assert.deepEqual(getDayValueChange(raw, 5900, new Date(2026, 10, 3, 12)), { diff: 3900, percent: 195 });
+    assert.deepEqual(getDayValueChange(raw, 1900, new Date(2026, 10, 3, 12)), { diff: -100, percent: -5 });
+});
+
+test('Today in Value uses the latest intraday point before local midnight when available', () => {
+    const raw = [
+        { date: new Date(2026, 10, 2, 22).toISOString(), rawValue: 900 },
+        { date: new Date(2026, 10, 2, 23, 55).toISOString(), rawValue: 1000 },
+        { date: new Date(2026, 10, 3, 0, 5).toISOString(), rawValue: 1500 },
+        { date: new Date(2026, 10, 3, 13).toISOString(), rawValue: 99999 }
+    ];
+    assert.deepEqual(getDayValueChange(raw, 1600, new Date(2026, 10, 3, 12)), { diff: 600, percent: 60 });
+});
+
+test('Today in Value handles a new portfolio and missing history without using price returns', () => {
+    const now = new Date(2026, 10, 3, 12);
+    const raw = [
+        { date: new Date(2026, 10, 3, 9).toISOString(), rawValue: 1000 },
+        { date: new Date(2026, 10, 3, 10).toISOString(), rawValue: 2000 }
+    ];
+    const change = getDayValueChange(raw, 2100, now);
+    close(change.diff, 1100);
+    close(change.percent, 110);
+    assert.equal(getDayValueChange([], 100, now), null);
+    assert.equal(getDayValueChange([{ date: 'invalid', rawValue: 100 }], 100, now), null);
+    assert.equal(getDayValueChange([{ date: new Date(2026, 10, 3, 13).toISOString(), rawValue: 100 }], 100, now), null);
 });
 
 test('intraday points value each asset at its latest known price, never the day close', () => {

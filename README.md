@@ -22,10 +22,11 @@ A dark-mode portfolio tracker built with Next.js and Yahoo Finance. Track stocks
 ### Visual Analytics
 - **Interactive Performance Charts** (lightweight SVG, no chart library on the main screens):
   - Portfolio chart with timeframes (1D, 1W, 1M, 1Y, YTD, ALL) and asset charts with FX-adjusted prices
+  - Value opens by default and comes first in the mode selector; an explicitly chosen mode is remembered. Value's period changes, Today and selected spans include deposits and withdrawals; Return excludes those flows
   - Scrub with the mouse or a sideways drag: the headline figure shows that point's value, date and change. Drag with the mouse or use two fingers to select a range. On Android, scrubbing gives haptic ticks
   - Switching range keeps the current curve (dimmed) until the new data arrives, then fades it in; neighbouring asset ranges are prefetched while idle
   - One line colour per range (gain or loss) and a dashed line at the starting value
-  - Period gain excludes deposits, withdrawals, purchases paid outside the tracked cash and payouts taken out of the portfolio; the percentage is a Modified Dietz return, so its sign always matches the gain
+  - In Return, period gain excludes deposits, withdrawals, purchases paid outside the tracked cash and payouts taken out of the portfolio; the percentage is a Modified Dietz return, so its sign always matches the gain
   - Buy/sell markers are placed by their date: on that day's segment of the curve at the execution price; only when that day never reaches the price, they move back to the latest earlier crossing (up to 31 days); otherwise they stay on the curve at their date and keep the actual execution price in their details. Markers are located on the full-resolution history, so downsampling never moves them
   - Intelligent resampling for smooth weekly charts
 - **Allocation**: Allocation bar by asset in the holdings list and a breakdown by asset class on desktop

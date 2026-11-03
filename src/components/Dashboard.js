@@ -25,7 +25,7 @@ import {
     COMMON_FIAT_CURRENCIES,
     COMMON_CRYPTO_ASSETS
 } from '@/utils/portfolio-logic';
-import { calculatePortfolioHistory, getPeriodReturn } from '@/utils/portfolio-history';
+import { calculatePortfolioHistory, getDayValueChange, getPeriodChange } from '@/utils/portfolio-history';
 import { formatSymbol } from '@/utils/commodities';
 import { getCachedQuotes, getCachedAssetHistory, setCachedAssetHistory, getCachedFxHistory, invalidateAssetCache, clearFxCache } from '@/utils/fxCache';
 import { historyInterval } from '@/utils/market-data';
@@ -326,7 +326,7 @@ export default function Dashboard() {
     const [loans, setLoans] = useState([]);
     const [walletBalances, setWalletBalances] = useState({});
     const [watchlistSort, setWatchlistSort] = useState('custom');
-    const [chartMode, setChartMode] = useState('return'); // Chart line: gain ('return') or total ('value')
+    const [chartMode, setChartMode] = useState('value'); // Chart line: total ('value') or gain ('return')
     const [monetaxImportStatus, setMonetaxImportStatus] = useState(null);
     // Chart interaction shown in the header: a scrubbed point or a selected range.
     const [chartScrub, setChartScrub] = useState(null);
@@ -1342,8 +1342,7 @@ export default function Dashboard() {
     ]);
 
     // DERIVED HISTORY: Apply timeframe cutoff to raw history.
-    // The chart is TWR-like performance adjusted for external deposits/withdrawals;
-    // the header shows the live net liquidation value.
+    // Keep total values and cash flows so both chart modes share the same history.
     useEffect(() => {
         if (!rawHistory.length) {
             setHistory([]);
@@ -1609,36 +1608,32 @@ export default function Dashboard() {
         safePercent
     } = useMemo(() => {
         const currentTotal = holdings.reduce((acc, h) => acc + (h.value || 0), 0);
-        const grossAssets = holdings.reduce((acc, h) => acc + (!h.isFiat ? (h.value || 0) : 0), 0);
-        const cash = holdings.reduce((acc, h) => acc + (h.isFiat ? (h.value || 0) : 0), 0);
         const prevValueDay = holdings.reduce((acc, h) => {
             const changeFactor = 1 + ((h.change24h || 0) / 100);
             if (Math.abs(changeFactor) < 0.0001) return acc + h.value;
             return acc + (h.value / changeFactor);
         }, 0);
-        const dayDiff = currentTotal - prevValueDay;
-        const dayPercent = prevValueDay !== 0 ? (dayDiff / prevValueDay) * 100 : 0;
+        const dayChange = chartMode === 'value'
+            ? getDayValueChange(rawHistory, currentTotal)
+            : { diff: currentTotal - prevValueDay, percent: prevValueDay !== 0 ? ((currentTotal - prevValueDay) / prevValueDay) * 100 : 0 };
 
-        let displayDiff = dayDiff;
-        let displayPercent = dayPercent;
+        let displayDiff = dayChange?.diff ?? 0;
+        let displayPercent = dayChange?.percent ?? 0;
 
         // Same span as the chart; the day change only stands in until it has data.
         if (history.length > 1) {
-            const change = getPeriodReturn(history);
+            const change = getPeriodChange(history, chartMode);
             displayDiff = change.diff;
             displayPercent = change.percent;
         }
 
         return {
             totalValue: currentTotal,
-            grossAssetsValue: grossAssets,
-            cashValue: cash,
-            displayDiffDay: dayDiff,
-            displayPercentDay: dayPercent,
+            displayPercentDay: dayChange?.percent ?? null,
             safeDiff: displayDiff || 0,
             safePercent: displayPercent || 0
         };
-    }, [holdings, history]);
+    }, [holdings, history, rawHistory, chartMode]);
 
     const unavailableCount = holdings.filter(holding => holding.valuationUnavailable).length;
     const knownValueCount = holdings.length - unavailableCount;
@@ -1666,10 +1661,7 @@ export default function Dashboard() {
         : portfolios.find(p => p.id === currentPortfolioId)?.name || 'Portfolio';
     const showValueSkeleton = pricesLoading && holdings.length === 0;
     const changeIsStale = headerFigure.live && historyLoading;
-    // The timeframe accent matches the line: the total can rise while the return is negative.
-    const chartRising = chartMode === 'value' && history.length > 1
-        ? history[history.length - 1].value >= history[0].value
-        : safeDiff >= 0;
+    const chartRising = safeDiff >= 0;
 
     return (
         <>
@@ -1787,7 +1779,7 @@ export default function Dashboard() {
                                                     <div className={`fade-swap flex items-center flex-wrap${changeIsStale ? ' is-stale' : ''}`} style={{ gap: '2px 8px', fontSize: 'var(--fs-md)' }}>
                                                         <Delta value={headerFigure.diff} percent={headerFigure.percent} currency={baseCurrency} hidden={hideBalances} className="font-medium" />
                                                         <span className="label">{headerFigure.caption}</span>
-                                                        {headerFigure.live && history.length > 1 && (
+                                                        {headerFigure.live && history.length > 1 && displayPercentDay !== null && (
                                                             <span className="label">
                                                                 · Today <span className={changeTone(displayPercentDay)}>{formatPercent(displayPercentDay)}</span>
                                                             </span>
@@ -1807,7 +1799,7 @@ export default function Dashboard() {
                                         className="portfolio-chart-mode no-select"
                                         variant="compact"
                                         ariaLabel="Chart line"
-                                        options={[{ id: 'return', label: 'Return' }, { id: 'value', label: 'Value' }]}
+                                        options={[{ id: 'value', label: 'Value' }, { id: 'return', label: 'Return' }]}
                                         value={chartMode}
                                         onChange={handleChartModeChange}
                                     />

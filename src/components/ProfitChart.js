@@ -3,30 +3,35 @@
 import { memo, useCallback, useMemo } from 'react';
 import LineChart, { ChartPlaceholder } from './LineChart';
 import { downsampleChartData } from '@/utils/chart-data';
-import { getPeriodReturn, toReturnSeries } from '@/utils/portfolio-history';
+import { getPeriodChange, toReturnSeries } from '@/utils/portfolio-history';
 
 const HEIGHT = 280;
 
 // The portfolio over the selected timeframe, as its total value or as the gain net of
 // deposits. While a new timeframe loads the previous curve stays visible (dimmed)
-// rather than flashing a skeleton. Scrub and range callbacks always carry the total
-// value and the gain net of deposits for the span shown, whichever line is drawn.
+// rather than flashing a skeleton. Callbacks carry the total value and the change
+// for the selected mode, calculated before sampling so cash-flow times stay exact.
 function ProfitChart({ data, mode = 'value', loading, timeframe, onScrub, onRangeSelect }) {
-    const chartData = useMemo(() => downsampleChartData(mode === 'return' ? toReturnSeries(data) : data), [data, mode]);
-    const totals = useMemo(() => (
-        mode === 'return' ? chartData.map(point => ({ ...point, value: point.total })) : chartData
-    ), [chartData, mode]);
+    const chartData = useMemo(() => {
+        const indexed = data.map((point, sourceIndex) => ({ ...point, sourceIndex }));
+        return downsampleChartData(mode === 'return' ? toReturnSeries(indexed) : indexed);
+    }, [data, mode]);
     const handleScrub = useCallback((scrub) => {
-        onScrub?.(scrub && { ...scrub, point: totals[scrub.index], change: getPeriodReturn(totals, 0, scrub.index) });
-    }, [totals, onScrub]);
+        if (!scrub) return onScrub?.(null);
+        const index = chartData[scrub.index].sourceIndex;
+        onScrub?.({ ...scrub, point: data[index], change: getPeriodChange(data, mode, 0, index) });
+    }, [data, chartData, mode, onScrub]);
     const handleRangeSelect = useCallback((range) => {
-        onRangeSelect?.(range && {
+        if (!range) return onRangeSelect?.(null);
+        const startIndex = chartData[range.startIndex].sourceIndex;
+        const endIndex = chartData[range.endIndex].sourceIndex;
+        onRangeSelect?.({
             ...range,
-            start: totals[range.startIndex],
-            end: totals[range.endIndex],
-            change: getPeriodReturn(totals, range.startIndex, range.endIndex)
+            start: data[startIndex],
+            end: data[endIndex],
+            change: getPeriodChange(data, mode, startIndex, endIndex)
         });
-    }, [totals, onRangeSelect]);
+    }, [data, chartData, mode, onRangeSelect]);
 
     if (chartData.length === 0) {
         return loading

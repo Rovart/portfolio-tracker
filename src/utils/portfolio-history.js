@@ -472,3 +472,37 @@ export function getPeriodReturn(points, startIndex = 0, endIndex = points.length
     const capital = start.value + weightedFlow;
     return { diff, percent: capital > EPSILON ? (diff / capital) * 100 : 0 };
 }
+
+// Value follows the portfolio balance, including deposits and withdrawals;
+// Return measures investment gains after removing those cash flows.
+export function getPeriodChange(points, mode = 'value', startIndex = 0, endIndex = points.length - 1) {
+    if (mode === 'return') return getPeriodReturn(points, startIndex, endIndex);
+    const start = points[startIndex];
+    const end = points[endIndex];
+    if (!start || !end) return { diff: 0, percent: 0 };
+    const diff = end.value - start.value;
+    return { diff, percent: start.value > EPSILON ? (diff / start.value) * 100 : 0 };
+}
+
+// Today uses the full history, regardless of the chart's selected timeframe.
+// Bare dates label daily closes; intraday points use the device's day boundary.
+export function getDayValueChange(rawHistory, currentValue, now = new Date()) {
+    const midnight = new Date(now);
+    midnight.setHours(0, 0, 0, 0);
+    const today = `${midnight.getFullYear()}-${String(midnight.getMonth() + 1).padStart(2, '0')}-${String(midnight.getDate()).padStart(2, '0')}`;
+    let previous = null;
+    let firstToday = null;
+    for (const point of rawHistory) {
+        const time = historyTime(point.date);
+        const value = Number(point.rawValue ?? point.value);
+        if (!Number.isFinite(time) || !Number.isFinite(value)) continue;
+        const beforeToday = DATE_ONLY.test(point.date) ? point.date < today : time < midnight.getTime();
+        if (beforeToday) {
+            if (!previous || time > previous.time) previous = { time, value };
+        } else if ((DATE_ONLY.test(point.date) ? point.date === today : time <= now.getTime()) && (!firstToday || time < firstToday.time)) {
+            firstToday = { time, value };
+        }
+    }
+    const start = previous || firstToday;
+    return start ? getPeriodChange([start, { value: currentValue }]) : null;
+}
