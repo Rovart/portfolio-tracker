@@ -215,7 +215,13 @@ export function getPreferredPricingSymbol(asset, priceMap = {}) {
 
     if (isCryptoAsset(normalized)) {
         const usdPair = `${normalized}-USD`;
-        if (priceMap[usdPair] || !raw || raw === normalized) return usdPair;
+        if (priceMap[usdPair]) return usdPair;
+
+        // Normalized balances (XTZ) must resolve the quoted instrument too
+        // (XTZ-EUR), just as holdings do using the transaction's symbol.
+        const availablePair = Object.keys(priceMap).find(symbol => upper(normalizeAsset(symbol)) === normalized);
+        if (availablePair) return availablePair;
+        if (!raw || raw === normalized) return usdPair;
     }
 
     return raw || normalized;
@@ -586,7 +592,7 @@ function getAssetPriceSnapshot(asset, amount, priceMap, baseCurrency, preferredS
     }
 
     if (!quote && isCryptoAsset(normalized)) {
-        priceSym = `${normalized}-USD`;
+        priceSym = getPreferredPricingSymbol(normalized, priceMap);
         quote = priceMap?.[priceSym];
     }
 

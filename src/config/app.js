@@ -8,7 +8,7 @@ export const APP_CONFIG = {
     name: 'Monetra',
     fullName: 'Monetra - Portfolio Tracker',
     description: 'Simplest way to track your investment portfolio',
-    version: '1.6.2',
+    version: '1.6.3',
 
     // Data Controller / Legal
     legal: {
